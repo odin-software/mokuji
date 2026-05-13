@@ -1,21 +1,28 @@
 // mokuji: tracker de manga público.
 //
-// Este binario en su estado actual solo aplica migraciones y sale. El
-// servidor HTTP se agrega en commits siguientes.
+// Este binario abre la DB, corre migraciones, y arranca el servidor HTTP.
+// Con el flag -migrate-only, aplica migraciones y sale sin levantar el
+// servidor.
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"flag"
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	_ "modernc.org/sqlite"
 
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/server"
 )
 
 //go:embed migrations/*.sql
@@ -24,6 +31,10 @@ var migrationsFS embed.FS
 func main() {
 	migrateOnly := flag.Bool("migrate-only", false, "Aplicar migraciones y salir sin levantar servidor")
 	flag.Parse()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
 
 	dbPath := envOr("DB_PATH", "./data/mokuji.db")
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
@@ -46,13 +57,39 @@ func main() {
 	if err != nil {
 		log.Fatalf("aplicar migraciones: %v", err)
 	}
-	log.Printf("migraciones aplicadas: %d", applied)
+	logger.Info("migraciones aplicadas", "cantidad", applied)
 
 	if *migrateOnly {
 		return
 	}
 
-	log.Print("nada más que hacer por ahora — el servidor HTTP llega en el próximo commit")
+	srv := server.New(server.Config{
+		Addr:   envOr("HTTP_ADDR", ":8080"),
+		DB:     db,
+		Logger: logger,
+	})
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Start() }()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logger.Error("servidor terminó con error", "err", err)
+			os.Exit(1)
+		}
+	case sig := <-sigCh:
+		logger.Info("señal recibida, apagando", "señal", sig.String())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Error("error apagando servidor", "err", err)
+			os.Exit(1)
+		}
+	}
 }
 
 func envOr(key, def string) string {

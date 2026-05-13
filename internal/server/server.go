@@ -1,0 +1,66 @@
+// Package server contiene el servidor HTTP de mokuji, su composición de
+// middleware, y los handlers de cada feature.
+//
+// Las dependencias del servidor (DB, logger, etc.) se pasan vía Config para
+// que el servidor sea testeable sin globals.
+package server
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+)
+
+// Config agrupa las dependencias del servidor. Campos opcionales se rellenan
+// con defaults sensatos en New.
+type Config struct {
+	Addr   string       // dirección de escucha, ej: ":8080"
+	DB     *sql.DB      // conexión a la DB; puede ser nil para tests que no la usen
+	Logger *slog.Logger // logger estructurado
+}
+
+// Server envuelve un *http.Server con su composición de routing y middleware.
+type Server struct {
+	cfg  Config
+	http *http.Server
+}
+
+// New construye un servidor listo para Start.
+func New(cfg Config) *Server {
+	if cfg.Addr == "" {
+		cfg.Addr = ":8080"
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+
+	s := &Server{cfg: cfg}
+	s.http = &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           s.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	return s
+}
+
+// Start bloquea sirviendo requests hasta que Shutdown sea llamado o el
+// servidor falle. Retorna nil en shutdown limpio.
+func (s *Server) Start() error {
+	s.cfg.Logger.Info("servidor arrancando", "addr", s.cfg.Addr)
+	if err := s.http.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// Shutdown apaga el servidor con timeout, permitiendo que requests en curso
+// terminen antes de cerrar.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.http.Shutdown(ctx)
+}

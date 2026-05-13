@@ -40,3 +40,10 @@ func FromContext(ctx context.Context) (*Session, bool) {
 	s, ok := ctx.Value(sessionKey{}).(*Session)
 	return s, ok
 }
+
+// NewContext retorna un context con la sesión adjuntada. Útil para tests y
+// para casos donde se construye un request autenticado sin pasar por la
+// cookie y el Middleware.
+func NewContext(ctx context.Context, s *Session) context.Context {
+	return context.WithValue(ctx, sessionKey{}, s)
+}

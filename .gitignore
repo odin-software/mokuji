@@ -1,0 +1,19 @@
+# Binarios compilados
+/bin/
+
+# Data local (SQLite + WAL)
+/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Env vars con secretos
+.env
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

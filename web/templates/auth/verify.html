@@ -1,0 +1,23 @@
+{{define "title"}}código — mokuji{{end}}
+{{define "content"}}
+<h1>tu código</h1>
+<p class="muted">te enviamos un código a <strong>{{.Email}}</strong>. revisa tu inbox.</p>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="POST" action="/auth/verify">
+  <input type="hidden" name="email" value="{{.Email}}">
+  <label>
+    código
+    <input
+      type="text"
+      name="code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      pattern="[0-9]{6}"
+      maxlength="6"
+      required
+      autofocus>
+  </label>
+  <button type="submit">entrar</button>
+</form>
+<p class="muted"><a href="/auth?email={{.Email}}">pedir otro código</a></p>
+{{end}}

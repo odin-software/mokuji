@@ -1,8 +1,8 @@
 // Package server contiene el servidor HTTP de mokuji, su composición de
 // middleware, y los handlers de cada feature.
 //
-// Las dependencias del servidor (DB, logger, etc.) se pasan vía Config para
-// que el servidor sea testeable sin globals.
+// Las dependencias del servidor (DB, logger, sessions, auth handler) se
+// pasan vía Config para que el servidor sea testeable sin globals.
 package server
 
 import (
@@ -12,14 +12,19 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"git.odin.do/kengru/mokuji/internal/auth"
+	"git.odin.do/kengru/mokuji/internal/session"
 )
 
-// Config agrupa las dependencias del servidor. Campos opcionales se rellenan
-// con defaults sensatos en New.
+// Config agrupa las dependencias del servidor. Sessions y Auth son opcionales
+// para facilitar tests del transporte HTTP sin un stack completo.
 type Config struct {
-	Addr   string       // dirección de escucha, ej: ":8080"
-	DB     *sql.DB      // conexión a la DB; puede ser nil para tests que no la usen
-	Logger *slog.Logger // logger estructurado
+	Addr     string
+	DB       *sql.DB
+	Logger   *slog.Logger
+	Sessions *session.Manager
+	Auth     *auth.Handler
 }
 
 // Server envuelve un *http.Server con su composición de routing y middleware.

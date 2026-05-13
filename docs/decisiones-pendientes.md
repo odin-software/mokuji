@@ -2,6 +2,16 @@
 
 Lista de decisiones arquitectónicas aún abiertas, en orden tentativo de discusión. Se va recortando a medida que se cierran ADRs.
 
+## Rate limiting
+
+Crítico antes de exponer el dominio público. Mínimo:
+
+- `/auth/start` rate limit por IP (spam de OTPs a inboxes ajenos)
+- `/auth/start` rate limit por email (evita que alguien enumere)
+- `/auth/verify` rate limit por IP (intentos de brute force)
+
+Implementación candidata: counter en memoria con `golang.org/x/time/rate` por IP, complementada con tabla SQLite para tracking por email si lo necesitamos. Decisión propia, no requiere lib externa.
+
 ## Marca / identidad visual
 
 Pendiente. Una vez decidida condiciona:

@@ -1,0 +1,12 @@
+tu código de acceso a mokuji es:
+
+  {{.Code}}
+
+expira en 10 minutos. si no fuiste vos, ignora este email — alguien más
+intentó iniciar sesión con tu correo.
+
+solicitado desde {{.IPAddress}} ({{.UserAgent}}), {{.RequestedAt}}.
+
+—
+mokuji
+{{.BaseURL}}

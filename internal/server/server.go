@@ -14,17 +14,19 @@ import (
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/auth"
+	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
-// Config agrupa las dependencias del servidor. Sessions y Auth son opcionales
-// para facilitar tests del transporte HTTP sin un stack completo.
+// Config agrupa las dependencias del servidor. Sessions, Auth, y Home son
+// opcionales para facilitar tests del transporte HTTP sin un stack completo.
 type Config struct {
 	Addr     string
 	DB       *sql.DB
 	Logger   *slog.Logger
 	Sessions *session.Manager
 	Auth     *auth.Handler
+	Home     *home.Handler
 }
 
 // Server envuelve un *http.Server con su composición de routing y middleware.

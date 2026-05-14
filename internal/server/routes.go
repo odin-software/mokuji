@@ -19,6 +19,9 @@ import (
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	if s.cfg.Home != nil {
+		s.cfg.Home.Mount(mux)
+	}
 	if s.cfg.Auth != nil {
 		s.cfg.Auth.Mount(mux)
 	}

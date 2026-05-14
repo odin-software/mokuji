@@ -1,0 +1,9 @@
+{{define "title"}}mokuji{{end}}
+{{define "content"}}
+<h1>hola, {{.Email}}</h1>
+<p class="muted">tu biblioteca llega pronto.</p>
+<form method="POST" action="/auth/logout">
+  {{ csrfInput .Session }}
+  <button type="submit">cerrar sesión</button>
+</form>
+{{end}}

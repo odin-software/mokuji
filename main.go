@@ -24,6 +24,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -32,7 +33,7 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-//go:embed web/templates/layout.html web/templates/auth/*.html web/emails/*.txt
+//go:embed web/templates web/emails
 var assetsFS embed.FS
 
 func main() {
@@ -105,6 +106,15 @@ func main() {
 		log.Fatalf("configurar auth: %v", err)
 	}
 
+	homeHandler, err := home.New(home.Config{
+		DB:            db,
+		HTMLTemplates: htmlFS,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar home: %v", err)
+	}
+
 	rootCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go cleanupSessions(rootCtx, sessions, logger)
@@ -115,6 +125,7 @@ func main() {
 		Logger:   logger,
 		Sessions: sessions,
 		Auth:     authHandler,
+		Home:     homeHandler,
 	})
 
 	errCh := make(chan error, 1)

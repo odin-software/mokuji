@@ -17,12 +17,13 @@ import (
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
+	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
-// Config agrupa las dependencias del servidor. Sessions, Auth, Home, Library
-// y StaticAssets son opcionales para facilitar tests del transporte HTTP sin
-// un stack completo.
+// Config agrupa las dependencias del servidor. Sessions, Auth, Home, Library,
+// Profile y StaticAssets son opcionales para facilitar tests del transporte
+// HTTP sin un stack completo.
 type Config struct {
 	Addr     string
 	DB       *sql.DB
@@ -31,6 +32,7 @@ type Config struct {
 	Auth     *auth.Handler
 	Home     *home.Handler
 	Library  *library.Handler
+	Profile  *profile.Handler
 	// StaticAssets es el FS de la carpeta web/ del repo (contiene static/,
 	// manifest.webmanifest, sw.js). Si es nil, los endpoints PWA no se
 	// montan.

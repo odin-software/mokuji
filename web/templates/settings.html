@@ -1,0 +1,35 @@
+{{define "title"}}configuración — mokuji{{end}}
+{{define "content"}}
+<h1>configuración</h1>
+<p class="muted">cuenta: {{.Email}}</p>
+
+{{if .Saved}}<p class="success">cambios guardados.</p>{{end}}
+
+<form method="POST" action="/settings">
+  {{ csrfInput .Session }}
+  <fieldset class="settings-section">
+    <legend>visibilidad de tu biblioteca</legend>
+    <label class="radio">
+      <input type="radio" name="list_visibility" value="public"{{if eq .Visibility "public"}} checked{{end}}>
+      <span>
+        <strong>pública</strong>
+        <span class="muted">cualquiera puede ver tu lista en <code>/u/{{.Session.UserID}}</code></span>
+      </span>
+    </label>
+    <label class="radio">
+      <input type="radio" name="list_visibility" value="private"{{if eq .Visibility "private"}} checked{{end}}>
+      <span>
+        <strong>privada</strong>
+        <span class="muted">solo vos podés ver tu lista</span>
+      </span>
+    </label>
+  </fieldset>
+  <button type="submit">guardar</button>
+</form>
+
+<p class="user-links">
+  <a href="/library">← tu biblioteca</a>
+  <span class="sep">·</span>
+  <a href="/u/{{.Session.UserID}}">ver mi perfil público</a>
+</p>
+{{end}}

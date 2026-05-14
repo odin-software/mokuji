@@ -73,6 +73,11 @@
 <p class="muted">tu biblioteca está vacía. <a href="/library/search">agregá tu primer manga</a>.</p>
 {{end}}
 
+<p class="user-links">
+  <a href="/settings">configuración</a>
+  <span class="sep">·</span>
+  <a href="/u/{{.Session.UserID}}">tu vista pública</a>
+</p>
 <form method="POST" action="/auth/logout" class="logout-form">
   {{ csrfInput .Session }}
   <button type="submit">cerrar sesión</button>

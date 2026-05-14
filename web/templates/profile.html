@@ -1,0 +1,28 @@
+{{define "title"}}biblioteca de usuario #{{.UserID}} — mokuji{{end}}
+{{define "content"}}
+<h1>biblioteca de usuario #{{.UserID}}</h1>
+
+{{if .IsOwner}}
+<p class="muted">esto es lo que el resto ve de tu biblioteca{{if eq .Visibility "private"}} (actualmente privada — solo vos podés verla){{end}}.</p>
+{{end}}
+
+{{if .Entries}}
+<ul class="manga-list public">
+{{range .Entries}}
+  <li class="public-entry">
+    {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy">{{end}}
+    <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
+    {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
+    <strong>{{.Manga.Title}}</strong>
+    {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
+  </li>
+{{end}}
+</ul>
+{{else}}
+<p class="muted">biblioteca vacía.</p>
+{{end}}
+
+{{if .Session}}
+<p class="user-links"><a href="/library">← tu biblioteca</a></p>
+{{end}}
+{{end}}

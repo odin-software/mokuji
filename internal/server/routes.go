@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
@@ -25,6 +26,9 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Auth != nil {
 		s.cfg.Auth.Mount(mux)
 	}
+	if s.cfg.StaticAssets != nil {
+		s.mountPWA(mux)
+	}
 
 	var h http.Handler = mux
 	if s.cfg.Sessions != nil {
@@ -35,4 +39,17 @@ func (s *Server) routes() http.Handler {
 	h = s.requestID(h)
 	h = s.recoverer(h)
 	return h
+}
+
+// mountPWA registra los endpoints necesarios para que mokuji sea instalable
+// como PWA. /sw.js y /manifest.webmanifest se sirven en el root para que el
+// scope del service worker sea / por default; /static/ sirve los demás
+// assets (íconos, eventualmente CSS).
+func (s *Server) mountPWA(mux *http.ServeMux) {
+	staticSub, err := fs.Sub(s.cfg.StaticAssets, "static")
+	if err == nil {
+		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+	}
+	mux.HandleFunc("GET /manifest.webmanifest", s.serveManifest)
+	mux.HandleFunc("GET /sw.js", s.serveSW)
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
@@ -18,8 +19,9 @@ import (
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
-// Config agrupa las dependencias del servidor. Sessions, Auth, y Home son
-// opcionales para facilitar tests del transporte HTTP sin un stack completo.
+// Config agrupa las dependencias del servidor. Sessions, Auth, Home, y
+// StaticAssets son opcionales para facilitar tests del transporte HTTP sin
+// un stack completo.
 type Config struct {
 	Addr     string
 	DB       *sql.DB
@@ -27,6 +29,10 @@ type Config struct {
 	Sessions *session.Manager
 	Auth     *auth.Handler
 	Home     *home.Handler
+	// StaticAssets es el FS de la carpeta web/ del repo (contiene static/,
+	// manifest.webmanifest, sw.js). Si es nil, los endpoints PWA no se
+	// montan.
+	StaticAssets fs.FS
 }
 
 // Server envuelve un *http.Server con su composición de routing y middleware.

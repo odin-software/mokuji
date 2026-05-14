@@ -36,7 +36,7 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-//go:embed web/templates web/emails
+//go:embed web
 var assetsFS embed.FS
 
 func main() {
@@ -95,6 +95,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("acceder plantillas de email: %v", err)
 	}
+	webFS, err := fs.Sub(assetsFS, "web")
+	if err != nil {
+		log.Fatalf("acceder assets de web: %v", err)
+	}
 
 	rootCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -139,12 +143,13 @@ func main() {
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	srv := server.New(server.Config{
-		Addr:     envOr("HTTP_ADDR", ":8080"),
-		DB:       db,
-		Logger:   logger,
-		Sessions: sessions,
-		Auth:     authHandler,
-		Home:     homeHandler,
+		Addr:         envOr("HTTP_ADDR", ":8080"),
+		DB:           db,
+		Logger:       logger,
+		Sessions:     sessions,
+		Auth:         authHandler,
+		Home:         homeHandler,
+		StaticAssets: webFS,
 	})
 
 	errCh := make(chan error, 1)

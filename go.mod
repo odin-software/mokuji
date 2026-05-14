@@ -2,7 +2,10 @@ module git.odin.do/kengru/mokuji
 
 go 1.25.0
 
-require modernc.org/sqlite v1.50.1
+require (
+	golang.org/x/time v0.15.0
+	modernc.org/sqlite v1.50.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

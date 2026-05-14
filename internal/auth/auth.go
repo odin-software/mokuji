@@ -31,6 +31,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
@@ -48,17 +49,27 @@ type Config struct {
 	EmailTemplates  fs.FS // contiene otp.txt
 	BaseURL         string
 	Logger          *slog.Logger
+	// TrustProxy=true hace que clientIP lea X-Forwarded-For. Solo seguro si
+	// mokuji corre detrás de un reverse proxy de confianza (ej: nginx).
+	TrustProxy        bool
+	StartIPLimiter    *ratelimit.Limiter // limita /auth/start por IP; nil = sin límite
+	StartEmailLimiter *ratelimit.Limiter // limita /auth/start por email; nil = sin límite
+	VerifyIPLimiter   *ratelimit.Limiter // limita /auth/verify por IP; nil = sin límite
 }
 
 // Handler agrupa endpoints de /auth/*.
 type Handler struct {
-	db       *sql.DB
-	sessions *session.Manager
-	email    *email.Client
-	pages    map[string]*htmltmpl.Template
-	emailT   *texttmpl.Template
-	baseURL  string
-	logger   *slog.Logger
+	db            *sql.DB
+	sessions      *session.Manager
+	email         *email.Client
+	pages         map[string]*htmltmpl.Template
+	emailT        *texttmpl.Template
+	baseURL       string
+	logger        *slog.Logger
+	trustProxy    bool
+	startIPLim    *ratelimit.Limiter
+	startEmailLim *ratelimit.Limiter
+	verifyIPLim   *ratelimit.Limiter
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -103,13 +114,17 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:       cfg.DB,
-		sessions: cfg.Sessions,
-		email:    cfg.Email,
-		pages:    pages,
-		emailT:   emailT,
-		baseURL:  cfg.BaseURL,
-		logger:   cfg.Logger,
+		db:            cfg.DB,
+		sessions:      cfg.Sessions,
+		email:         cfg.Email,
+		pages:         pages,
+		emailT:        emailT,
+		baseURL:       cfg.BaseURL,
+		logger:        cfg.Logger,
+		trustProxy:    cfg.TrustProxy,
+		startIPLim:    cfg.StartIPLimiter,
+		startEmailLim: cfg.StartEmailLimiter,
+		verifyIPLim:   cfg.VerifyIPLimiter,
 	}, nil
 }
 
@@ -153,6 +168,14 @@ func (h *Handler) startForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
+	ip := h.clientIP(r)
+	if !h.startIPLim.Allow(ip) {
+		h.render(w, "auth/start.html", startData{
+			Error: "demasiados intentos. espera un momento e intenta de nuevo.",
+		})
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -167,6 +190,14 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.startEmailLim.Allow(emailAddr) {
+		h.render(w, "auth/start.html", startData{
+			Email: emailAddr,
+			Error: "demasiados códigos pedidos para este email. espera un momento.",
+		})
+		return
+	}
+
 	code, err := generateCode()
 	if err != nil {
 		h.logger.Error("generar código", "err", err)
@@ -174,7 +205,6 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := clientIP(r)
 	ua := r.UserAgent()
 
 	if err := h.storeCode(r.Context(), emailAddr, code, ip, ua); err != nil {
@@ -213,6 +243,14 @@ func (h *Handler) verifyForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
+	if !h.verifyIPLim.Allow(h.clientIP(r)) {
+		h.render(w, "auth/verify.html", verifyData{
+			Email: r.URL.Query().Get("email"),
+			Error: "demasiados intentos. espera un momento.",
+		})
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -388,8 +426,19 @@ func hashCode(c string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// clientIP extrae solo la IP de RemoteAddr (que viene como "ip:port").
-func clientIP(r *http.Request) string {
+// clientIP retorna el IP real del cliente. Si trustProxy está activo, lee
+// X-Forwarded-For (asume que el primer IP es el del cliente real, lo cual
+// es estándar cuando hay un único proxy delante). En otro caso, usa
+// RemoteAddr stripping el puerto.
+func (h *Handler) clientIP(r *http.Request) string {
+	if h.trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.Index(xff, ","); i != -1 {
+				xff = xff[:i]
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

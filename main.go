@@ -22,10 +22,13 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"golang.org/x/time/rate"
+
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
@@ -93,14 +96,32 @@ func main() {
 		log.Fatalf("acceder plantillas de email: %v", err)
 	}
 
+	rootCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Rate limiters para auth.
+	//   /auth/start por IP:    ~5/min sostenido, burst 5
+	//   /auth/start por email: ~3/hora sostenido, burst 3
+	//   /auth/verify por IP:   ~10/min sostenido, burst 10
+	startIPLim := ratelimit.New(rate.Every(12*time.Second), 5)
+	startEmailLim := ratelimit.New(rate.Every(20*time.Minute), 3)
+	verifyIPLim := ratelimit.New(rate.Every(6*time.Second), 10)
+	go startIPLim.Cleanup(rootCtx, 1*time.Hour)
+	go startEmailLim.Cleanup(rootCtx, 2*time.Hour)
+	go verifyIPLim.Cleanup(rootCtx, 30*time.Minute)
+
 	authHandler, err := auth.New(auth.Config{
-		DB:             db,
-		Sessions:       sessions,
-		Email:          emailClient,
-		HTMLTemplates:  htmlFS,
-		EmailTemplates: emailFS,
-		BaseURL:        envOr("BASE_URL", "http://localhost:8080"),
-		Logger:         logger,
+		DB:                db,
+		Sessions:          sessions,
+		Email:             emailClient,
+		HTMLTemplates:     htmlFS,
+		EmailTemplates:    emailFS,
+		BaseURL:           envOr("BASE_URL", "http://localhost:8080"),
+		Logger:            logger,
+		TrustProxy:        envBool("TRUST_PROXY", false),
+		StartIPLimiter:    startIPLim,
+		StartEmailLimiter: startEmailLim,
+		VerifyIPLimiter:   verifyIPLim,
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)
@@ -115,8 +136,6 @@ func main() {
 		log.Fatalf("configurar home: %v", err)
 	}
 
-	rootCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	srv := server.New(server.Config{

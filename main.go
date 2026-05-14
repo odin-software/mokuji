@@ -27,6 +27,8 @@ import (
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
+	"git.odin.do/kengru/mokuji/internal/library"
+	"git.odin.do/kengru/mokuji/internal/mangasource/anilist"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/server"
@@ -140,6 +142,16 @@ func main() {
 		log.Fatalf("configurar home: %v", err)
 	}
 
+	libraryHandler, err := library.New(library.Config{
+		DB:            db,
+		MangaSource:   anilist.New(),
+		HTMLTemplates: htmlFS,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar library: %v", err)
+	}
+
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	srv := server.New(server.Config{
@@ -149,6 +161,7 @@ func main() {
 		Sessions:     sessions,
 		Auth:         authHandler,
 		Home:         homeHandler,
+		Library:      libraryHandler,
 		StaticAssets: webFS,
 	})
 

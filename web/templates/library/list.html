@@ -1,0 +1,80 @@
+{{define "title"}}biblioteca — mokuji{{end}}
+{{define "content"}}
+<header class="lib-header">
+  <h1>tu biblioteca</h1>
+  <a href="/library/search" class="action-link">+ agregar manga</a>
+</header>
+
+<form method="GET" action="/library" class="lib-filters">
+  <input type="search" name="q" placeholder="buscar en tu lista" value="{{.Query}}">
+  <select name="filter">
+    <option value="all"{{if eq .Filter "all"}} selected{{end}}>todos</option>
+    <option value="reading"{{if eq .Filter "reading"}} selected{{end}}>leyendo</option>
+    <option value="planned"{{if eq .Filter "planned"}} selected{{end}}>por leer</option>
+    <option value="completed"{{if eq .Filter "completed"}} selected{{end}}>completado</option>
+  </select>
+  <button type="submit">filtrar</button>
+</form>
+
+{{if .Entries}}
+<ul class="manga-list">
+{{range .Entries}}
+  <li>
+    <details>
+      <summary>
+        {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy">{{end}}
+        <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
+        {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
+        <strong>{{.Manga.Title}}</strong>
+        {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
+      </summary>
+      <form method="POST" action="/library/{{.ID}}/update" class="entry-form">
+        {{ csrfInput $.Session }}
+        <label>
+          estado
+          <select name="status">
+            <option value="reading"{{if eq .Status "reading"}} selected{{end}}>leyendo</option>
+            <option value="planned"{{if eq .Status "planned"}} selected{{end}}>por leer</option>
+            <option value="completed"{{if eq .Status "completed"}} selected{{end}}>completado</option>
+          </select>
+        </label>
+        <label>
+          último capítulo
+          <input type="text" name="last_chapter" value="{{.LastChapter}}" maxlength="100">
+        </label>
+        <label>
+          dónde lo leés (URL)
+          <input type="url" name="source_url" value="{{.SourceURL}}" maxlength="2000" placeholder="https://manhuaplus.com/...">
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="is_favorite"{{if .IsFavorite}} checked{{end}}>
+          favorito
+        </label>
+        <label>
+          notas
+          <textarea name="notes" maxlength="5000" rows="3">{{.Notes}}</textarea>
+        </label>
+        <button type="submit">guardar</button>
+      </form>
+      {{if .SourceURL}}
+      <p class="entry-source-link"><a href="{{.SourceURL}}" target="_blank" rel="noopener noreferrer">→ leer en tu fuente</a></p>
+      {{end}}
+      <form method="POST" action="/library/{{.ID}}/delete" onsubmit="return confirm('¿borrar {{.Manga.Title}} de tu biblioteca?');" class="delete-form">
+        {{ csrfInput $.Session }}
+        <button type="submit" class="danger">borrar</button>
+      </form>
+    </details>
+  </li>
+{{end}}
+</ul>
+{{else if or (ne .Filter "all") .Query}}
+<p class="muted">no hay entries que coincidan con el filtro.</p>
+{{else}}
+<p class="muted">tu biblioteca está vacía. <a href="/library/search">agregá tu primer manga</a>.</p>
+{{end}}
+
+<form method="POST" action="/auth/logout" class="logout-form">
+  {{ csrfInput .Session }}
+  <button type="submit">cerrar sesión</button>
+</form>
+{{end}}

@@ -1,0 +1,394 @@
+package library
+
+import (
+	"context"
+	"database/sql"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"git.odin.do/kengru/mokuji/internal/mangasource"
+	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/session"
+)
+
+// fakeSource es una mangasource.Source para tests.
+type fakeSource struct {
+	results []mangasource.SearchResult
+	err     error
+	calls   int
+}
+
+func (f *fakeSource) Name() string { return "fake" }
+func (f *fakeSource) Search(ctx context.Context, query string) ([]mangasource.SearchResult, error) {
+	f.calls++
+	return f.results, f.err
+}
+
+func setupDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	src := os.DirFS("../../migrations")
+	if _, err := migrations.Run(db, src); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+func insertUser(t *testing.T, db *sql.DB, email string) int64 {
+	t.Helper()
+	res, err := db.Exec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, email, time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func newTestHandler(t *testing.T, db *sql.DB, src mangasource.Source) *Handler {
+	t.Helper()
+	if src == nil {
+		src = &fakeSource{}
+	}
+	return &Handler{
+		db:     db,
+		src:    src,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func newFullHandler(t *testing.T, db *sql.DB, src mangasource.Source) *Handler {
+	t.Helper()
+	if src == nil {
+		src = &fakeSource{}
+	}
+	h, err := New(Config{
+		DB:            db,
+		MangaSource:   src,
+		HTMLTemplates: os.DirFS("../../web/templates"),
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestUpsertManga(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	id1, err := h.upsertManga(ctx, "anilist", "30002", "Berserk", "cover.jpg")
+	if err != nil {
+		t.Fatalf("upsert 1: %v", err)
+	}
+
+	// Mismo source+source_id: mismo ID, metadata actualizada.
+	id2, err := h.upsertManga(ctx, "anilist", "30002", "Berserk (updated)", "cover2.jpg")
+	if err != nil {
+		t.Fatalf("upsert 2: %v", err)
+	}
+	if id1 != id2 {
+		t.Errorf("upsert con mismo source_id retornó ID distinto: %d vs %d", id1, id2)
+	}
+
+	var title, coverURL string
+	if err := db.QueryRow(`SELECT title, cover_url FROM manga WHERE id = ?`, id1).Scan(&title, &coverURL); err != nil {
+		t.Fatal(err)
+	}
+	if title != "Berserk (updated)" {
+		t.Errorf("title no actualizado: %q", title)
+	}
+	if coverURL != "cover2.jpg" {
+		t.Errorf("cover no actualizado: %q", coverURL)
+	}
+}
+
+func TestCreateEntryAndList(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "cover.jpg")
+
+	if err := h.createEntry(ctx, userID, mangaID); err != nil {
+		t.Fatalf("createEntry: %v", err)
+	}
+
+	entries, err := h.listEntries(ctx, userID, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("esperado 1 entry, obtenido %d", len(entries))
+	}
+	e := entries[0]
+	if e.Manga.Title != "Berserk" {
+		t.Errorf("title: %q", e.Manga.Title)
+	}
+	if e.Status != "reading" {
+		t.Errorf("status default: %q", e.Status)
+	}
+}
+
+func TestDuplicateEntryRejected(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
+
+	if err := h.createEntry(ctx, userID, mangaID); err != nil {
+		t.Fatal(err)
+	}
+
+	err := h.createEntry(ctx, userID, mangaID)
+	if err == nil {
+		t.Fatal("se esperaba error por UNIQUE constraint")
+	}
+	if !isUniqueConstraintError(err) {
+		t.Errorf("isUniqueConstraintError no detectó: %v", err)
+	}
+}
+
+func TestListEntriesFilterByStatus(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	for i, status := range []string{"reading", "planned", "completed"} {
+		mid, _ := h.upsertManga(ctx, "anilist", strconv.Itoa(i+1), "Manga "+status, "")
+		_, err := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			userID, mid, status, time.Now().Unix(), time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := []struct {
+		filter string
+		want   int
+	}{
+		{"all", 3},
+		{"reading", 1},
+		{"planned", 1},
+		{"completed", 1},
+	}
+	for _, tc := range cases {
+		entries, err := h.listEntries(ctx, userID, tc.filter, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != tc.want {
+			t.Errorf("filter=%q: esperado %d, obtenido %d", tc.filter, tc.want, len(entries))
+		}
+	}
+}
+
+func TestListEntriesSearchInLibrary(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	for i, title := range []string{"Berserk", "Vagabond", "Chainsaw Man"} {
+		mid, _ := h.upsertManga(ctx, "anilist", strconv.Itoa(i+1), title, "")
+		_, err := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
+			userID, mid, time.Now().Unix(), time.Now().Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := h.listEntries(ctx, userID, "all", "Chain")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Manga.Title != "Chainsaw Man" {
+		t.Errorf("búsqueda 'Chain': %v", entries)
+	}
+}
+
+func TestListEntriesFavoriteFirst(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	now := time.Now().Unix()
+
+	// agrega 3 entries; el segundo es favorito. updated_at uniforme, así
+	// solo is_favorite decide el orden.
+	for i, title := range []string{"A", "B-fav", "C"} {
+		mid, _ := h.upsertManga(ctx, "anilist", strconv.Itoa(i+1), title, "")
+		fav := 0
+		if i == 1 {
+			fav = 1
+		}
+		_, err := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, is_favorite, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?, ?)`,
+			userID, mid, fav, now, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := h.listEntries(ctx, userID, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 || entries[0].Manga.Title != "B-fav" {
+		t.Errorf("favorito no quedó primero: %+v", entries)
+	}
+}
+
+func TestUpdateRejectsOtherUsersEntry(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	alice := insertUser(t, db, "alice@example.com")
+	bob := insertUser(t, db, "bob@example.com")
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
+	res, _ := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
+		alice, mangaID, time.Now().Unix(), time.Now().Unix())
+	aliceEntryID, _ := res.LastInsertId()
+
+	form := url.Values{"status": {"completed"}}
+	req := httptest.NewRequest(http.MethodPost,
+		"/library/"+strconv.FormatInt(aliceEntryID, 10)+"/update",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", strconv.FormatInt(aliceEntryID, 10))
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: bob}))
+
+	rec := httptest.NewRecorder()
+	h.update(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status: esperado 404, obtenido %d", rec.Code)
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM library_entries WHERE id = ?`, aliceEntryID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "reading" {
+		t.Errorf("status de alice cambió: %q", status)
+	}
+}
+
+func TestDeleteRejectsOtherUsersEntry(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	alice := insertUser(t, db, "alice@example.com")
+	bob := insertUser(t, db, "bob@example.com")
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
+	res, _ := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
+		alice, mangaID, time.Now().Unix(), time.Now().Unix())
+	aliceEntryID, _ := res.LastInsertId()
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/library/"+strconv.FormatInt(aliceEntryID, 10)+"/delete", nil)
+	req.SetPathValue("id", strconv.FormatInt(aliceEntryID, 10))
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: bob}))
+
+	rec := httptest.NewRecorder()
+	h.delete(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status: esperado 404, obtenido %d", rec.Code)
+	}
+	var count int
+	db.QueryRow(`SELECT count(*) FROM library_entries WHERE id = ?`, aliceEntryID).Scan(&count)
+	if count != 1 {
+		t.Error("entry de alice fue borrada por bob")
+	}
+}
+
+func TestSearchRendersResults(t *testing.T) {
+	db := setupDB(t)
+	src := &fakeSource{
+		results: []mangasource.SearchResult{
+			{SourceID: "1", Title: "Berserk", CoverURL: "https://cdn/x.jpg", Description: "Dark fantasy"},
+		},
+	}
+	h := newFullHandler(t, db, src)
+
+	userID := insertUser(t, db, "alice@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/library/search?q=berserk", nil)
+	req = req.WithContext(session.NewContext(context.Background(),
+		&session.Session{UserID: userID, CSRFToken: "tok123"}))
+	rec := httptest.NewRecorder()
+	h.search(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	if src.calls != 1 {
+		t.Errorf("Search a la fuente: esperado 1 call, obtenido %d", src.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"Berserk", "Dark fantasy", "csrf_token", `value="tok123"`, `value="fake"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body no contiene %q", want)
+		}
+	}
+}
+
+func TestSearchEmptyQueryNoCall(t *testing.T) {
+	db := setupDB(t)
+	src := &fakeSource{}
+	h := newFullHandler(t, db, src)
+
+	userID := insertUser(t, db, "alice@example.com")
+	req := httptest.NewRequest(http.MethodGet, "/library/search", nil)
+	req = req.WithContext(session.NewContext(context.Background(),
+		&session.Session{UserID: userID}))
+	rec := httptest.NewRecorder()
+	h.search(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	if src.calls != 0 {
+		t.Errorf("se esperaba 0 calls a la fuente para query vacía, hubo %d", src.calls)
+	}
+}
+
+func TestListAnonymousRedirects(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/library", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Errorf("status: esperado 303, obtenido %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/auth" {
+		t.Errorf("location: esperado /auth, obtenido %q", loc)
+	}
+}

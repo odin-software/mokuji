@@ -1,0 +1,36 @@
+{{define "title"}}agregar manga — mokuji{{end}}
+{{define "content"}}
+<h1>agregar manga</h1>
+<form method="GET" action="/library/search" class="search-form">
+  <input type="search" name="q" placeholder="buscar en anilist" value="{{.Query}}" autofocus required>
+  <button type="submit">buscar</button>
+</form>
+
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+{{if .Results}}
+<ul class="search-results">
+{{range .Results}}
+  <li class="result">
+    {{if .CoverURL}}<img src="{{.CoverURL}}" alt="" class="cover" width="80" loading="lazy">{{end}}
+    <div class="info">
+      <strong>{{.Title}}</strong>
+      {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+    </div>
+    <form method="POST" action="/library/add">
+      {{ csrfInput $.Session }}
+      <input type="hidden" name="source" value="{{$.Source}}">
+      <input type="hidden" name="source_id" value="{{.SourceID}}">
+      <input type="hidden" name="title" value="{{.Title}}">
+      <input type="hidden" name="cover_url" value="{{.CoverURL}}">
+      <button type="submit">+ agregar</button>
+    </form>
+  </li>
+{{end}}
+</ul>
+{{else if .Query}}
+<p class="muted">sin resultados para "{{.Query}}".</p>
+{{end}}
+
+<p><a href="/library">← volver a tu biblioteca</a></p>
+{{end}}

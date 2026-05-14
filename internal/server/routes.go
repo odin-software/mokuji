@@ -26,6 +26,9 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Auth != nil {
 		s.cfg.Auth.Mount(mux)
 	}
+	if s.cfg.Library != nil {
+		s.cfg.Library.Mount(mux)
+	}
 	if s.cfg.StaticAssets != nil {
 		s.mountPWA(mux)
 	}

@@ -1,8 +1,8 @@
 {{define "title"}}mokuji{{end}}
 {{define "content"}}
 <h1>hola, {{.Email}}</h1>
-<p class="muted">tu biblioteca llega pronto.</p>
-<form method="POST" action="/auth/logout">
+<p><a href="/library" class="action-link">→ tu biblioteca</a></p>
+<form method="POST" action="/auth/logout" class="logout-form">
   {{ csrfInput .Session }}
   <button type="submit">cerrar sesión</button>
 </form>

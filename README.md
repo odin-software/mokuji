@@ -39,4 +39,6 @@ Razones y alternativas consideradas para cada decisión en [docs/adr/](docs/adr/
 
 ## Licencia
 
-Pendiente de definir antes del primer release público. Ver [decisiones-pendientes.md](docs/decisiones-pendientes.md).
+[AGPL-3.0](LICENSE). Significa: cualquiera puede usar, modificar y correr mokuji. Si lo corrés como servicio público para otros usuarios, debés ofrecer el código fuente (incluyendo tus modificaciones) a esos usuarios.
+
+Para reportar vulnerabilidades de seguridad, ver [SECURITY.md](SECURITY.md).

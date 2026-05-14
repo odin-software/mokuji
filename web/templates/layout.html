@@ -162,8 +162,14 @@ textarea { resize: vertical; }
 .status-planned { background: var(--status-planned-bg); color: var(--status-planned-fg); }
 .status-completed { background: var(--status-completed-bg); color: var(--status-completed-fg); }
 .favorite { color: #f5a623; font-size: 1.1rem; line-height: 1; }
-.checkbox { flex-direction: row !important; align-items: center; gap: 0.5rem; }
-.checkbox input { width: auto; padding: 0; margin: 0; }
+.checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.checkbox input { width: auto; padding: 0; margin: 0; flex-shrink: 0; }
 button.danger { background: #b00; color: #fff; }
 button.danger:hover { background: #800; }
 .search-form { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
@@ -189,9 +195,15 @@ button.danger:hover { background: #800; }
 .user-links a { color: inherit; }
 .settings-section { border: 1px solid var(--border); border-radius: 4px; padding: 1rem; margin: 0 0 1rem; display: grid; gap: 0.75rem; }
 .settings-section legend { padding: 0 0.5rem; font-weight: 600; }
-.radio { flex-direction: row !important; align-items: start; gap: 0.5rem; cursor: pointer; }
-.radio input { width: auto; padding: 0; margin: 0.25rem 0 0; }
-.radio span { display: flex; flex-direction: column; gap: 0.125rem; }
+.radio {
+  display: flex;
+  flex-direction: row;
+  align-items: start;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.radio input { width: auto; padding: 0; margin: 0.25rem 0 0; flex-shrink: 0; }
+.radio > span { display: flex; flex-direction: column; gap: 0.125rem; }
 .radio code { background: var(--border-soft); padding: 0 0.25rem; border-radius: 2px; font-size: 0.8125rem; }
 .success {
   padding: 0.5rem 0.75rem;

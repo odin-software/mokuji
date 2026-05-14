@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -282,6 +281,3 @@ func statusLabel(s string) string {
 	}
 	return s
 }
-
-// unused: silenciar warning si time no lo usamos por ahora
-var _ = time.Now

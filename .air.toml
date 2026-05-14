@@ -1,0 +1,20 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/mokuji ."
+  bin = "./tmp/mokuji"
+  delay = 500
+  exclude_dir = ["tmp", "bin", "data", "docs", "node_modules", "vendor"]
+  exclude_regex = ["_test\\.go$"]
+  include_ext = ["go", "html", "sql", "txt", "css", "js"]
+  kill_delay = "5s"
+  send_interrupt = true
+  stop_on_error = true
+  log = "build-errors.log"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

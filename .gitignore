@@ -1,5 +1,7 @@
 # Binarios compilados
 /bin/
+/tmp/
+build-errors.log
 
 # Data local (SQLite + WAL)
 /data/

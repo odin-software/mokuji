@@ -1,9 +1,11 @@
 .PHONY: dev test build run migrate compose-up compose-down clean
 
-# Levanta servicios locales (mailpit) y corre el binario en foreground.
-dev: compose-up run
+# Levanta servicios locales (mailpit) y corre el binario con live reload (air).
+dev: compose-up
+	@command -v air >/dev/null 2>&1 || { echo "air no instalado: go install github.com/air-verse/air@latest"; exit 1; }
+	air
 
-# Corre el binario en foreground.
+# Corre el binario una sola vez (sin watch).
 run:
 	go run .
 

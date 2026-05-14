@@ -1,0 +1,203 @@
+// Package anilist implementa mangasource.Source contra el GraphQL API
+// público de AniList (https://anilist.co).
+//
+// La API es anónima (sin auth), rate limit generoso (~90 req/min por IP),
+// y cubre ~100k entries de manga incluyendo título inglés/romaji/nativo,
+// covers, y descripciones.
+package anilist
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"git.odin.do/kengru/mokuji/internal/mangasource"
+)
+
+const (
+	defaultEndpoint = "https://graphql.anilist.co"
+	defaultTimeout  = 10 * time.Second
+	maxResults      = 20
+)
+
+// Client habla con la API GraphQL de AniList.
+type Client struct {
+	endpoint string
+	http     *http.Client
+}
+
+// Option configura un Client.
+type Option func(*Client)
+
+// WithEndpoint override del endpoint (útil para tests con httptest.Server).
+func WithEndpoint(url string) Option {
+	return func(c *Client) { c.endpoint = url }
+}
+
+// WithHTTPClient override del http.Client (útil para tests o para inyectar
+// timeouts/transport custom).
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) { c.http = h }
+}
+
+// New construye un Client.
+func New(opts ...Option) *Client {
+	c := &Client{
+		endpoint: defaultEndpoint,
+		http:     &http.Client{Timeout: defaultTimeout},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// Name retorna el identificador de la fuente, usado en manga.source.
+func (c *Client) Name() string { return "anilist" }
+
+const searchQuery = `query ($search: String, $perPage: Int) {
+  Page(perPage: $perPage) {
+    media(search: $search, type: MANGA, sort: SEARCH_MATCH) {
+      id
+      title { romaji english native }
+      coverImage { large }
+      description
+    }
+  }
+}`
+
+type searchResponse struct {
+	Data struct {
+		Page struct {
+			Media []struct {
+				ID    int `json:"id"`
+				Title struct {
+					Romaji  string `json:"romaji"`
+					English string `json:"english"`
+					Native  string `json:"native"`
+				} `json:"title"`
+				CoverImage struct {
+					Large string `json:"large"`
+				} `json:"coverImage"`
+				Description string `json:"description"`
+			} `json:"media"`
+		} `json:"Page"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// Search busca manga en AniList. Retorna hasta maxResults resultados,
+// ordenados por relevancia (SEARCH_MATCH de AniList).
+func (c *Client) Search(ctx context.Context, query string) ([]mangasource.SearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	var resp searchResponse
+	if err := c.do(ctx, searchQuery, map[string]any{
+		"search":  query,
+		"perPage": maxResults,
+	}, &resp); err != nil {
+		return nil, err
+	}
+
+	if len(resp.Errors) > 0 {
+		return nil, fmt.Errorf("anilist: %s", resp.Errors[0].Message)
+	}
+
+	out := make([]mangasource.SearchResult, 0, len(resp.Data.Page.Media))
+	for _, m := range resp.Data.Page.Media {
+		title := preferTitle(m.Title.English, m.Title.Romaji, m.Title.Native)
+		if title == "" {
+			continue
+		}
+		out = append(out, mangasource.SearchResult{
+			SourceID:    strconv.Itoa(m.ID),
+			Title:       title,
+			CoverURL:    m.CoverImage.Large,
+			Description: cleanDescription(m.Description),
+		})
+	}
+
+	return out, nil
+}
+
+func (c *Client) do(ctx context.Context, query string, variables map[string]any, out any) error {
+	body, err := json.Marshal(map[string]any{
+		"query":     query,
+		"variables": variables,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("crear request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MiB cap defensivo
+	if err != nil {
+		return fmt.Errorf("leer respuesta: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("anilist status %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+	}
+
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("parse json: %w", err)
+	}
+
+	return nil
+}
+
+// preferTitle retorna el primero no-vacío entre los candidatos.
+func preferTitle(candidates ...string) string {
+	for _, s := range candidates {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+var (
+	brTag      = regexp.MustCompile(`(?i)<br\s*/?>`)
+	anyHTMLTag = regexp.MustCompile(`<[^>]+>`)
+)
+
+// cleanDescription transforma la descripción HTML de AniList a texto plano
+// preservando saltos de línea de los <br>.
+func cleanDescription(s string) string {
+	s = brTag.ReplaceAllString(s, "\n")
+	s = anyHTMLTag.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	return strings.TrimSpace(s)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}

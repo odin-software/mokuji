@@ -1,0 +1,36 @@
+{{define "title"}}releases — mokuji{{end}}
+{{define "content"}}
+<header class="lib-header">
+  <h1>releases</h1>
+  <a href="/library" class="action-link">← biblioteca</a>
+</header>
+
+<p class="muted">capítulos nuevos de tu biblioteca, lo más reciente arriba.</p>
+
+{{if .Releases}}
+<ul class="release-list">
+{{range .Releases}}
+  <li class="release">
+    {{if .CoverURL}}<img src="{{.CoverURL}}" alt="" class="cover" width="48" loading="lazy" referrerpolicy="no-referrer">{{end}}
+    <div class="release-info">
+      <strong>{{.MangaTitle}}</strong>
+      <div class="release-meta">
+        <span>cap. {{if .ChapterNumber}}{{.ChapterNumber}}{{else}}—{{end}}</span>
+        {{if .ChapterTitle}}<span class="muted">· {{.ChapterTitle}}</span>{{end}}
+        <span class="muted">· {{.PublishedAt.Format "2006-01-02"}}</span>
+      </div>
+    </div>
+    <a href="{{.ReaderURL}}" class="action-link" target="_blank" rel="noopener noreferrer">leer →</a>
+  </li>
+{{end}}
+</ul>
+{{else}}
+<p class="muted">no hay capítulos nuevos. al día con todo.</p>
+{{end}}
+
+<p class="user-links">
+  <a href="/library">biblioteca</a>
+  <span class="sep">·</span>
+  <a href="/settings">configuración</a>
+</p>
+{{end}}

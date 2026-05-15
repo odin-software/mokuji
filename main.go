@@ -33,6 +33,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
+	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
 	"git.odin.do/kengru/mokuji/internal/server"
@@ -171,6 +172,15 @@ func main() {
 		log.Fatalf("configurar profile: %v", err)
 	}
 
+	releasesHandler, err := releaseshandler.New(releaseshandler.Config{
+		DB:            db,
+		HTMLTemplates: htmlFS,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar releases: %v", err)
+	}
+
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
@@ -195,6 +205,7 @@ func main() {
 		Home:         homeHandler,
 		Library:      libraryHandler,
 		Profile:      profileHandler,
+		Releases:     releasesHandler,
 		StaticAssets: webFS,
 	})
 

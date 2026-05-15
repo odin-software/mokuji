@@ -31,3 +31,44 @@ func TestHealth(t *testing.T) {
 		t.Error("X-Request-ID no fue seteado")
 	}
 }
+
+func TestSecurityHeaders(t *testing.T) {
+	s := New(Config{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	cases := map[string]string{
+		"Strict-Transport-Security": "max-age=",
+		"X-Frame-Options":           "DENY",
+		"X-Content-Type-Options":    "nosniff",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Permissions-Policy":        "camera=()",
+	}
+	for name, wantContains := range cases {
+		got := rec.Header().Get(name)
+		if !strings.Contains(got, wantContains) {
+			t.Errorf("%s: esperado contener %q, obtenido %q", name, wantContains, got)
+		}
+	}
+}
+
+func TestSecurityHeadersIncludeSubDomains(t *testing.T) {
+	s := New(Config{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, req)
+
+	hsts := rec.Header().Get("Strict-Transport-Security")
+	if !strings.Contains(hsts, "includeSubDomains") {
+		t.Errorf("HSTS no incluye includeSubDomains: %q", hsts)
+	}
+	if strings.Contains(hsts, "preload") {
+		t.Errorf("HSTS no debería tener 'preload' (irreversible): %q", hsts)
+	}
+}

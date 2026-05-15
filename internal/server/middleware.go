@@ -81,6 +81,34 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// securityHeaders setea headers de seguridad estándar en todas las respuestas.
+//
+// Headers incluidos:
+//   - Strict-Transport-Security: fuerza HTTPS en visitas futuras del navegador.
+//     Se incluye con max-age de 180 días + includeSubDomains. Sin 'preload'
+//     porque preload es irreversible y prematuro.
+//   - X-Frame-Options DENY: bloquea embedding de mokuji en iframes
+//     (defensa contra clickjacking).
+//   - X-Content-Type-Options nosniff: evita que el browser adivine MIME types.
+//   - Referrer-Policy strict-origin-when-cross-origin: comparte origin
+//     cross-site, full URL same-site, nada en downgrade HTTP/HTTPS.
+//   - Permissions-Policy: bloquea explícitamente APIs sensibles que no usamos.
+//
+// Pendiente: Content-Security-Policy. Hoy layout.html tiene un <script>
+// inline para registrar el service worker; meter CSP estricta lo rompería.
+// CSP entra cuando se extraiga ese script a /static/app.js.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Strict-Transport-Security", "max-age=15552000; includeSubDomains")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // logRequests emite una línea de log por request con método, path, status,
 // bytes y duración.
 func (s *Server) logRequests(next http.Handler) http.Handler {

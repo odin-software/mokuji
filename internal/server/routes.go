@@ -11,9 +11,11 @@ import (
 //
 // Orden de la cadena (de afuera hacia adentro):
 //
-//	recoverer -> requestID -> logRequests -> session -> csrf -> mux
+//	recoverer -> securityHeaders -> requestID -> logRequests -> session -> csrf -> mux
 //
 // recoverer va más afuera para cubrir panics en cualquier middleware.
+// securityHeaders queda inmediatamente debajo para que incluso las respuestas
+// 500 emitidas por recoverer lleven los headers.
 // requestID va antes que logRequests para que el logger incluya el ID.
 // session y csrf solo se aplican si cfg.Sessions está configurado; permite
 // instanciar el servidor en tests sin stack completo.
@@ -43,6 +45,7 @@ func (s *Server) routes() http.Handler {
 	}
 	h = s.logRequests(h)
 	h = s.requestID(h)
+	h = s.securityHeaders(h)
 	h = s.recoverer(h)
 	return h
 }

@@ -21,9 +21,17 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/mangasource"
+	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
+
+// Matcher resuelve el vínculo manga-de-AniList ↔ manga-de-MangaDex.
+// Definido acá como interface para que el handler sea testeable sin red
+// (en producción se cablea *matcher.Matcher en main.go).
+type Matcher interface {
+	Match(ctx context.Context, titles ...string) (matcher.Result, error)
+}
 
 const (
 	maxLastChapter = 100
@@ -77,15 +85,22 @@ type Config struct {
 	DB            *sql.DB
 	HTMLTemplates fs.FS
 	MangaSource   mangasource.Source
-	Logger        *slog.Logger
+	// Matcher es opcional. Si está cableado, el handler add llama Match
+	// sincrónicamente después de persistir el manga y guarda el resultado
+	// en manga.mangadex_id / manga.mangadex_status. Si es nil, los mangas
+	// quedan con mangadex_status='unmatched' (default de la migration) y
+	// el worker eventual los retomará en background.
+	Matcher Matcher
+	Logger  *slog.Logger
 }
 
 // Handler sirve los endpoints de /library/*.
 type Handler struct {
-	db     *sql.DB
-	src    mangasource.Source
-	pages  map[string]*template.Template
-	logger *slog.Logger
+	db      *sql.DB
+	src     mangasource.Source
+	matcher Matcher
+	pages   map[string]*template.Template
+	logger  *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -123,10 +138,11 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:     cfg.DB,
-		src:    cfg.MangaSource,
-		pages:  pages,
-		logger: cfg.Logger,
+		db:      cfg.DB,
+		src:     cfg.MangaSource,
+		matcher: cfg.Matcher,
+		pages:   pages,
+		logger:  cfg.Logger,
 	}, nil
 }
 
@@ -260,7 +276,40 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Intento de matching contra MangaDex. Cualquier fallo se loguea pero
+	// no rompe el "agregar manga" — el manga queda como unmatched y un
+	// worker periódico puede retomarlo. (Si Matcher no está cableado,
+	// también queda unmatched y todo el sistema sigue funcionando.)
+	h.tryMatchManga(r.Context(), mangaID, title)
+
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
+}
+
+// tryMatchManga corre el matcher sincrónicamente y persiste el resultado.
+// Nunca devuelve error — el matching es best-effort y no debe bloquear el
+// flujo de "agregar manga" si MangaDex está caído o rate limited.
+func (h *Handler) tryMatchManga(ctx context.Context, mangaID int64, title string) {
+	if h.matcher == nil {
+		return
+	}
+
+	result, err := h.matcher.Match(ctx, title)
+	if err != nil {
+		// Rate limit y errores transitorios: dejamos el manga como
+		// unmatched para que el worker lo retome más tarde.
+		h.logger.Warn("matchear mangadex (queda unmatched)", "manga_id", mangaID, "title", title, "err", err)
+		return
+	}
+
+	var mangadexID *string
+	if result.Status == matcher.StatusMatched {
+		id := result.MangaDexID
+		mangadexID = &id
+	}
+
+	if err := h.updateMangadexMatch(ctx, mangaID, string(result.Status), mangadexID); err != nil {
+		h.logger.Error("persistir match mangadex", "manga_id", mangaID, "err", err)
+	}
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
@@ -426,6 +475,23 @@ func (h *Handler) createEntry(ctx context.Context, userID, mangaID int64) error 
 		INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at)
 		VALUES (?, ?, 'reading', ?, ?)
 	`, userID, mangaID, now, now)
+	return err
+}
+
+// updateMangadexMatch persiste el resultado del matcher en la fila manga.
+// mangadexID es *string para distinguir "match resuelto en NULL" (caso
+// no_results / needs_review) de "match resuelto en un UUID concreto".
+func (h *Handler) updateMangadexMatch(ctx context.Context, mangaID int64, status string, mangadexID *string) error {
+	now := time.Now().UTC().Unix()
+	var id any
+	if mangadexID != nil {
+		id = *mangadexID
+	}
+	_, err := h.db.ExecContext(ctx, `
+		UPDATE manga
+		SET mangadex_id = ?, mangadex_status = ?, mangadex_checked_at = ?
+		WHERE id = ?
+	`, id, status, now, mangaID)
 	return err
 }
 

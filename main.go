@@ -28,10 +28,12 @@ import (
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
+	"git.odin.do/kengru/mokuji/internal/mangadex"
 	"git.odin.do/kengru/mokuji/internal/mangasource/anilist"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
+	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
@@ -143,9 +145,15 @@ func main() {
 		log.Fatalf("configurar home: %v", err)
 	}
 
+	// Cliente MangaDex + matcher: alimentan la columna manga.mangadex_id al
+	// agregar un manga a la library (matching híbrido, ADR 0013 §3).
+	mangadexClient := mangadex.New()
+	releaseMatcher := matcher.New(mangadexClient)
+
 	libraryHandler, err := library.New(library.Config{
 		DB:            db,
 		MangaSource:   anilist.New(),
+		Matcher:       releaseMatcher,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,
 	})

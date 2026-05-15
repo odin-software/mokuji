@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,8 +17,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"git.odin.do/kengru/mokuji/internal/mangadex"
 	"git.odin.do/kengru/mokuji/internal/mangasource"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
@@ -390,5 +393,154 @@ func TestListAnonymousRedirects(t *testing.T) {
 	}
 	if loc := rec.Header().Get("Location"); loc != "/auth" {
 		t.Errorf("location: esperado /auth, obtenido %q", loc)
+	}
+}
+
+// --- Matching contra MangaDex al agregar manga ---
+
+// fakeMatcher implementa la interface Matcher para tests del flow add.
+type fakeMatcher struct {
+	result matcher.Result
+	err    error
+	calls  []string
+}
+
+func (f *fakeMatcher) Match(_ context.Context, titles ...string) (matcher.Result, error) {
+	f.calls = append(f.calls, titles...)
+	return f.result, f.err
+}
+
+func mangadexStatusForManga(t *testing.T, db *sql.DB, mangaID int64) (status string, id sql.NullString) {
+	t.Helper()
+	if err := db.QueryRow(`SELECT mangadex_status, mangadex_id FROM manga WHERE id = ?`, mangaID).Scan(&status, &id); err != nil {
+		t.Fatalf("query manga: %v", err)
+	}
+	return
+}
+
+func TestTryMatchMangaPersistsMatched(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matcher = &fakeMatcher{result: matcher.Result{
+		Status:     matcher.StatusMatched,
+		MangaDexID: "md-uuid",
+	}}
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Chainsaw Man", "")
+	h.tryMatchManga(ctx, mangaID, "Chainsaw Man")
+
+	status, id := mangadexStatusForManga(t, db, mangaID)
+	if status != "matched" {
+		t.Errorf("status: esperado matched, obtenido %q", status)
+	}
+	if !id.Valid || id.String != "md-uuid" {
+		t.Errorf("mangadex_id: esperado 'md-uuid', obtenido %+v", id)
+	}
+}
+
+func TestTryMatchMangaPersistsNeedsReviewWithoutID(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matcher = &fakeMatcher{result: matcher.Result{
+		Status: matcher.StatusNeedsReview,
+		Candidates: []matcher.Candidate{
+			{ID: "a"}, {ID: "b"},
+		},
+	}}
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
+	h.tryMatchManga(ctx, mangaID, "Berserk")
+
+	status, id := mangadexStatusForManga(t, db, mangaID)
+	if status != "needs_review" {
+		t.Errorf("status: esperado needs_review, obtenido %q", status)
+	}
+	if id.Valid {
+		t.Errorf("mangadex_id no debería estar poblado para needs_review, obtenido %q", id.String)
+	}
+}
+
+func TestTryMatchMangaPersistsNoResults(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matcher = &fakeMatcher{result: matcher.Result{Status: matcher.StatusNoResults}}
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Title Sin Match", "")
+	h.tryMatchManga(ctx, mangaID, "Title Sin Match")
+
+	status, id := mangadexStatusForManga(t, db, mangaID)
+	if status != "no_results" {
+		t.Errorf("status: esperado no_results, obtenido %q", status)
+	}
+	if id.Valid {
+		t.Error("mangadex_id no debería estar poblado para no_results")
+	}
+}
+
+func TestTryMatchMangaLeavesUnmatchedOnMatcherError(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matcher = &fakeMatcher{err: errors.New("network down")}
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Bleach", "")
+	h.tryMatchManga(ctx, mangaID, "Bleach")
+
+	status, id := mangadexStatusForManga(t, db, mangaID)
+	if status != "unmatched" {
+		t.Errorf("status: esperado unmatched (default de la migration), obtenido %q", status)
+	}
+	if id.Valid {
+		t.Error("mangadex_id no debería estar poblado tras error de matcher")
+	}
+}
+
+func TestTryMatchMangaLeavesUnmatchedOnRateLimited(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matcher = &fakeMatcher{err: mangadex.ErrRateLimited}
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Naruto", "")
+	h.tryMatchManga(ctx, mangaID, "Naruto")
+
+	status, _ := mangadexStatusForManga(t, db, mangaID)
+	if status != "unmatched" {
+		t.Errorf("status: esperado unmatched tras rate limit (worker reintenta luego), obtenido %q", status)
+	}
+}
+
+func TestTryMatchMangaIsNoOpWhenMatcherNotConfigured(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil) // matcher nil
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Vinland Saga", "")
+	h.tryMatchManga(ctx, mangaID, "Vinland Saga")
+
+	status, _ := mangadexStatusForManga(t, db, mangaID)
+	if status != "unmatched" {
+		t.Errorf("sin matcher cableado, debe quedar unmatched, obtenido %q", status)
+	}
+}
+
+func TestUpdateMangadexMatchWithNilID(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "X", "")
+	if err := h.updateMangadexMatch(ctx, mangaID, "no_results", nil); err != nil {
+		t.Fatal(err)
+	}
+	status, id := mangadexStatusForManga(t, db, mangaID)
+	if status != "no_results" {
+		t.Errorf("status: %q", status)
+	}
+	if id.Valid {
+		t.Errorf("mangadex_id debería ser NULL, obtenido %q", id.String)
 	}
 }

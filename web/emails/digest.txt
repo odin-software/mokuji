@@ -1,0 +1,17 @@
+hola,
+
+estos son los capítulos nuevos en tu biblioteca esta semana:
+
+{{range .Items}}
+- {{.MangaTitle}}{{with .ChapterNumber}} · cap {{.}}{{end}}{{with .ChapterTitle}} — {{.}}{{end}}
+  {{.ReaderURL}}
+{{end}}
+
+para darte de baja del resumen semanal:
+{{.UnsubscribeURL}}
+
+o desde {{.BaseURL}}/settings cuando quieras.
+
+—
+mokuji
+{{.BaseURL}}

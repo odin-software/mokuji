@@ -1,0 +1,284 @@
+// Package digest arma y manda el resumen semanal de releases por email
+// (ADR 0013 §6).
+//
+// Responsabilidades:
+//   - query: para un user con email_digest_enabled=1, encontrar caps
+//     publicados desde su last_digest_sent_at (o desde "hace 7 días" la
+//     primera vez), filtrados por idioma preferido + manga en su biblioteca
+//     con status='reading'.
+//   - render: dos plantillas (texto + HTML) embebidas en web/emails/.
+//   - send: email multipart vía email.Client, con headers List-Unsubscribe
+//     firmados con el signer de internal/unsubscribe.
+//   - bookkeeping: tras un envío exitoso, escribir last_digest_sent_at.
+//
+// Un Sender es el componente compartido entre el worker semanal y el endpoint
+// admin de prueba — ambos llaman a Sender.SendToUser(ctx, userID).
+package digest
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"log/slog"
+	"net/url"
+	texttmpl "text/template"
+	"time"
+
+	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+)
+
+// ErrNoNewChapters se devuelve por SendToUser cuando el user no tiene caps
+// nuevos desde su último envío. El worker semanal lo trata como "skip
+// silencioso"; el endpoint admin lo reporta al caller.
+var ErrNoNewChapters = errors.New("sin capítulos nuevos")
+
+// ErrDigestDisabled se devuelve cuando el user tiene email_digest_enabled=0.
+// El worker filtra antes con un query; existe para defensa en el path admin.
+var ErrDigestDisabled = errors.New("digest desactivado para este usuario")
+
+// MaxItemsPerDigest es un tope defensivo sobre el número de caps por email.
+// Si un user vuelve después de 6 meses con 200 caps acumulados, mandamos los
+// 50 más recientes y confiamos en que la página /releases cubre el resto.
+const MaxItemsPerDigest = 50
+
+// firstRunLookback es la ventana inicial cuando last_digest_sent_at IS NULL.
+// Evita que el primer envío incluya el histórico entero.
+const firstRunLookback = 7 * 24 * time.Hour
+
+// Config agrupa las dependencias del Sender.
+type Config struct {
+	DB       *sql.DB
+	Email    *email.Client
+	Signer   *unsubscribe.Signer
+	Emails   fs.FS // contiene digest.txt y digest.html
+	BaseURL  string
+	Logger   *slog.Logger
+}
+
+// Sender arma + envía digests. Construir con New.
+type Sender struct {
+	db       *sql.DB
+	email    *email.Client
+	signer   *unsubscribe.Signer
+	baseURL  string
+	logger   *slog.Logger
+	textTmpl *texttmpl.Template
+	htmlTmpl *template.Template
+	now      func() time.Time // inyectable para tests
+}
+
+// New construye un Sender. Parsea las dos plantillas eagerly para fallar al
+// arranque si están rotas.
+func New(cfg Config) (*Sender, error) {
+	if cfg.DB == nil {
+		return nil, errors.New("DB requerido")
+	}
+	if cfg.Email == nil {
+		return nil, errors.New("Email requerido")
+	}
+	if cfg.Signer == nil {
+		return nil, errors.New("Signer requerido")
+	}
+	if cfg.BaseURL == "" {
+		return nil, errors.New("BaseURL requerido")
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+
+	textTmpl, err := texttmpl.ParseFS(cfg.Emails, "digest.txt")
+	if err != nil {
+		return nil, fmt.Errorf("parsear digest.txt: %w", err)
+	}
+	htmlTmpl, err := template.ParseFS(cfg.Emails, "digest.html")
+	if err != nil {
+		return nil, fmt.Errorf("parsear digest.html: %w", err)
+	}
+
+	return &Sender{
+		db:       cfg.DB,
+		email:    cfg.Email,
+		signer:   cfg.Signer,
+		baseURL:  cfg.BaseURL,
+		logger:   cfg.Logger,
+		textTmpl: textTmpl,
+		htmlTmpl: htmlTmpl,
+		now:      time.Now,
+	}, nil
+}
+
+// Item es una fila del digest: un cap + metadata del manga, suficiente para
+// renderizar línea + link.
+type Item struct {
+	MangaTitle    string
+	ChapterNumber string
+	ChapterTitle  string
+	ReaderURL     string
+}
+
+// templateData es lo que pasamos a las plantillas. Exportado para tests.
+type templateData struct {
+	Items          []Item
+	UnsubscribeURL string
+	BaseURL        string
+}
+
+// SendToUser manda un digest a `userID` si tiene caps nuevos. Devuelve
+// ErrNoNewChapters si no hay nada que mandar (el caller decide loguear o
+// no), ErrDigestDisabled si el user opt-out, u otro error si la query/SMTP
+// fallan.
+//
+// Tras un envío exitoso, actualiza users.last_digest_sent_at al `now()` del
+// Sender — ése es el corte para el próximo digest.
+func (s *Sender) SendToUser(ctx context.Context, userID int64) error {
+	emailAddr, digestEnabled, lastSentAt, err := s.loadUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !digestEnabled {
+		return ErrDigestDisabled
+	}
+
+	since := s.cutoff(lastSentAt)
+	items, err := s.unreadChapters(ctx, userID, since, MaxItemsPerDigest)
+	if err != nil {
+		return fmt.Errorf("query digest: %w", err)
+	}
+	if len(items) == 0 {
+		return ErrNoNewChapters
+	}
+
+	plainBody, htmlBody, err := s.render(userID, items)
+	if err != nil {
+		return fmt.Errorf("render digest: %w", err)
+	}
+
+	now := s.now().UTC()
+	if err := s.email.SendMessage(email.Message{
+		To:        emailAddr,
+		Subject:   s.subject(items),
+		PlainBody: plainBody,
+		HTMLBody:  htmlBody,
+		ExtraHeaders: map[string]string{
+			"List-Unsubscribe":      "<" + s.unsubscribeURL(userID) + ">",
+			"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+		},
+	}); err != nil {
+		return fmt.Errorf("enviar digest: %w", err)
+	}
+
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE users SET last_digest_sent_at = ? WHERE id = ?`,
+		now.Unix(), userID,
+	); err != nil {
+		// El email ya salió. Si falla la escritura, el próximo digest puede
+		// duplicar — preferimos eso a no actualizar y duplicar siempre.
+		s.logger.Error("persistir last_digest_sent_at", "user_id", userID, "err", err)
+	}
+
+	s.logger.Info("digest enviado", "user_id", userID, "items", len(items))
+	return nil
+}
+
+func (s *Sender) loadUser(ctx context.Context, userID int64) (emailAddr string, digestEnabled bool, lastSentAt sql.NullInt64, err error) {
+	var digest int
+	err = s.db.QueryRowContext(ctx, `
+		SELECT email, email_digest_enabled, last_digest_sent_at
+		FROM users
+		WHERE id = ? AND deleted_at IS NULL
+	`, userID).Scan(&emailAddr, &digest, &lastSentAt)
+	if err != nil {
+		return "", false, sql.NullInt64{}, fmt.Errorf("cargar user %d: %w", userID, err)
+	}
+	return emailAddr, digest == 1, lastSentAt, nil
+}
+
+func (s *Sender) cutoff(lastSentAt sql.NullInt64) time.Time {
+	if lastSentAt.Valid {
+		return time.Unix(lastSentAt.Int64, 0).UTC()
+	}
+	return s.now().UTC().Add(-firstRunLookback)
+}
+
+func (s *Sender) unreadChapters(ctx context.Context, userID int64, since time.Time, limit int) ([]Item, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT manga.title, chapter.number, chapter.title, chapter.source_id, chapter.external_url
+		FROM chapter
+		JOIN manga          ON manga.id = chapter.manga_id
+		JOIN library_entries le ON le.manga_id = manga.id
+		JOIN users          ON users.id = le.user_id
+		LEFT JOIN chapter cur ON cur.id = le.last_read_chapter_id
+		WHERE le.user_id = ?
+		  AND le.status = 'reading'
+		  AND chapter.language = users.preferred_language
+		  AND chapter.published_at > ?
+		  AND (cur.published_at IS NULL OR chapter.published_at > cur.published_at)
+		ORDER BY chapter.published_at DESC
+		LIMIT ?
+	`, userID, since.Unix(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Item
+	for rows.Next() {
+		var (
+			it          Item
+			number      sql.NullString
+			title       sql.NullString
+			sourceID    string
+			externalURL sql.NullString
+		)
+		if err := rows.Scan(&it.MangaTitle, &number, &title, &sourceID, &externalURL); err != nil {
+			return nil, err
+		}
+		it.ChapterNumber = number.String
+		it.ChapterTitle = title.String
+		if externalURL.Valid && externalURL.String != "" {
+			it.ReaderURL = externalURL.String
+		} else {
+			it.ReaderURL = "https://mangadex.org/chapter/" + sourceID
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (s *Sender) render(userID int64, items []Item) (plain, html string, err error) {
+	data := templateData{
+		Items:          items,
+		UnsubscribeURL: s.unsubscribeURL(userID),
+		BaseURL:        s.baseURL,
+	}
+
+	var textBuf bytes.Buffer
+	if err := s.textTmpl.ExecuteTemplate(&textBuf, "digest.txt", data); err != nil {
+		return "", "", fmt.Errorf("plain: %w", err)
+	}
+	var htmlBuf bytes.Buffer
+	if err := s.htmlTmpl.ExecuteTemplate(&htmlBuf, "digest.html", data); err != nil {
+		return "", "", fmt.Errorf("html: %w", err)
+	}
+	return textBuf.String(), htmlBuf.String(), nil
+}
+
+func (s *Sender) unsubscribeURL(userID int64) string {
+	token := s.signer.Sign(userID, unsubscribe.ScopeReleasesDigest)
+	q := url.Values{"token": []string{token}}
+	return s.baseURL + "/unsubscribe?" + q.Encode()
+}
+
+// subject genera el subject según cantidad de caps. Específico → mejor preview
+// en clients que muestran preview text.
+func (s *Sender) subject(items []Item) string {
+	if len(items) == 1 {
+		return "1 capítulo nuevo en tu biblioteca"
+	}
+	return fmt.Sprintf("%d capítulos nuevos en tu biblioteca", len(items))
+}

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>capítulos nuevos esta semana — mokuji</title>
+</head>
+<body style="font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; max-width: 40rem; margin: 0 auto; padding: 1.5rem; color: #222; line-height: 1.6;">
+<p>hola,</p>
+<p>estos son los capítulos nuevos en tu biblioteca esta semana:</p>
+<ul style="list-style: none; padding: 0; margin: 0 0 1.5rem;">
+{{range .Items}}
+  <li style="padding: 0.5rem 0; border-bottom: 1px solid #eee;">
+    <strong>{{.MangaTitle}}</strong>{{with .ChapterNumber}} · cap {{.}}{{end}}{{with .ChapterTitle}} — {{.}}{{end}}<br>
+    <a href="{{.ReaderURL}}" style="color: #222;">leer →</a>
+  </li>
+{{end}}
+</ul>
+<p style="font-size: 0.875rem; color: #666;">
+  ¿no querés más resúmenes? <a href="{{.UnsubscribeURL}}" style="color: #666;">darse de baja</a>
+  o gestionalo desde <a href="{{.BaseURL}}/settings" style="color: #666;">tus settings</a>.
+</p>
+<p style="font-size: 0.75rem; color: #999; margin-top: 2rem;">
+  — mokuji · <a href="{{.BaseURL}}" style="color: #999;">{{.BaseURL}}</a>
+</p>
+</body>
+</html>

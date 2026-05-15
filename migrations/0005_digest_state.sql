@@ -1,0 +1,14 @@
+-- Migration 0005: estado de envío del digest semanal por usuario.
+--
+-- Necesitamos saber cuándo fue el último digest mandado a cada user para:
+--   1. Idempotencia: si el worker arranca dos veces el domingo 9am, no
+--      mandar duplicados.
+--   2. Recuperación de crash: si el binario reinicia tras enviar, el
+--      próximo tick no manda de nuevo.
+--   3. Frontera para el query: caps publicados desde last_digest_sent_at
+--      son los que entran al próximo email.
+--
+-- NULL = nunca se envió. En ese caso, el query usa la fecha de creación
+-- del cursor (last_read_chapter_id) o el "hace 7 días" para no spamear
+-- con todo el histórico en el primer envío.
+ALTER TABLE users ADD COLUMN last_digest_sent_at INTEGER;

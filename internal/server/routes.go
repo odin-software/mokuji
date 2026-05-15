@@ -41,6 +41,9 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Unsubscribe != nil {
 		s.cfg.Unsubscribe.Mount(mux)
 	}
+	if s.cfg.Admin != nil {
+		s.cfg.Admin.Mount(mux)
+	}
 	if s.cfg.StaticAssets != nil {
 		s.mountPWA(mux)
 	}

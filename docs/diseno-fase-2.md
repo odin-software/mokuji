@@ -463,12 +463,12 @@ Modifica ADR 0007 (email transport): auth emails siguen plain, product emails pa
    6. ✅ **Cursor de lectura**: `POST /releases/mark-read` avanza `library_entries.last_read_chapter_id`. Subselect garantiza que el cap pertenezca a la biblioteca del user.
    7. ✅ **Setting de email digest**: toggle en `/settings` + checkbox default ON en signup (`/auth/verify`).
    8. ✅ **Unsubscribe endpoint**: paquete `internal/unsubscribe` con signer HMAC + `GET /unsubscribe` (confirmación) + `POST /unsubscribe` (one-click, RFC 8058 compatible). Env var `UNSUBSCRIBE_SECRET`. Idempotente.
-   9. **Endpoint admin de prueba**: `POST /admin/trigger-digest` autenticado vía `ADMIN_TOKEN` env var.
-   10. **Worker de digest semanal**: cron interno domingo 9am UTC, query de caps nuevos por user opt-in, render plain + HTML básico, mandar vía cliente SMTP existente (`internal/email`) con headers `List-Unsubscribe` + `List-Unsubscribe-Post` apuntando al endpoint del paso 8.
+   9. ✅ **Endpoint admin de prueba**: paquete `internal/admin` con `POST /admin/trigger-digest` autenticado vía `Authorization: Bearer $ADMIN_TOKEN`. Acepta `user_id` o `email`. Vacío = endpoint deshabilitado.
+   10. ✅ **Worker de digest semanal**: `internal/releases/digest` con Sender (render multipart plain+HTML básico, headers List-Unsubscribe firmados) + Worker (tick 1h, dispara domingos 9am UTC, idempotente vía `users.last_digest_sent_at`). Cliente SMTP soporta multipart via `SendMessage`.
    11. **Export de data**: `GET /settings/export` que serializa el user a JSON y devuelve como descarga.
    12. **Account deletion**: `POST /settings/delete-account/request` + `/confirm` con re-OTP. Soft delete + cron diario para hard delete después de 7 días.
    13. **Actualizar ADR 0007**: nota sobre product emails multipart vs auth emails plain.
-   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md), `.env.example` (nuevas env vars: `ADMIN_TOKEN`, `DELETION_LOG_PEPPER`). `UNSUBSCRIBE_SECRET` ya agregado en el paso 8.
+   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md), `.env.example` (`DELETION_LOG_PEPPER`). `UNSUBSCRIBE_SECRET` y `ADMIN_TOKEN` ya agregados en los pasos 8 y 9.
    15. **Bump `VERSION`** a `v0.2.0` antes de mergear a `main` (release feature-mayor visible al usuario).
 3. PR `fase-2-release-tracking` → `main` cuando esté todo verde. CD deploya automático.
 4. Mover este archivo a `docs/archivo/diseno-fase-2.md` o eliminarlo (decisión post-merge).

@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"git.odin.do/kengru/mokuji/internal/admin"
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
@@ -33,6 +34,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
+	"git.odin.do/kengru/mokuji/internal/releases/digest"
 	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
@@ -208,6 +210,42 @@ func main() {
 		log.Fatalf("configurar unsubscribe: %v", err)
 	}
 
+	// Digest semanal: Sender (compartido entre worker y endpoint admin) +
+	// worker goroutine que dispara domingos 9am UTC (ADR 0013 §6).
+	digestSender, err := digest.New(digest.Config{
+		DB:      db,
+		Email:   emailClient,
+		Signer:  unsubSigner,
+		Emails:  emailFS,
+		BaseURL: envOr("BASE_URL", "http://localhost:8080"),
+		Logger:  logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar digest sender: %v", err)
+	}
+	digestWorker, err := digest.NewWorker(digest.WorkerConfig{
+		DB:     db,
+		Sender: digestSender,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar digest worker: %v", err)
+	}
+	go digestWorker.Run(rootCtx)
+
+	// Endpoint admin para disparar digests manualmente (test/QA). Si
+	// ADMIN_TOKEN está vacío, el endpoint responde 401 a todo — feature
+	// "off" sin código condicional adicional.
+	adminHandler, err := admin.New(admin.Config{
+		DB:     db,
+		Token:  os.Getenv("ADMIN_TOKEN"),
+		Digest: digestSender,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar admin: %v", err)
+	}
+
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
@@ -234,6 +272,7 @@ func main() {
 		Profile:      profileHandler,
 		Releases:     releasesHandler,
 		Unsubscribe:  unsubHandler,
+		Admin:        adminHandler,
 		StaticAssets: webFS,
 	})
 

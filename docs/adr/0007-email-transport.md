@@ -66,3 +66,13 @@ Cambiar de Resend a otro provider solo si:
 
 - Resend cambia pricing o políticas de forma que rompa el modelo, o
 - Aparecen problemas de deliverability concretos contra los inboxes de los usuarios
+
+## Nota — Fase 2 (2026-05): product emails multipart
+
+La fase 2 introduce el **digest semanal de releases** ([ADR 0013](0013-fase-2-release-tracking.md) §6). Ese tipo de email requiere headers extra (`List-Unsubscribe`, `List-Unsubscribe-Post` para RFC 8058 one-click) y se beneficia de una versión HTML básica para que los clientes con preview muestren formato razonable.
+
+Decisión derivada, sin abrir un ADR nuevo porque cumple la regla de evolución de arriba:
+
+- **Auth emails (OTP) siguen siendo plain-text via `Client.Send`**. Sin cambios. El auto-fill de iOS/Android y la distinción contra phishing pesan más que la estética acá.
+- **Product emails (digest, eventualmente notificaciones) usan `Client.SendMessage`**, que arma `multipart/alternative` con plain + HTML básico y permite `ExtraHeaders`. El HTML no tiene branding aún — es solo formato mínimo (lista, links).
+- Ambos métodos comparten el mismo cliente SMTP y la misma config; lo único que cambia es el formato del mensaje.

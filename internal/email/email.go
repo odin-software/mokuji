@@ -86,6 +86,13 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
+// SetSendMailForTesting reemplaza el sender SMTP por uno fake. Solo para
+// tests de paquetes consumidores (ej. internal/releases/digest) — ningún
+// uso fuera de tests. La firma es la de net/smtp.SendMail.
+func (c *Client) SetSendMailForTesting(fn func(addr string, a smtp.Auth, from string, to []string, msg []byte) error) {
+	c.sendMail = fn
+}
+
 // Send envía un email plain-text al destinatario.
 func (c *Client) Send(to, subject, body string) error {
 	if _, err := mail.ParseAddress(to); err != nil {

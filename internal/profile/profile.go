@@ -96,6 +96,7 @@ func New(cfg Config) (*Handler, error) {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings", h.settings)
 	mux.HandleFunc("POST /settings", h.updateSettings)
+	mux.HandleFunc("GET /settings/export", h.exportData)
 	mux.HandleFunc("GET /u/{id}", h.publicProfile)
 }
 

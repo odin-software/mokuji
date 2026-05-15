@@ -281,7 +281,11 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.findOrCreateUser(r.Context(), emailAddr)
+	// El checkbox solo aplica si este verify resulta en signup (user nuevo).
+	// Para login (user existente) el valor previo se preserva intacto.
+	digestOptIn := r.PostFormValue("digest_opt_in") == "on"
+
+	userID, err := h.findOrCreateUser(r.Context(), emailAddr, digestOptIn)
 	if err != nil {
 		h.logger.Error("crear usuario", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -367,8 +371,9 @@ func (h *Handler) consumeCode(ctx context.Context, email, code string) (bool, er
 }
 
 // findOrCreateUser retorna el id del usuario con el email dado, creando uno
-// nuevo si no existe.
-func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string) (int64, error) {
+// nuevo si no existe. digestOptIn solo se aplica en signup (creación):
+// para users existentes el valor previo de email_digest_enabled se preserva.
+func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string, digestOptIn bool) (int64, error) {
 	var id int64
 	err := h.db.QueryRowContext(ctx,
 		`SELECT id FROM users WHERE email = ?`, emailAddr,
@@ -380,9 +385,13 @@ func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string) (int64
 		return 0, err
 	}
 
+	digestVal := 0
+	if digestOptIn {
+		digestVal = 1
+	}
 	res, err := h.db.ExecContext(ctx,
-		`INSERT INTO users (email, created_at) VALUES (?, ?)`,
-		emailAddr, time.Now().UTC().Unix(),
+		`INSERT INTO users (email, created_at, email_digest_enabled) VALUES (?, ?, ?)`,
+		emailAddr, time.Now().UTC().Unix(), digestVal,
 	)
 	if err != nil {
 		return 0, err

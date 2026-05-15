@@ -11,6 +11,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"git.odin.do/kengru/mokuji/internal/migrations"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -21,17 +23,8 @@ func setupDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	for _, name := range []string{
-		"../../migrations/0001_users_and_sessions.sql",
-		"../../migrations/0002_otp_codes.sql",
-	} {
-		bs, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("leer %s: %v", name, err)
-		}
-		if _, err := db.Exec(string(bs)); err != nil {
-			t.Fatalf("aplicar %s: %v", name, err)
-		}
+	if _, err := migrations.Run(db, os.DirFS("../../migrations")); err != nil {
+		t.Fatalf("aplicar migrations: %v", err)
 	}
 	return db
 }
@@ -191,7 +184,7 @@ func TestFindOrCreateUserCreates(t *testing.T) {
 	h := newTestHandler(t, db)
 	ctx := context.Background()
 
-	id, err := h.findOrCreateUser(ctx, "new@example.com")
+	id, err := h.findOrCreateUser(ctx, "new@example.com", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,13 +207,13 @@ func TestFindOrCreateUserReturnsExisting(t *testing.T) {
 	ctx := context.Background()
 
 	// Crear primero
-	id1, err := h.findOrCreateUser(ctx, "existing@example.com")
+	id1, err := h.findOrCreateUser(ctx, "existing@example.com", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Segunda invocación debe devolver el mismo id, sin crear nuevo.
-	id2, err := h.findOrCreateUser(ctx, "existing@example.com")
+	id2, err := h.findOrCreateUser(ctx, "existing@example.com", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,6 +227,62 @@ func TestFindOrCreateUserReturnsExisting(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("se creó duplicado: %d filas", count)
+	}
+}
+
+func TestFindOrCreateUserPersistsDigestOptInOnSignup(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	ctx := context.Background()
+
+	cases := []struct {
+		name   string
+		optIn  bool
+		expect int
+	}{
+		{"opt-in true", true, 1},
+		{"opt-in false", false, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			email := "u-" + tc.name + "@example.com"
+			id, err := h.findOrCreateUser(ctx, email, tc.optIn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got int
+			if err := db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, id).Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.expect {
+				t.Errorf("email_digest_enabled: esperado %d, obtenido %d", tc.expect, got)
+			}
+		})
+	}
+}
+
+func TestFindOrCreateUserPreservesDigestOnLogin(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	ctx := context.Background()
+
+	// Signup con opt-in=false (digest desactivado).
+	id, err := h.findOrCreateUser(ctx, "alice@example.com", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// "Login" (re-invocación) con opt-in=true NO debe activarlo.
+	if _, err := h.findOrCreateUser(ctx, "alice@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+
+	var got int
+	if err := db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, id).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != 0 {
+		t.Errorf("login no debe alterar digest existente; esperado 0, obtenido %d", got)
 	}
 }
 

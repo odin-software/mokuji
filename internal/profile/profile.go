@@ -102,10 +102,11 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // ---- /settings ----
 
 type settingsData struct {
-	Session    *session.Session
-	Visibility string
-	Email      string
-	Saved      bool
+	Session       *session.Session
+	Visibility    string
+	Email         string
+	DigestEnabled bool
+	Saved         bool
 }
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
@@ -114,10 +115,13 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var visibility, emailAddr string
+	var (
+		visibility, emailAddr string
+		digestEnabled         int
+	)
 	err := h.db.QueryRowContext(r.Context(),
-		`SELECT list_visibility, email FROM users WHERE id = ?`, s.UserID,
-	).Scan(&visibility, &emailAddr)
+		`SELECT list_visibility, email, email_digest_enabled FROM users WHERE id = ?`, s.UserID,
+	).Scan(&visibility, &emailAddr, &digestEnabled)
 	if err != nil {
 		h.logger.Error("cargar settings", "err", err, "user_id", s.UserID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -125,10 +129,11 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "settings.html", settingsData{
-		Session:    s,
-		Visibility: visibility,
-		Email:      emailAddr,
-		Saved:      r.URL.Query().Get("saved") == "1",
+		Session:       s,
+		Visibility:    visibility,
+		Email:         emailAddr,
+		DigestEnabled: digestEnabled == 1,
+		Saved:         r.URL.Query().Get("saved") == "1",
 	})
 }
 
@@ -149,15 +154,26 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.db.ExecContext(r.Context(),
-		`UPDATE users SET list_visibility = ? WHERE id = ?`, vis, s.UserID,
-	); err != nil {
-		h.logger.Error("actualizar visibilidad", "err", err)
+	digestEnabled := r.PostFormValue("email_digest_enabled") == "on"
+
+	if _, err := h.db.ExecContext(r.Context(), `
+		UPDATE users
+		SET list_visibility = ?, email_digest_enabled = ?
+		WHERE id = ?
+	`, vis, boolToInt(digestEnabled), s.UserID); err != nil {
+		h.logger.Error("actualizar settings", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ---- /u/{id} ----

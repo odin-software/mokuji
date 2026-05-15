@@ -16,6 +16,13 @@
       required
       autofocus>
   </label>
+  <label class="checkbox">
+    <input type="checkbox" name="digest_opt_in" checked>
+    <span>
+      <strong>recibir resumen semanal</strong>
+      <span class="muted">solo se aplica si es tu primera vez; podés cambiarlo en /settings cuando quieras</span>
+    </span>
+  </label>
   <button type="submit">entrar</button>
 </form>
 <p class="muted"><a href="/auth?email={{.Email}}">pedir otro código</a></p>

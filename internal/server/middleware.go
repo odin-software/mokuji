@@ -81,6 +81,28 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// contentSecurityPolicy es la directiva CSP que mokuji aplica a todas las
+// respuestas. Notas:
+//   - script-src 'self': solo scripts desde nuestro propio origen. Los
+//     inline scripts ya no se permiten (extraímos el registro del SW a
+//     /static/app.js para que pase).
+//   - style-src 'self' 'unsafe-inline': layout.html todavía tiene un <style>
+//     embedido; cuando se extraiga ese CSS a /static/app.css se puede
+//     remover 'unsafe-inline'.
+//   - img-src 'self' https: data:: covers de AniList vienen de CDNs HTTPS
+//     que cambian de hostname; permitir 'https:' es pragmático.
+//   - frame-ancestors 'none': equivalente moderno de X-Frame-Options DENY.
+//   - form-action 'self': los forms solo postean a mokuji.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' https: data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"object-src 'none'"
+
 // securityHeaders setea headers de seguridad estándar en todas las respuestas.
 //
 // Headers incluidos:
@@ -92,11 +114,8 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 //   - X-Content-Type-Options nosniff: evita que el browser adivine MIME types.
 //   - Referrer-Policy strict-origin-when-cross-origin: comparte origin
 //     cross-site, full URL same-site, nada en downgrade HTTP/HTTPS.
+//   - Content-Security-Policy: ver contentSecurityPolicy arriba.
 //   - Permissions-Policy: bloquea explícitamente APIs sensibles que no usamos.
-//
-// Pendiente: Content-Security-Policy. Hoy layout.html tiene un <script>
-// inline para registrar el service worker; meter CSP estricta lo rompería.
-// CSP entra cuando se extraiga ese script a /static/app.js.
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -104,6 +123,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
 		next.ServeHTTP(w, r)
 	})

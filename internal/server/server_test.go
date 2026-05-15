@@ -46,6 +46,7 @@ func TestSecurityHeaders(t *testing.T) {
 		"X-Frame-Options":           "DENY",
 		"X-Content-Type-Options":    "nosniff",
 		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Content-Security-Policy":   "default-src 'self'",
 		"Permissions-Policy":        "camera=()",
 	}
 	for name, wantContains := range cases {

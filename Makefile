@@ -25,7 +25,7 @@ build:
 # Usa -trimpath para builds reproducibles y -ldflags='-s -w' para strippear
 # debug info y bajar tamaño ~30%.
 build-linux-amd64:
-	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ./bin/mokuji-linux-amd64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ./bin/mokuji-linux-amd64 .
 
 # Levanta servicios locales con docker compose.
 compose-up:

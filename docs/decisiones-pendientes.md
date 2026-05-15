@@ -46,6 +46,19 @@ Para soportarlo: detectar puerto 465 (o un flag `SMTP_TLS_MODE=implicit`) y hace
 
 Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525` muchos providers) cubren todos los casos comunes.
 
+## CI: correr tests en el workflow antes de deployar
+
+Hoy `.forgejo/workflows/deploy.yml` solo hace `make build-linux-amd64` y llama a `mokuji-deploy`. No corre el suite de tests. Eso significa que un push a `main` con tests rotos igual deploya — el binario buildea pero la lógica puede estar quebrada.
+
+Cambio mínimo: agregar un step antes del build:
+
+```yaml
+- name: Run tests
+  run: go test ./...
+```
+
+Si `go test` no está disponible en el host del runner, instalar Go o usar un container action. Prioridad: media — bajo riesgo hoy porque los pushes a main pasan revisión local, pero antes de que más gente contribuya conviene cerrarlo.
+
 ## Pendientes de explicación (no son decisiones, son aprendizaje)
 
 - **Passkeys / WebAuthn**: cómo se implementaría aunque no se haga ahora. Cubrir registration vs authentication ceremony, origin-binding criptográfico, almacenamiento server-side de public keys, recuperación multi-dispositivo, fallback path si el usuario pierde acceso a todos sus passkeys.

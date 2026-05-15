@@ -52,57 +52,56 @@ Migración nueva (`migrations/0004_release_tracking.sql` tentativo):
 
 ```sql
 -- Vínculo AniList ↔ MangaDex (compartido entre users)
-ALTER TABLE mangas ADD COLUMN mangadex_id TEXT;
-ALTER TABLE mangas ADD COLUMN mangadex_status TEXT
-    DEFAULT 'unmatched'
+ALTER TABLE manga ADD COLUMN mangadex_id TEXT;
+ALTER TABLE manga ADD COLUMN mangadex_status TEXT NOT NULL DEFAULT 'unmatched'
     CHECK (mangadex_status IN ('unmatched','matched','needs_review','no_results'));
-ALTER TABLE mangas ADD COLUMN mangadex_checked_at TIMESTAMP;
-ALTER TABLE mangas ADD COLUMN mangadex_next_check_at TIMESTAMP;
-CREATE INDEX idx_mangas_mangadex_next_check
-    ON mangas(mangadex_next_check_at)
+ALTER TABLE manga ADD COLUMN mangadex_checked_at INTEGER;     -- unix epoch
+ALTER TABLE manga ADD COLUMN mangadex_next_check_at INTEGER;  -- unix epoch
+CREATE INDEX idx_manga_mangadex_next_check
+    ON manga(mangadex_next_check_at)
     WHERE mangadex_id IS NOT NULL;
 
 -- Capítulos del manga (compartido entre users)
-CREATE TABLE chapters (
-    id INTEGER PRIMARY KEY,
-    manga_id INTEGER NOT NULL REFERENCES mangas(id),
-    source TEXT NOT NULL,        -- 'mangadex' por ahora
-    source_id TEXT NOT NULL,     -- UUID del cap en MangaDex
-    number TEXT,                 -- '125', '125.5', 'Special' (TEXT por flexibilidad)
-    title TEXT,
-    language TEXT,               -- 'en', 'es', ...
-    published_at TIMESTAMP,
-    external_url TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(source, source_id)
+CREATE TABLE chapter (
+    id            INTEGER PRIMARY KEY,
+    manga_id      INTEGER NOT NULL REFERENCES manga(id) ON DELETE CASCADE,
+    source        TEXT    NOT NULL,   -- 'mangadex' por ahora
+    source_id     TEXT    NOT NULL,   -- UUID del cap en MangaDex
+    number        TEXT,                -- '125', '125.5', 'Special' (TEXT por flexibilidad)
+    title         TEXT,
+    language      TEXT,                -- 'en', 'es', ...
+    published_at  INTEGER,             -- unix epoch
+    external_url  TEXT,
+    created_at    INTEGER NOT NULL,
+    UNIQUE (source, source_id)
 );
-CREATE INDEX idx_chapters_manga_published
-    ON chapters(manga_id, published_at DESC);
+CREATE INDEX idx_chapter_manga_published
+    ON chapter(manga_id, published_at DESC);
 
 -- Cursor de lectura del usuario por entry
 -- (ver Decisión 9: cursor en lugar de tabla chapter_reads granular)
-ALTER TABLE library_entries
-    ADD COLUMN last_read_chapter_id INTEGER REFERENCES chapters(id);
+ALTER TABLE library_entries ADD COLUMN last_read_chapter_id INTEGER
+    REFERENCES chapter(id) ON DELETE SET NULL;
 
 -- Setting de email digest (default ON, ver Decisión 6)
 ALTER TABLE users ADD COLUMN email_digest_enabled INTEGER NOT NULL DEFAULT 1;
 
+-- Idioma preferido para releases (ver Decisión 8)
+ALTER TABLE users ADD COLUMN preferred_language TEXT NOT NULL DEFAULT 'en';
+
 -- Soft-delete con período de gracia (ver Decisión 11)
-ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN deleted_at INTEGER;  -- unix epoch
+CREATE INDEX idx_users_deleted_at ON users(deleted_at) WHERE deleted_at IS NOT NULL;
 
 -- Log de borrado (ver Decisión 11)
 CREATE TABLE deletion_log (
-    user_id_hash TEXT PRIMARY KEY,  -- SHA-256(user_id || pepper)
-    deleted_at TIMESTAMP NOT NULL DEFAULT (datetime('now'))
+    user_id_hash TEXT    PRIMARY KEY,  -- SHA-256(user_id || pepper)
+    deleted_at   INTEGER NOT NULL
 );
 
--- Tokens de unsubscribe / one-click (ver Decisión 6)
-CREATE TABLE unsubscribe_tokens (
-    token TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    scope TEXT NOT NULL,         -- 'releases_digest'
-    created_at TIMESTAMP NOT NULL DEFAULT (datetime('now'))
-);
+-- Sin tabla unsubscribe_tokens: los tokens son HMAC firmados con secret
+-- server-side, sin storage. Validación en endpoint /unsubscribe con
+-- rechazo si created_at embebido > 90 días.
 ```
 
 **Razón.** Mangas y chapters normalizados (uno por manga, compartido entre users) sigue la línea de ADR de fase 1. Idioma como columna en chapters permite filtrar por preferencia del usuario sin tabla aparte. `mangadex_next_check_at` permite scheduling por manga sin tabla de cola. Indices cubren las queries del worker (`WHERE next_check_at < now`) y de listado (`WHERE manga_id = X ORDER BY published_at DESC`).
@@ -113,12 +112,12 @@ CREATE TABLE unsubscribe_tokens (
 - Schedule con `time.Ticker` cada 1h.
 - En cada tick:
   ```sql
-  SELECT id, mangadex_id FROM mangas
+  SELECT id, mangadex_id FROM manga
   WHERE mangadex_id IS NOT NULL
-    AND (mangadex_next_check_at IS NULL OR mangadex_next_check_at < now())
+    AND (mangadex_next_check_at IS NULL OR mangadex_next_check_at < unixepoch())
     AND EXISTS (
       SELECT 1 FROM library_entries
-      WHERE manga_id = mangas.id AND status = 'reading'
+      WHERE manga_id = manga.id AND status = 'reading'
     )
   ORDER BY mangadex_next_check_at NULLS FIRST
   LIMIT 50;
@@ -127,7 +126,7 @@ CREATE TABLE unsubscribe_tokens (
 - Concurrencia: **1 manga a la vez** dentro de la goroutine. MangaDex sugiere rate limit conservador (5 req/seg global por IP); con 1/seg sostenido cubrimos hasta 600 mangas/hora sin acercarnos al límite.
 - Sin checkpoint complejo: si el binario reinicia mid-poll, el siguiente tick toma desde donde quedó (ya hay `next_check_at` persistido).
 
-**Razón.** Goroutine in-process es lo más simple coherente con el resto del stack (un solo binario, un solo proceso). Cola implícita via `next_check_at` en la tabla `mangas` evita necesidad de una tabla de jobs. Filtro `EXISTS reading` evita pollear mangas que nadie lee.
+**Razón.** Goroutine in-process es lo más simple coherente con el resto del stack (un solo binario, un solo proceso). Cola implícita via `next_check_at` en la tabla `manga` evita necesidad de una tabla de jobs. Filtro `EXISTS reading` evita pollear mangas que nadie lee.
 
 ### 6. Notificación
 
@@ -192,13 +191,13 @@ CREATE TABLE unsubscribe_tokens (
 ### 9. Marcar como leído (cursor)
 
 - **Cursor por chapter_id**, no tabla `chapter_reads` granular.
-- Columna nueva: `library_entries.last_read_chapter_id INTEGER REFERENCES chapters(id)`.
+- Columna nueva: `library_entries.last_read_chapter_id INTEGER REFERENCES chapter(id) ON DELETE SET NULL`.
 - "Caps no leídos del user X en manga M":
   ```sql
-  SELECT * FROM chapters
+  SELECT * FROM chapter
   WHERE manga_id = M
     AND published_at > (
-      SELECT published_at FROM chapters WHERE id = (
+      SELECT published_at FROM chapter WHERE id = (
         SELECT last_read_chapter_id FROM library_entries
         WHERE user_id = X AND manga_id = M
       )
@@ -229,7 +228,7 @@ CREATE TABLE unsubscribe_tokens (
 - **Soft delete con gracia de 7 días**:
   - Mientras `deleted_at IS NOT NULL` y `deleted_at + 7 días > now()`: el usuario no puede loguear normalmente, pero un intento de login muestra "tu cuenta está pendiente de borrado, ¿cancelar?" con un botón que setea `deleted_at = NULL`.
   - Cron diario (puede ser otra goroutine en el mismo binario) hace hard delete de users con `deleted_at + 7 días < now()`.
-- **Hard delete**: borra `users`, `library_entries` del user, `sessions`, `login_codes`, `unsubscribe_tokens`. **No** borra `mangas` ni `chapters` (data compartida).
+- **Hard delete**: borra `users`, `library_entries` del user, `sessions`, `login_codes`. **No** borra `manga` ni `chapter` (data compartida). No hay tabla `unsubscribe_tokens` que limpiar (los tokens son HMAC sin storage).
 - **Audit log mínimo**: tabla `deletion_log(user_id_hash, deleted_at)`. `user_id_hash = SHA-256(user_id || pepper)` donde `pepper` es env var. No es PII recuperable; suficiente para responder a soporte tipo "borré mi cuenta hace un mes, ¿la restauran?" → "no, fue hard delete hace 23 días".
 
 **Razón.** Filosofía Odin (el usuario es dueño de sus datos) + compliance GDPR/LGPD. Soft delete con gracia balancea "right to erasure" con la realidad de que la gente se arrepiente de clicks impulsivos. Hash de audit log permite trazabilidad sin retener PII.
@@ -280,3 +279,7 @@ Revisitar fase 2 cuando:
 - DB pase los 100MB o queries de releases se degraden — considerar podar caps con >2 años o vacuum periódico.
 - Aparezcan features sociales (feed público, etc.) — revisitar visibility de `/releases` (Dim 2).
 - Llegue feedback consistente sobre granularidad de "marcado como leído" — considerar tabla `chapter_reads` opcional.
+
+## Nota de corrección (2026-05-15)
+
+Las menciones de schema en §4 y §5 originalmente usaban `mangas` (plural) y `chapters` con tipos `TIMESTAMP DEFAULT (datetime('now'))`. Corregido a `manga` y `chapter` (singular, consistente con [migración 0003](../../migrations/0003_library.sql)) y tipos `INTEGER` (unix epoch, consistente con el patrón existente del repo). Las decisiones (relaciones, semántica, columnas) no cambiaron — fue corrección de transcripción. La migration real es [migrations/0004_release_tracking.sql](../../migrations/0004_release_tracking.sql).

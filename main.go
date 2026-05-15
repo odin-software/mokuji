@@ -38,6 +38,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/unsubscribe"
 )
 
 //go:embed migrations/*.sql
@@ -181,6 +182,32 @@ func main() {
 		log.Fatalf("configurar releases: %v", err)
 	}
 
+	// Signer de tokens HMAC para opt-out de emails (ADR 0013 §6, RFC 8058).
+	// El secret es server-side; rotarlo invalida todos los links de baja
+	// pendientes. En dev usamos default fijo si no hay env var, en prod
+	// fallamos rápido para evitar firmas con secret nulo.
+	unsubSecret := os.Getenv("UNSUBSCRIBE_SECRET")
+	if unsubSecret == "" {
+		if envBool("SECURE_COOKIES", false) {
+			log.Fatal("UNSUBSCRIBE_SECRET requerido en producción")
+		}
+		unsubSecret = "dev-unsubscribe-secret-no-uses-en-produccion-32b!!"
+		logger.Warn("UNSUBSCRIBE_SECRET no configurado, usando default de dev")
+	}
+	unsubSigner, err := unsubscribe.NewSigner([]byte(unsubSecret))
+	if err != nil {
+		log.Fatalf("configurar unsubscribe signer: %v", err)
+	}
+	unsubHandler, err := unsubscribe.New(unsubscribe.Config{
+		DB:            db,
+		Signer:        unsubSigner,
+		HTMLTemplates: htmlFS,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar unsubscribe: %v", err)
+	}
+
 	go cleanupSessions(rootCtx, sessions, logger)
 
 	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
@@ -206,6 +233,7 @@ func main() {
 		Library:      libraryHandler,
 		Profile:      profileHandler,
 		Releases:     releasesHandler,
+		Unsubscribe:  unsubHandler,
 		StaticAssets: webFS,
 	})
 

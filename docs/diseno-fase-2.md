@@ -455,20 +455,20 @@ Modifica ADR 0007 (email transport): auth emails siguen plain, product emails pa
 
 1. ✅ ADR 0013 escrito y aceptado.
 2. Plan de commits en branch `fase-2-release-tracking` (este branch):
-   1. **Migration**: `migrations/0004_release_tracking.sql` con columnas en `mangas`, `library_entries`, `users` + tablas `chapters`, `deletion_log`. (Schema completo en ADR 0013 §4.)
-   2. **Cliente MangaDex**: paquete `internal/mangadex` con cliente HTTP, tests contra fixtures de respuestas reales.
-   3. **Matching híbrido**: integrar al flujo de `library/add` — buscar en MangaDex al agregar, autolinkear si score alto, marcar `needs_review` si no. UI nueva en `/library/entry/{id}` para corregir match manualmente.
-   4. **Worker periódico**: goroutine en `main.go` + paquete `internal/releases/worker` con `time.Ticker`, query de mangas a chequear, persist de caps nuevos, backoff.
-   5. **Página `/releases`**: handler en `internal/releases` (paquete nuevo o dentro de `library`) listando caps no leídos por user. Widget "últimos releases" en home.
-   6. **Cursor de lectura**: UI en `/releases` y `/library/entry/{id}` para "marcar leído hasta este cap". Actualiza `library_entries.last_read_chapter_id`.
-   7. **Setting de email digest**: toggle en `/settings` + checkbox default ON en signup (`/auth/start` o paso posterior).
-   8. **Endpoint admin de prueba**: `POST /admin/trigger-digest?user=<email>` autenticado vía `ADMIN_TOKEN` env var.
-   9. **Worker de digest semanal**: cron interno domingo 9am UTC, query de caps nuevos por user opt-in, render plain + HTML, mandar vía cliente SMTP existente (`internal/email`) con headers `List-Unsubscribe`.
-   10. **Unsubscribe endpoint**: `POST /unsubscribe` con token HMAC, marca `email_digest_enabled = 0`. Headers en cada email saliente.
+   1. ✅ **Migration**: `migrations/0004_release_tracking.sql` con columnas en `manga`, `library_entries`, `users` + tablas `chapter`, `deletion_log`. (Schema en ADR 0013 §4.)
+   2. ✅ **Cliente MangaDex**: paquete `internal/mangadex` con cliente HTTP, rate limit cliente-side, retry on 429/5xx.
+   3. ✅ **Matching híbrido**: paquete `internal/releases/matcher` (exact-match normalizado) integrado al flujo de `library/add`. Errores best-effort: el add nunca falla por el matcher.
+   4. ✅ **Worker periódico**: goroutine en `main.go` + paquete `internal/releases/worker`, tick 1h, query con `next_check_at` vencido + `EXISTS reading`, persist de caps nuevos.
+   5. ✅ **Página `/releases`**: handler en `internal/releases/handler` listando caps no leídos por user. (Widget "últimos releases" en home: postergado.)
+   6. ✅ **Cursor de lectura**: `POST /releases/mark-read` avanza `library_entries.last_read_chapter_id`. Subselect garantiza que el cap pertenezca a la biblioteca del user.
+   7. ✅ **Setting de email digest**: toggle en `/settings` + checkbox default ON en signup (`/auth/verify`).
+   8. ✅ **Unsubscribe endpoint**: paquete `internal/unsubscribe` con signer HMAC + `GET /unsubscribe` (confirmación) + `POST /unsubscribe` (one-click, RFC 8058 compatible). Env var `UNSUBSCRIBE_SECRET`. Idempotente.
+   9. **Endpoint admin de prueba**: `POST /admin/trigger-digest` autenticado vía `ADMIN_TOKEN` env var.
+   10. **Worker de digest semanal**: cron interno domingo 9am UTC, query de caps nuevos por user opt-in, render plain + HTML básico, mandar vía cliente SMTP existente (`internal/email`) con headers `List-Unsubscribe` + `List-Unsubscribe-Post` apuntando al endpoint del paso 8.
    11. **Export de data**: `GET /settings/export` que serializa el user a JSON y devuelve como descarga.
    12. **Account deletion**: `POST /settings/delete-account/request` + `/confirm` con re-OTP. Soft delete + cron diario para hard delete después de 7 días.
    13. **Actualizar ADR 0007**: nota sobre product emails multipart vs auth emails plain.
-   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md), `.env.example` (nuevas env vars: `ADMIN_TOKEN`, `UNSUBSCRIBE_SECRET`, `DELETION_LOG_PEPPER`).
+   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md), `.env.example` (nuevas env vars: `ADMIN_TOKEN`, `DELETION_LOG_PEPPER`). `UNSUBSCRIBE_SECRET` ya agregado en el paso 8.
    15. **Bump `VERSION`** a `v0.2.0` antes de mergear a `main` (release feature-mayor visible al usuario).
 3. PR `fase-2-release-tracking` → `main` cuando esté todo verde. CD deploya automático.
 4. Mover este archivo a `docs/archivo/diseno-fase-2.md` o eliminarlo (decisión post-merge).

@@ -1,0 +1,26 @@
+{{define "title"}}darse de baja — mokuji{{end}}
+{{define "content"}}
+<h1>darse de baja</h1>
+
+{{if eq .State "valid"}}
+  <p>confirmá que querés dejar de recibir el resumen semanal de releases.</p>
+  <form method="POST" action="/unsubscribe">
+    {{ csrfInput .Session }}
+    <input type="hidden" name="token" value="{{.Token}}">
+    <button type="submit">darme de baja</button>
+  </form>
+  <p class="muted">también podés gestionar esto desde <a href="/settings">/settings</a> si tenés sesión.</p>
+
+{{else if eq .State "done"}}
+  <p class="success">listo, no vas a recibir más resúmenes semanales.</p>
+  <p class="muted">si cambiás de opinión, lo podés re-activar desde <a href="/settings">/settings</a>.</p>
+
+{{else if eq .State "expired"}}
+  <p class="error">este link expiró.</p>
+  <p>los links de baja duran 90 días desde que se envía el email. iniciá sesión y desactivá el resumen desde <a href="/settings">/settings</a>.</p>
+
+{{else}}
+  <p class="error">link inválido.</p>
+  <p>el link puede estar incompleto o haberse copiado mal. iniciá sesión y desactivá el resumen desde <a href="/settings">/settings</a>.</p>
+{{end}}
+{{end}}

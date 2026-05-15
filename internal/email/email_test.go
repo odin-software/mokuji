@@ -164,3 +164,109 @@ func TestSendPropagatesSMTPError(t *testing.T) {
 		t.Errorf("error no propaga causa: %v", err)
 	}
 }
+
+func TestSendMessagePlainOnly(t *testing.T) {
+	c := newTestClient(t)
+	msg := string(c.buildRichMessage(Message{
+		To:        "user@example.com",
+		Subject:   "Hola",
+		PlainBody: "Cuerpo plain",
+	}))
+	if !strings.Contains(msg, "Content-Type: text/plain; charset=utf-8\r\n") {
+		t.Errorf("no es text/plain: %s", msg)
+	}
+	if strings.Contains(msg, "multipart/alternative") {
+		t.Error("declara multipart aún sin HTMLBody")
+	}
+	if !strings.Contains(msg, "\r\n\r\nCuerpo plain") {
+		t.Errorf("body plain ausente: %s", msg)
+	}
+}
+
+func TestSendMessageMultipart(t *testing.T) {
+	c := newTestClient(t)
+	msg := string(c.buildRichMessage(Message{
+		To:        "user@example.com",
+		Subject:   "Resumen",
+		PlainBody: "version plain",
+		HTMLBody:  "<p>version html</p>",
+	}))
+	if !strings.Contains(msg, "multipart/alternative; boundary=\"mokuji_") {
+		t.Errorf("no declara multipart con boundary: %s", msg)
+	}
+	if !strings.Contains(msg, "Content-Type: text/plain; charset=utf-8") {
+		t.Error("falta parte plain")
+	}
+	if !strings.Contains(msg, "Content-Type: text/html; charset=utf-8") {
+		t.Error("falta parte html")
+	}
+	if !strings.Contains(msg, "version plain") || !strings.Contains(msg, "<p>version html</p>") {
+		t.Error("alguno de los bodies no fue incluido")
+	}
+}
+
+func TestSendMessageExtraHeaders(t *testing.T) {
+	c := newTestClient(t)
+	msg := string(c.buildRichMessage(Message{
+		To:        "user@example.com",
+		Subject:   "S",
+		PlainBody: "B",
+		ExtraHeaders: map[string]string{
+			"List-Unsubscribe":      "<https://mokuji.org/unsubscribe?token=xyz>",
+			"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+		},
+	}))
+	if !strings.Contains(msg, "List-Unsubscribe: <https://mokuji.org/unsubscribe?token=xyz>\r\n") {
+		t.Errorf("falta List-Unsubscribe: %s", msg)
+	}
+	if !strings.Contains(msg, "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n") {
+		t.Errorf("falta List-Unsubscribe-Post: %s", msg)
+	}
+}
+
+func TestSendMessageIgnoresReservedHeaders(t *testing.T) {
+	c := newTestClient(t)
+	msg := string(c.buildRichMessage(Message{
+		To:        "user@example.com",
+		Subject:   "Original",
+		PlainBody: "B",
+		ExtraHeaders: map[string]string{
+			"Subject":      "Spoofed",
+			"From":         "evil@evil.com",
+			"Content-Type": "text/evil",
+		},
+	}))
+	if strings.Contains(msg, "Subject: Spoofed") {
+		t.Error("Subject fue sobreescrito")
+	}
+	if strings.Contains(msg, "evil@evil.com") {
+		t.Error("From fue sobreescrito")
+	}
+	if strings.Contains(msg, "text/evil") {
+		t.Error("Content-Type fue sobreescrito")
+	}
+}
+
+func TestSendMessageValidatesTo(t *testing.T) {
+	c := newTestClient(t)
+	c.sendMail = func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+		t.Fatal("sendMail no debería ser llamado")
+		return nil
+	}
+	err := c.SendMessage(Message{To: "no-es-email", Subject: "S", PlainBody: "B"})
+	if err == nil {
+		t.Error("se esperaba error")
+	}
+}
+
+func TestSendMessageRequiresPlain(t *testing.T) {
+	c := newTestClient(t)
+	c.sendMail = func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+		t.Fatal("sendMail no debería ser llamado")
+		return nil
+	}
+	err := c.SendMessage(Message{To: "user@example.com", Subject: "S"})
+	if err == nil {
+		t.Error("se esperaba error por PlainBody vacío")
+	}
+}

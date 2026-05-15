@@ -28,6 +28,24 @@ Plano + variables custom vs framework (Tailwind, etc.). Probablemente plano para
 
 No se resuelven dentro del package de sessions ([ADR 0005](adr/0005-sessions-propias.md)). Diseño pendiente para cuando aparezca el primer redirect que requiera feedback al usuario (probablemente al primer form de mutación). Patrón candidato: tabla `flash_messages` o cookie firmada de corta duración.
 
+## systemd: migrar a `Type=notify`
+
+Hoy el unit usa `Type=simple` — systemd asume "arrancó" cuando el proceso existe, sin esperar readiness real (que el servidor esté escuchando en el port). Para deploys con dependencias o zero-downtime restarts conviene `Type=notify` con `sd_notify`:
+
+- Agregar dep `github.com/coreos/go-systemd/v22/daemon`
+- Después de `srv.Start()` (o cuando ListenAndServe esté servido), llamar `daemon.SdNotify(false, daemon.SdNotifyReady)`
+- Cambiar `Type=simple` a `Type=notify` en el unit
+
+Prioridad: baja hasta que tengamos zero-downtime restart o dependencias systemd.
+
+## Soporte SMTP `:465` (TLS implícito)
+
+Hoy `internal/email` usa stdlib `net/smtp.SendMail`, que solo soporta STARTTLS. Si un self-hoster quiere usar `:465` (TLS implícito desde el primer byte), no funciona — cuelga.
+
+Para soportarlo: detectar puerto 465 (o un flag `SMTP_TLS_MODE=implicit`) y hacer `tls.Dial` antes de `smtp.NewClient` en vez de delegar a `SendMail`. ~30 líneas extra.
+
+Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525` muchos providers) cubren todos los casos comunes.
+
 ## Pendientes de explicación (no son decisiones, son aprendizaje)
 
 - **Passkeys / WebAuthn**: cómo se implementaría aunque no se haga ahora. Cubrir registration vs authentication ceremony, origin-binding criptográfico, almacenamiento server-side de public keys, recuperación multi-dispositivo, fallback path si el usuario pierde acceso a todos sus passkeys.

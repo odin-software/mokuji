@@ -22,7 +22,7 @@
   <li>
     <details>
       <summary>
-        {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy">{{end}}
+        {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
         <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
         {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
         <strong>{{.Manga.Title}}</strong>

@@ -34,6 +34,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"git.odin.do/kengru/mokuji/internal/releases/worker"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
@@ -171,6 +172,19 @@ func main() {
 	}
 
 	go cleanupSessions(rootCtx, sessions, logger)
+
+	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
+	// cliente que el matcher — el rate limiter cliente-side garantiza que
+	// los dos callers se mantengan bajo el techo de MangaDex.
+	releasesWorker, err := worker.New(worker.Config{
+		DB:     db,
+		Client: mangadexClient,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar release worker: %v", err)
+	}
+	go releasesWorker.Run(rootCtx)
 
 	srv := server.New(server.Config{
 		Addr:         envOr("HTTP_ADDR", ":8080"),

@@ -22,6 +22,7 @@ import (
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /version", s.handleVersion)
 	if s.cfg.Home != nil {
 		s.cfg.Home.Mount(mux)
 	}

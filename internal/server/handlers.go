@@ -1,12 +1,24 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+
+	"git.odin.do/kengru/mokuji/internal/version"
+)
 
 // handleHealth responde 200 con un body trivial. Sirve para que load balancers
 // y monitoreo verifiquen que el proceso está vivo.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// handleVersion devuelve la versión publicada en texto plano para verificar
+// post-deploy con curl. La misma versión se muestra en el footer de la app.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(version.Value + "\n"))
 }
 
 // serveManifest sirve el manifest.webmanifest con el Content-Type correcto

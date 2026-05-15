@@ -217,9 +217,19 @@ button.danger:hover { background: #800; }
   border-radius: 4px;
 }
 .public-entry .cover { border-radius: 2px; flex-shrink: 0; }
+.app-footer {
+  margin: 3rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.app-footer a { color: inherit; }
 </style>
 </head>
 <body>
 {{block "content" .}}<p>contenido vacío</p>{{end}}
+<footer class="app-footer">mokuji <a href="/version">{{appVersion}}</a></footer>
 </body>
 </html>{{end}}

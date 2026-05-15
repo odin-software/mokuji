@@ -33,6 +33,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/version"
 )
 
 const (
@@ -88,7 +89,8 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	funcs := htmltmpl.FuncMap{
-		"csrfInput": csrf.Input,
+		"csrfInput":  csrf.Input,
+		"appVersion": func() string { return version.Value },
 	}
 
 	base, err := htmltmpl.New("base").Funcs(funcs).ParseFS(cfg.HTMLTemplates, "layout.html")

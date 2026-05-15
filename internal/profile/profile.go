@@ -20,6 +20,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/version"
 )
 
 // Visibility values válidos para users.list_visibility.
@@ -69,6 +70,7 @@ func New(cfg Config) (*Handler, error) {
 	funcs := template.FuncMap{
 		"csrfInput":   csrf.Input,
 		"statusLabel": statusLabel,
+		"appVersion":  func() string { return version.Value },
 	}
 	base, err := template.New("base").Funcs(funcs).ParseFS(cfg.HTMLTemplates, "layout.html")
 	if err != nil {

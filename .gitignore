@@ -19,3 +19,6 @@ build-errors.log
 .vscode/
 *.swp
 *.swo
+
+# Prompt ignore
+prompt.md

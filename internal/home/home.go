@@ -15,6 +15,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/version"
 )
 
 // Config agrupa las dependencias del handler.
@@ -41,7 +42,8 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	funcs := template.FuncMap{
-		"csrfInput": csrf.Input,
+		"csrfInput":  csrf.Input,
+		"appVersion": func() string { return version.Value },
 	}
 	tmpl, err := template.New("base").Funcs(funcs).ParseFS(
 		cfg.HTMLTemplates, "layout.html", "home.html",

@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -308,5 +310,158 @@ func TestListShowsEmptyMessageWhenNoReleases(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "al día") {
 		t.Errorf("esperado mensaje de empty state; body=%s", rec.Body.String())
+	}
+}
+
+// --- markRead ---
+
+func markReadRequest(userID, chapterID int64) *http.Request {
+	form := url.Values{}
+	form.Set("chapter_id", strconv.FormatInt(chapterID, 10))
+	req := httptest.NewRequest(http.MethodPost, "/releases/mark-read", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(session.NewContext(req.Context(), &session.Session{UserID: userID}))
+	return req
+}
+
+func cursorOfEntry(t *testing.T, db *sql.DB, entryID int64) sql.NullInt64 {
+	t.Helper()
+	var v sql.NullInt64
+	if err := db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, entryID).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestMarkReadAdvancesCursor(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "md-1")
+	entryID := insertEntry(t, db, userID, mangaID, "reading", nil)
+	chID := insertChapter(t, db, mangaID, "ch-1", "1", "en", time.Now())
+
+	rec := httptest.NewRecorder()
+	h.markRead(rec, markReadRequest(userID, chID))
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status: esperado 303, obtenido %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/releases" {
+		t.Errorf("location: %q", loc)
+	}
+	got := cursorOfEntry(t, db, entryID)
+	if !got.Valid || got.Int64 != chID {
+		t.Errorf("cursor: esperado %d, obtenido %+v", chID, got)
+	}
+}
+
+func TestMarkReadRejectsChapterFromUnownedManga(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	// Alice tiene manga A.
+	mangaA := insertManga(t, db, "md-A")
+	insertEntry(t, db, userID, mangaA, "reading", nil)
+	// Bob tiene manga B con un cap; Alice intenta marcarlo.
+	bobID := insertUser(t, db, "bob@example.com")
+	mangaB := insertManga(t, db, "md-B")
+	insertEntry(t, db, bobID, mangaB, "reading", nil)
+	chB := insertChapter(t, db, mangaB, "ch-B-1", "1", "en", time.Now())
+
+	rec := httptest.NewRecorder()
+	h.markRead(rec, markReadRequest(userID, chB))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("esperado 404 al marcar cap de manga ajeno, obtenido %d", rec.Code)
+	}
+}
+
+func TestMarkReadRejectsNonExistentChapter(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "md-1")
+	insertEntry(t, db, userID, mangaID, "reading", nil)
+
+	rec := httptest.NewRecorder()
+	h.markRead(rec, markReadRequest(userID, 99999))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("esperado 404 con chapter_id inexistente, obtenido %d", rec.Code)
+	}
+}
+
+func TestMarkReadRejectsAnonymous(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+
+	form := url.Values{}
+	form.Set("chapter_id", "1")
+	req := httptest.NewRequest(http.MethodPost, "/releases/mark-read", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.markRead(rec, req)
+
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/auth" {
+		t.Errorf("anónimo: esperado 303 -> /auth; obtenido %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestMarkReadRejectsInvalidChapterID(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+
+	form := url.Values{}
+	form.Set("chapter_id", "abc")
+	req := httptest.NewRequest(http.MethodPost, "/releases/mark-read", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(session.NewContext(req.Context(), &session.Session{UserID: userID}))
+	rec := httptest.NewRecorder()
+	h.markRead(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("esperado 400 con chapter_id no numérico, obtenido %d", rec.Code)
+	}
+}
+
+// TestMarkReadHidesChapterFromSubsequentList verifica el integration completo:
+// después de marcar el cap, ya no aparece en /releases para ese user.
+func TestMarkReadHidesChapterFromSubsequentList(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "md-1")
+	insertEntry(t, db, userID, mangaID, "reading", nil)
+	ch1 := insertChapter(t, db, mangaID, "ch-1", "1", "en", time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	insertChapter(t, db, mangaID, "ch-2", "2", "en", time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC))
+
+	// Antes: ambos caps aparecen.
+	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(releases) != 2 {
+		t.Fatalf("antes de marcar: esperado 2 caps, obtenido %d", len(releases))
+	}
+
+	// Marcar cap 1 como leído.
+	rec := httptest.NewRecorder()
+	h.markRead(rec, markReadRequest(userID, ch1))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("markRead status: %d", rec.Code)
+	}
+
+	// Después: solo cap 2 debería aparecer.
+	releases, err = h.unreadReleases(context.Background(), userID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("después de marcar: esperado 1 cap, obtenido %d", len(releases))
+	}
+	if releases[0].ChapterNumber != "2" {
+		t.Errorf("cap restante esperado '2', obtenido %q", releases[0].ChapterNumber)
 	}
 }

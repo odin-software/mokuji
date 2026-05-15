@@ -20,7 +20,14 @@
         <span class="muted">· {{.PublishedAt.Format "2006-01-02"}}</span>
       </div>
     </div>
-    <a href="{{.ReaderURL}}" class="action-link" target="_blank" rel="noopener noreferrer">leer →</a>
+    <div class="release-actions">
+      <a href="{{.ReaderURL}}" class="action-link" target="_blank" rel="noopener noreferrer">leer →</a>
+      <form method="POST" action="/releases/mark-read" class="inline-form">
+        {{csrfInput $.Session}}
+        <input type="hidden" name="chapter_id" value="{{.ChapterID}}">
+        <button type="submit" class="link-button" title="marcar este capítulo y los anteriores como leídos">marcar leído</button>
+      </form>
+    </div>
   </li>
 {{end}}
 </ul>

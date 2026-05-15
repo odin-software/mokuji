@@ -17,6 +17,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
@@ -87,6 +88,7 @@ func New(cfg Config) (*Handler, error) {
 // Mount registra los endpoints en el mux.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /releases", h.list)
+	mux.HandleFunc("POST /releases/mark-read", h.markRead)
 }
 
 type pageData struct {
@@ -115,6 +117,47 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		h.logger.Error("renderizar releases", "err", err)
 	}
+}
+
+// markRead avanza el cursor library_entries.last_read_chapter_id al cap
+// indicado en el form. La query bloquea cualquier intento de marcar un
+// cap que no pertenezca a un manga en la biblioteca del user (subselect
+// devuelve NULL y la igualdad falsa => 0 rows affected).
+func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
+	s, ok := session.FromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	chapterID, err := strconv.ParseInt(r.PostFormValue("chapter_id"), 10, 64)
+	if err != nil || chapterID <= 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE library_entries
+		SET last_read_chapter_id = ?, updated_at = ?
+		WHERE user_id = ?
+		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)
+	`, chapterID, time.Now().UTC().Unix(), s.UserID, chapterID)
+	if err != nil {
+		h.logger.Error("marcar leído", "user_id", s.UserID, "chapter_id", chapterID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	http.Redirect(w, r, "/releases", http.StatusSeeOther)
 }
 
 // unreadReleases devuelve los caps no leídos del usuario, ordenados por

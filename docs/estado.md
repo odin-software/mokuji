@@ -23,6 +23,7 @@ Tracker de manga público en Go + SQLite. MVP completo y deployado en **mokuji.o
 | Estructura repo | Intermedia con `internal/` por feature | [0008](adr/0008-estructura-del-repo.md) |
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
+| CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
 
 ## Mapa de paquetes
 
@@ -66,20 +67,32 @@ SMTP_PASSWORD=re_<api_key_de_resend>
 SMTP_FROM=mokuji <auth@mokuji.org>
 ```
 
-### Update flow
+### Update flow (CD automático)
+
+Push a `main` → workflow [`deploy.yml`](../.forgejo/workflows/deploy.yml) en Forgejo runner host-based (corre en mimir) → `make build-linux-amd64` → `sudo /usr/local/bin/mokuji-deploy <binario>` (validación + backup `mokuji.prev` + install atómico + restart + health check). Detalle completo y razones en [ADR 0012](adr/0012-cicd-forgejo-runner.md). Las migraciones corren automáticamente al startup del binario.
+
+Verificación post-deploy:
 
 ```bash
-# Local
-make build-linux-amd64
-scp ./bin/mokuji-linux-amd64 mimir:/tmp/mokuji
-
-# Remoto
-sudo install -m 0755 /tmp/mokuji /usr/local/bin/mokuji
-sudo systemctl restart mokuji
-sudo journalctl -u mokuji -n 30 --no-pager
+curl https://mokuji.org/version   # debe devolver la versión publicada
+ssh mimir 'systemctl status mokuji'
+ssh mimir 'journalctl -u mokuji -n 30 --no-pager'
 ```
 
-Las migraciones corren automáticamente al startup del binario.
+Fallback manual si el CD falla:
+
+```bash
+make build-linux-amd64
+scp ./bin/mokuji-linux-amd64 mimir:/tmp/mokuji
+ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
+```
+
+### Versionado
+
+- Fuente única: archivo [`VERSION`](../VERSION) en root (ej. `v0.1.0`). Bump = editar + commit.
+- Inyectado en build vía `-ldflags="-X .../internal/version.Value=$(cat VERSION)"` (ver [Makefile](../Makefile)).
+- Visible en footer de toda página HTML (`mokuji v0.1.0`, link a `/version`) y endpoint `GET /version` (plain text).
+- Local (`air`, `make run`, `make migrate`) usa sufijo `-dev` automáticamente (`v0.1.0-dev`) para distinguir de producción.
 
 ## Habilidades operativas que ya están
 
@@ -91,6 +104,8 @@ Las migraciones corren automáticamente al startup del binario.
 - Hash de session IDs server-side (defense-in-depth contra DB leak).
 - PWA instalable (manifest + service worker).
 - Dark mode automático via `prefers-color-scheme`.
+- Versión inyectada en build, visible en footer y `/version` (ver sección Versionado arriba).
+- CD automático: push a `main` deploya solo (Forgejo runner en mimir).
 
 ## Gotchas operativos que aprendimos
 
@@ -118,5 +133,6 @@ Detalle en [decisiones-pendientes.md](decisiones-pendientes.md). Orden actual:
 
 1. Leer este archivo + [`decisiones-pendientes.md`](decisiones-pendientes.md).
 2. `git status`, `git log --oneline -10` para ver último estado del repo.
-3. `ssh mimir 'systemctl status mokuji'` para verificar producción si vale.
-4. Mantener el patrón establecido: una decisión a la vez con confirmación; ADR cuando sea arquitectónica; commits chicos con subject corto y en español.
+3. `curl https://mokuji.org/version` para confirmar qué versión corre prod (debe matchear `cat VERSION` del último commit en `main`).
+4. `ssh mimir 'systemctl status mokuji'` para verificar producción si vale.
+5. Mantener el patrón establecido: una decisión a la vez con confirmación; ADR cuando sea arquitectónica; commits chicos con subject corto y en español.

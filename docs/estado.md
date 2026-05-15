@@ -24,6 +24,7 @@ Tracker de manga público en Go + SQLite. MVP completo y deployado en **mokuji.o
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
 | CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
+| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (🚧 en branch) |
 
 ## Mapa de paquetes
 
@@ -120,14 +121,13 @@ Vale dejarlos visibles para que no se rompa de nuevo en futuros deploys:
 
 Detalle en [decisiones-pendientes.md](decisiones-pendientes.md). Orden actual:
 
-1. **Release tracking (fase 2)** — MangaDex client + worker periódico + email digest. La segunda razón principal del producto.
-2. **Chapter linking** — depende de fase 2.
-3. **Usernames** — hoy `/u/{numeric_id}`, bloqueador para launch público real.
-4. **Marca / identidad visual** — habilita HTML emails y CSS de verdad.
-5. **`Type=notify` con `sd_notify`** — readiness real para systemd.
-6. **Soporte SMTP `:465`** — TLS implícito en lugar de STARTTLS. Bajo.
-7. **Activity feed público** — nice-to-have.
-8. **Rating** — explícitamente fuera de MVP.
+1. **Fase 2 — Release tracking** — 🚧 **EN PROGRESO** en branch `fase-2-release-tracking`. Diseño cerrado en [ADR 0013](adr/0013-fase-2-release-tracking.md) (destilado de [docs/diseno-fase-2.md](diseno-fase-2.md)). Incluye chapter linking (cursor por entry) y export+delete de data como must-have GDPR.
+2. **Usernames** — hoy `/u/{numeric_id}`, bloqueador para launch público real.
+3. **Marca / identidad visual** — habilita HTML emails enriquecidos (más allá del HTML básico de fase 2) y CSS de verdad.
+4. **`Type=notify` con `sd_notify`** — readiness real para systemd.
+5. **Soporte SMTP `:465`** — TLS implícito en lugar de STARTTLS. Bajo.
+6. **Activity feed público** — nice-to-have.
+7. **Rating** — explícitamente fuera de MVP.
 
 ## Cómo retomar
 

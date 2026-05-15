@@ -1,4 +1,4 @@
-.PHONY: dev test build run migrate compose-up compose-down clean
+.PHONY: dev test build build-linux-amd64 run migrate compose-up compose-down clean
 
 # Levanta servicios locales (mailpit) y corre el binario con live reload (air).
 dev: compose-up
@@ -20,6 +20,12 @@ test:
 # Compila el binario en ./bin/mokuji.
 build:
 	go build -o ./bin/mokuji .
+
+# Compila el binario para Linux amd64 (deploy a Droplet de DigitalOcean).
+# Usa -trimpath para builds reproducibles y -ldflags='-s -w' para strippear
+# debug info y bajar tamaño ~30%.
+build-linux-amd64:
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ./bin/mokuji-linux-amd64 .
 
 # Levanta servicios locales con docker compose.
 compose-up:

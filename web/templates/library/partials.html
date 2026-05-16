@@ -1,6 +1,8 @@
 {{define "mangadex-badge"}}
 {{- if eq .MangadexStatus "matched" -}}
-  {{- if gt .UnreadCount 0 -}}
+  {{- if eq .TotalChapters 0 -}}
+    <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="match resuelto pero todavía no halamos capítulos">pendiente</a>
+  {{- else if gt .UnreadCount 0 -}}
     <a href="/library/entry/{{.ID}}" class="md-badge md-badge-new">{{.UnreadCount}} nuevo{{if gt .UnreadCount 1}}s{{end}}</a>
   {{- else -}}
     <a href="/library/entry/{{.ID}}" class="md-badge md-badge-ok" title="ver capítulos">al día</a>

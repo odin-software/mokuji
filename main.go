@@ -155,10 +155,26 @@ func main() {
 	mangadexClient := mangadex.New()
 	releaseMatcher := matcher.New(mangadexClient)
 
+	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
+	// cliente que el matcher — el rate limiter cliente-side garantiza que
+	// los dos callers se mantengan bajo el techo de MangaDex.
+	releasesWorker, err := worker.New(worker.Config{
+		DB:     db,
+		Client: mangadexClient,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar release worker: %v", err)
+	}
+
 	libraryHandler, err := library.New(library.Config{
 		DB:            db,
 		MangaSource:   anilist.New(),
 		Matcher:       releaseMatcher,
+		// Poller sincrónico: cuando library.add matchea, dispara un FetchFeed
+		// inmediato para que el manga tenga capítulos visibles sin esperar
+		// hasta una hora al próximo tick del worker.
+		Poller:        releasesWorker,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,
 	})
@@ -271,17 +287,10 @@ func main() {
 
 	go cleanupSessions(rootCtx, sessions, logger)
 
-	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
-	// cliente que el matcher — el rate limiter cliente-side garantiza que
-	// los dos callers se mantengan bajo el techo de MangaDex.
-	releasesWorker, err := worker.New(worker.Config{
-		DB:     db,
-		Client: mangadexClient,
-		Logger: logger,
-	})
-	if err != nil {
-		log.Fatalf("configurar release worker: %v", err)
-	}
+	// El worker periódico de releases se construye arriba (antes del library
+	// handler) porque library lo usa como Poller para fetch inmediato al
+	// matchear. Acá arrancamos la goroutine recién, una vez todo el wiring
+	// está completo.
 	go releasesWorker.Run(rootCtx)
 
 	srv := server.New(server.Config{

@@ -179,6 +179,9 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url, m.mangadex_status,
 		       (SELECT COUNT(*) FROM chapter c
+		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
+		       ) AS total_chapters,
+		       (SELECT COUNT(*) FROM chapter c
 		        WHERE c.manga_id = m.id
 		          AND c.language = u.preferred_language
 		          AND (le.last_read_chapter_id IS NULL
@@ -192,7 +195,7 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
 		&created, &updated,
 		&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-		&e.MangadexStatus, &e.UnreadCount,
+		&e.MangadexStatus, &e.TotalChapters, &e.UnreadCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, false, nil

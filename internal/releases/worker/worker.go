@@ -122,6 +122,16 @@ func (w *Worker) tick(ctx context.Context) {
 	}
 }
 
+// PollOne fetches y persiste capítulos para un solo manga sincrónicamente.
+// Expuesto para que library.add (al matchear) dispare un poll inmediato sin
+// esperar al próximo tick — sin esto, un manga recién agregado puede tardar
+// hasta una hora en mostrar capítulos. Retorna el error directo del FetchFeed
+// (incluyendo mangadex.ErrRateLimited cuando aplique) para que el caller
+// decida si lo logguea como warn o aborta.
+func (w *Worker) PollOne(ctx context.Context, mangaID int64, mangadexID string) error {
+	return w.pollManga(ctx, mangaID, mangadexID)
+}
+
 // RunOnce procesa un batch de mangas vencidos. Expuesto para tests y para
 // trigger manual (eventualmente vía endpoint admin si hace falta).
 func (w *Worker) RunOnce(ctx context.Context) error {

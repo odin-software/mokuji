@@ -80,6 +80,15 @@ type Entry struct {
 	UpdatedAt      time.Time
 	MangadexStatus string // 'unmatched' | 'matched' | 'needs_review' | 'no_results'
 	UnreadCount    int    // caps publicados después del cursor en preferred_language
+	TotalChapters  int    // caps en DB para este manga en preferred_language
+}
+
+// Poller dispara un fetch sincrónico de capítulos para un manga recién
+// matcheado. Implementado por internal/releases/worker.Worker. Opcional —
+// si Config.Poller es nil, los caps llegan en el siguiente tick del worker
+// periódico (hasta una hora de espera).
+type Poller interface {
+	PollOne(ctx context.Context, mangaID int64, mangadexID string) error
 }
 
 // Config agrupa las dependencias del handler.
@@ -93,7 +102,11 @@ type Config struct {
 	// quedan con mangadex_status='unmatched' (default de la migration) y
 	// el worker eventual los retomará en background.
 	Matcher Matcher
-	Logger  *slog.Logger
+	// Poller es opcional. Si está cableado, después de un match exitoso se
+	// dispara un FetchFeed inmediato para tener capítulos visibles sin
+	// esperar al tick del worker periódico. Ver Poller arriba.
+	Poller Poller
+	Logger *slog.Logger
 }
 
 // Handler sirve los endpoints de /library/*.
@@ -101,6 +114,7 @@ type Handler struct {
 	db      *sql.DB
 	src     mangasource.Source
 	matcher Matcher
+	poller  Poller
 	pages   map[string]*template.Template
 	logger  *slog.Logger
 }
@@ -147,6 +161,7 @@ func New(cfg Config) (*Handler, error) {
 		db:      cfg.DB,
 		src:     cfg.MangaSource,
 		matcher: cfg.Matcher,
+		poller:  cfg.Poller,
 		pages:   pages,
 		logger:  cfg.Logger,
 	}, nil
@@ -318,6 +333,20 @@ func (h *Handler) tryMatchManga(ctx context.Context, mangaID int64, title string
 
 	if err := h.updateMangadexMatch(ctx, mangaID, string(result.Status), mangadexID); err != nil {
 		h.logger.Error("persistir match mangadex", "manga_id", mangaID, "err", err)
+		return
+	}
+
+	// Si matchó y tenemos un poller cableado, disparamos un fetch inmediato.
+	// El worker periódico tickea cada 1h — sin esto, un manga recién agregado
+	// quedaría sin capítulos durante una ventana de hasta 60 minutos, lo cual
+	// es UX inaceptable. Errores se loguean como warn; el worker eventual
+	// retomará el manga porque next_check_at queda NULL hasta que el poll
+	// termine.
+	if h.poller != nil && mangadexID != nil {
+		if err := h.poller.PollOne(ctx, mangaID, *mangadexID); err != nil {
+			h.logger.Warn("poll inmediato tras match (worker retomará luego)",
+				"manga_id", mangaID, "mangadex_id", *mangadexID, "err", err)
+		}
 	}
 }
 
@@ -424,14 +453,17 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		args = append(args, "%"+query+"%")
 	}
 
-	// Subquery de unread_count: caps del manga en el idioma preferido del
-	// user publicados después del cursor (last_read_chapter_id). Si el
-	// cursor es NULL, cuenta todo el histórico. Cero si el manga aún no
-	// está matcheado (no hay caps).
+	// Dos subqueries: total_chapters (en idioma del user) y unread_count
+	// (caps publicados después del cursor). Distinguirlos permite que el
+	// badge muestre "pendiente" (matched + 0 caps) vs "al día" (matched +
+	// caps > 0 + UnreadCount = 0). El cursor NULL = leyó cero, cuenta todos.
 	q := fmt.Sprintf(`
 		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url, m.mangadex_status,
+		       (SELECT COUNT(*) FROM chapter c
+		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
+		       ) AS total_chapters,
 		       (SELECT COUNT(*) FROM chapter c
 		        WHERE c.manga_id = m.id
 		          AND c.language = u.preferred_language
@@ -461,7 +493,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 			&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
 			&created, &updated,
 			&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-			&e.MangadexStatus, &e.UnreadCount,
+			&e.MangadexStatus, &e.TotalChapters, &e.UnreadCount,
 		); err != nil {
 			return nil, err
 		}

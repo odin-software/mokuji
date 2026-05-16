@@ -128,12 +128,15 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	pages := map[string]*template.Template{}
-	for _, page := range []string{"library/list.html", "library/search.html"} {
+	for _, page := range []string{"library/list.html", "library/search.html", "library/entry.html"} {
 		clone, err := base.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
 		}
-		if _, err := clone.ParseFS(cfg.HTMLTemplates, page); err != nil {
+		// _partials.html contiene defines compartidos por las páginas de
+		// library (ej. mangadex-badge). Lo agregamos primero para que cada
+		// página lo tenga disponible.
+		if _, err := clone.ParseFS(cfg.HTMLTemplates, "library/_partials.html", page); err != nil {
 			return nil, fmt.Errorf("parsear %s: %w", page, err)
 		}
 		pages[page] = clone
@@ -155,6 +158,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /library/add", h.add)
 	mux.HandleFunc("POST /library/{id}/update", h.update)
 	mux.HandleFunc("POST /library/{id}/delete", h.delete)
+	mux.HandleFunc("GET /library/entry/{id}", h.entryDetail)
+	mux.HandleFunc("POST /library/entry/{id}/read", h.entryReadAndOpen)
+	mux.HandleFunc("POST /library/entry/{id}/mark-read", h.entryMarkRead)
 }
 
 func (h *Handler) requireSession(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {

@@ -1,0 +1,302 @@
+package library
+
+import (
+	"context"
+	"database/sql"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"git.odin.do/kengru/mokuji/internal/session"
+)
+
+var mangaSeq int64
+
+func insertMangaWithChapters(t *testing.T, db *sql.DB, userID int64, mangadexStatus string) (entryID, mangaID int64) {
+	t.Helper()
+	mangaSeq++
+	sourceID := "a-" + strconv.FormatInt(mangaSeq, 10)
+	res, err := db.Exec(
+		`INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at, mangadex_id, mangadex_status)
+		 VALUES ('anilist', ?, 'Berserk', '', ?, ?, ?, ?)`,
+		sourceID, time.Now().Unix(), time.Now().Unix(), "mdx-"+sourceID, mangadexStatus,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mangaID, _ = res.LastInsertId()
+
+	res, err = db.Exec(
+		`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
+		userID, mangaID, time.Now().Unix(), time.Now().Unix(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entryID, _ = res.LastInsertId()
+	return entryID, mangaID
+}
+
+func insertChapter(t *testing.T, db *sql.DB, mangaID int64, sourceID, number, lang, externalURL string, publishedAt time.Time) int64 {
+	t.Helper()
+	res, err := db.Exec(`
+		INSERT INTO chapter (manga_id, source, source_id, number, language, published_at, external_url, created_at)
+		VALUES (?, 'mangadex', ?, ?, ?, ?, ?, 0)
+	`, mangaID, sourceID, number, lang, publishedAt.Unix(), externalURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func authReq(method, target string, body string, userID int64) *http.Request {
+	r := httptest.NewRequest(method, target, strings.NewReader(body))
+	if body != "" {
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	return r
+}
+
+func TestEntryDetailRequiresSession(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+
+	r := httptest.NewRequest("GET", "/library/entry/1", nil)
+	r.SetPathValue("id", "1")
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("status: %d", w.Code)
+	}
+}
+
+func TestEntryDetail404ForOtherUserEntry(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	alice := insertUser(t, db, "alice@example.com")
+	bob := insertUser(t, db, "bob@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, bob, "matched")
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10), "", alice)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: %d", w.Code)
+	}
+}
+
+// hasChapterForm devuelve true si el body HTML incluye un hidden input
+// chapter_id apuntando al id dado. Más confiable que buscar source_id en
+// el body (que no se renderea como tal en el template).
+func hasChapterForm(body string, chapterID int64) bool {
+	return strings.Contains(body, `name="chapter_id" value="`+strconv.FormatInt(chapterID, 10)+`"`)
+}
+
+func TestEntryDetailListsChaptersDescByDefault(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+
+	chOld := insertChapter(t, db, mangaID, "ch-old", "1", "en", "https://mangadex.org/chapter/ch-old", time.Now().Add(-48*time.Hour))
+	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "https://mangadex.org/chapter/ch-new", time.Now().Add(-1*time.Hour))
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10), "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	newNeedle := `name="chapter_id" value="` + strconv.FormatInt(chNew, 10) + `"`
+	oldNeedle := `name="chapter_id" value="` + strconv.FormatInt(chOld, 10) + `"`
+	newIdx := strings.Index(body, newNeedle)
+	oldIdx := strings.Index(body, oldNeedle)
+	if newIdx == -1 || oldIdx == -1 {
+		t.Fatalf("falta alguno de los caps en body (new=%d old=%d)", newIdx, oldIdx)
+	}
+	if newIdx > oldIdx {
+		t.Errorf("orden default no es desc: new aparece después de old")
+	}
+}
+
+func TestEntryDetailSortAsc(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chOld := insertChapter(t, db, mangaID, "ch-old", "1", "en", "", time.Now().Add(-48*time.Hour))
+	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "", time.Now().Add(-1*time.Hour))
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10)+"?sort=asc", "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	body := w.Body.String()
+	oldNeedle := `name="chapter_id" value="` + strconv.FormatInt(chOld, 10) + `"`
+	newNeedle := `name="chapter_id" value="` + strconv.FormatInt(chNew, 10) + `"`
+	if strings.Index(body, oldNeedle) > strings.Index(body, newNeedle) {
+		t.Error("sort=asc no aplicado")
+	}
+}
+
+func TestEntryDetailHidesReadByDefault(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chRead := insertChapter(t, db, mangaID, "ch-read", "1", "en", "", time.Now().Add(-48*time.Hour))
+	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "", time.Now().Add(-1*time.Hour))
+
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chRead, entryID); err != nil {
+		t.Fatal(err)
+	}
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10), "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	body := w.Body.String()
+	if hasChapterForm(body, chRead) {
+		t.Error("cap leído visible sin include_read=1")
+	}
+	if !hasChapterForm(body, chNew) {
+		t.Error("cap no leído ausente")
+	}
+}
+
+func TestEntryDetailIncludeReadShowsAll(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chRead := insertChapter(t, db, mangaID, "ch-read", "1", "en", "", time.Now().Add(-48*time.Hour))
+	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "", time.Now().Add(-1*time.Hour))
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chRead, entryID); err != nil {
+		t.Fatal(err)
+	}
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10)+"?include_read=1", "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	body := w.Body.String()
+	if !hasChapterForm(body, chRead) {
+		t.Error("include_read=1 no muestra leídos")
+	}
+	if !hasChapterForm(body, chNew) {
+		t.Error("include_read=1 oculta no leídos")
+	}
+}
+
+func TestEntryReadAndOpenAdvancesCursorAndRedirects(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chID := insertChapter(t, db, mangaID, "ch-1", "1", "en", "https://reader.example/ch-1", time.Now().Add(-1*time.Hour))
+
+	form := url.Values{"chapter_id": {strconv.FormatInt(chID, 10)}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/read", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryReadAndOpen(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "https://reader.example/ch-1" {
+		t.Errorf("Location: %q", loc)
+	}
+
+	var cur sql.NullInt64
+	if err := db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, entryID).Scan(&cur); err != nil {
+		t.Fatal(err)
+	}
+	if !cur.Valid || cur.Int64 != chID {
+		t.Errorf("cursor: esperado %d, obtenido %v", chID, cur)
+	}
+}
+
+func TestEntryReadAndOpenFallsBackToMangadexURL(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chID := insertChapter(t, db, mangaID, "ch-x", "1", "en", "", time.Now().Add(-1*time.Hour))
+
+	form := url.Values{"chapter_id": {strconv.FormatInt(chID, 10)}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/read", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryReadAndOpen(w, r)
+
+	if loc := w.Header().Get("Location"); loc != "https://mangadex.org/chapter/ch-x" {
+		t.Errorf("fallback URL: %q", loc)
+	}
+}
+
+func TestEntryReadAndOpen404OnOtherUserChapter(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	alice := insertUser(t, db, "alice@example.com")
+	bob := insertUser(t, db, "bob@example.com")
+	aliceEntry, _ := insertMangaWithChapters(t, db, alice, "matched")
+	_, bobMangaID := insertMangaWithChapters(t, db, bob, "matched")
+	bobChID := insertChapter(t, db, bobMangaID, "ch-bob", "1", "en", "", time.Now().Add(-1*time.Hour))
+
+	// Alice intenta marcar leído un cap de Bob, pasando su propio entry id.
+	form := url.Values{"chapter_id": {strconv.FormatInt(bobChID, 10)}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(aliceEntry, 10)+"/read", form.Encode(), alice)
+	r.SetPathValue("id", strconv.FormatInt(aliceEntry, 10))
+	w := httptest.NewRecorder()
+	h.entryReadAndOpen(w, r)
+
+	// markChapterRead devuelve error (mismatch entry/chapter) → 500.
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status: %d (esperaba 500 por mismatch)", w.Code)
+	}
+
+	// El cursor de Alice no debe haberse tocado.
+	var cur sql.NullInt64
+	_ = db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, aliceEntry).Scan(&cur)
+	if cur.Valid {
+		t.Error("cursor de Alice fue alterado por chapter de Bob")
+	}
+}
+
+func TestEntryMarkReadRedirectsInternal(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	chID := insertChapter(t, db, mangaID, "ch-1", "1", "en", "https://reader.example/ch-1", time.Now().Add(-1*time.Hour))
+
+	form := url.Values{"chapter_id": {strconv.FormatInt(chID, 10)}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/mark-read", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryMarkRead(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("status: %d", w.Code)
+	}
+	want := "/library/entry/" + strconv.FormatInt(entryID, 10)
+	if loc := w.Header().Get("Location"); loc != want {
+		t.Errorf("Location: %q, want %q", loc, want)
+	}
+}

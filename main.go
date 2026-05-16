@@ -316,6 +316,22 @@ func main() {
 		log.Fatalf("configurar admin: %v", err)
 	}
 
+	// Backfill multi-source: al arrancar, busca mangas en biblioteca que
+	// no tienen fila en manga_sources para alguna source configurada y
+	// les corre el matcher. Fire-and-forget; el rate limiter de cada
+	// cliente HTTP regula la velocidad. Si nadie habilitó sources
+	// nuevas desde el último arranque, el query devuelve cero filas y
+	// el job termina rápido sin red.
+	backfiller, err := library.NewBackfiller(library.BackfillConfig{
+		DB:             db,
+		SourceMatchers: sourceMatchers,
+		Logger:         logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar backfiller: %v", err)
+	}
+	go backfiller.Run(rootCtx)
+
 	go cleanupSessions(rootCtx, sessions, logger)
 	go releasesWorker.Run(rootCtx)
 

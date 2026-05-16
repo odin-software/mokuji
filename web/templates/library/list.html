@@ -25,7 +25,7 @@
         {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
         <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
         {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
-        <strong>{{.Manga.Title}}</strong>
+        <a href="/library/entry/{{.ID}}" class="manga-title-link"><strong>{{.Manga.Title}}</strong></a>
         {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
         {{template "mangadex-badge" .}}
       </summary>

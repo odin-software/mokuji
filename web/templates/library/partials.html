@@ -6,10 +6,10 @@
     <a href="/library/entry/{{.ID}}" class="md-badge md-badge-ok" title="ver capítulos">al día</a>
   {{- end -}}
 {{- else if eq .MangadexStatus "needs_review" -}}
-  <span class="md-badge md-badge-warn" title="múltiples coincidencias en mangadex; matching ambiguo">matching incierto</span>
+  <a href="/library/entry/{{.ID}}" class="md-badge md-badge-warn" title="múltiples coincidencias en mangadex; matching ambiguo">matching incierto</a>
 {{- else if eq .MangadexStatus "no_results" -}}
-  <span class="md-badge md-badge-muted" title="no encontrado en mangadex; no vamos a poder seguir capítulos">sin source</span>
+  <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="no encontrado en mangadex; no vamos a poder seguir capítulos">sin source</a>
 {{- else -}}
-  <span class="md-badge md-badge-muted" title="todavía no buscamos en mangadex; el worker lo intentará luego">buscando…</span>
+  <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="todavía no buscamos en mangadex; el worker lo intentará luego">buscando…</a>
 {{- end -}}
 {{end}}

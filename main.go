@@ -309,6 +309,7 @@ func main() {
 		DB:     db,
 		Token:  os.Getenv("ADMIN_TOKEN"),
 		Digest: digestSender,
+		Health: releasesWorker,
 		Logger: logger,
 	})
 	if err != nil {

@@ -19,13 +19,23 @@ import (
 	"strings"
 
 	"git.odin.do/kengru/mokuji/internal/releases/digest"
+	"git.odin.do/kengru/mokuji/internal/releases/worker"
 )
+
+// HealthReporter abstrae al productor del snapshot de salud de sources.
+// Lo cumple *worker.Worker en producción; tests inyectan stubs.
+type HealthReporter interface {
+	Health() map[string]worker.SourceHealth
+}
 
 // Config agrupa las dependencias del handler.
 type Config struct {
 	DB     *sql.DB
 	Token  string // ADMIN_TOKEN; vacío deshabilita los endpoints
 	Digest *digest.Sender
+	// Health es opcional. Si está cableado, /admin/sources-health responde
+	// con el snapshot. Si es nil, ese endpoint no se monta.
+	Health HealthReporter
 	Logger *slog.Logger
 }
 
@@ -34,6 +44,7 @@ type Handler struct {
 	db     *sql.DB
 	token  string
 	digest *digest.Sender
+	health HealthReporter
 	logger *slog.Logger
 }
 
@@ -53,6 +64,7 @@ func New(cfg Config) (*Handler, error) {
 		db:     cfg.DB,
 		token:  cfg.Token,
 		digest: cfg.Digest,
+		health: cfg.Health,
 		logger: cfg.Logger,
 	}, nil
 }
@@ -60,6 +72,27 @@ func New(cfg Config) (*Handler, error) {
 // Mount registra los endpoints.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/trigger-digest", h.triggerDigest)
+	if h.health != nil {
+		mux.HandleFunc("GET /admin/sources-health", h.sourcesHealth)
+	}
+}
+
+// sourcesHealth devuelve el snapshot in-memory de cómo está respondiendo
+// cada source de release tracking. Útil para diagnosticar regresiones
+// del scraper de Asura cuando cambian el HTML, o detectar rate limits
+// crónicos de MangaDex.
+//
+// Sin alerta proactiva: el operador chequea cuando un manga se queda
+// atrás. ADR 0014 §8 lo deja deliberadamente fuera para no email-spamear
+// con downtime corto.
+func (h *Handler) sourcesHealth(w http.ResponseWriter, r *http.Request) {
+	if !h.authorized(r) {
+		http.Error(w, "no autorizado", http.StatusUnauthorized)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"sources": h.health.Health(),
+	})
 }
 
 // triggerDigest dispara un digest manualmente para un user. Body o query:

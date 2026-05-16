@@ -18,10 +18,30 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
+
+// SourceHealth es un snapshot de la salud de una source en memoria.
+// Lo emite Worker.Health() y se renderiza en /admin/sources-health.
+//
+// "Salud" acá significa últimos resultados del worker — un last_success_at
+// reciente significa que la source responde. last_error_at + consecutive_failures
+// indican degradación. Sin actividad reciente (ambos zero) NO es error —
+// puede que las series matched estén al día y no hubo nada para chequear.
+type SourceHealth struct {
+	LastSuccessAt       time.Time `json:"last_success_at,omitzero"`
+	LastErrorAt         time.Time `json:"last_error_at,omitzero"`
+	LastError           string    `json:"last_error,omitempty"`
+	ConsecutiveFailures int       `json:"consecutive_failures"`
+}
+
+// maxErrorMessage cota cuánto del mensaje de error guardamos en memoria
+// para el endpoint admin. Mensajes con HTML o stack traces de 5xx pueden
+// ser grandes; 200 chars es suficiente para diagnosticar sin desperdiciar.
+const maxErrorMessage = 200
 
 // Defaults conservadores. En producción se overridean vía Config.
 const (
@@ -57,6 +77,12 @@ type Worker struct {
 	tickInterval    time.Duration
 	recheckInterval time.Duration
 	language        string
+
+	// health rastrea el resultado de la última operación contra cada
+	// source. Lo lee el endpoint /admin/sources-health. Protegido por
+	// healthMu porque pollSource puede correr concurrente al admin GET.
+	healthMu sync.Mutex
+	health   map[string]*SourceHealth
 }
 
 // New construye un Worker con defaults razonables.
@@ -79,6 +105,15 @@ func New(cfg Config) (*Worker, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	// Pre-llenamos health con una entrada zero por cada source cableada.
+	// Eso hace que el endpoint /admin/sources-health muestre TODAS las
+	// sources configuradas desde el día 0 (con last_success_at zero =
+	// "todavía no se llamó"), no solo las que ya fallaron o tuvieron éxito.
+	health := make(map[string]*SourceHealth, len(cfg.Clients))
+	for name := range cfg.Clients {
+		health[name] = &SourceHealth{}
+	}
+
 	return &Worker{
 		db:              cfg.DB,
 		clients:         cfg.Clients,
@@ -86,7 +121,54 @@ func New(cfg Config) (*Worker, error) {
 		tickInterval:    cfg.TickInterval,
 		recheckInterval: cfg.RecheckInterval,
 		language:        cfg.Language,
+		health:          health,
 	}, nil
+}
+
+// Health devuelve un snapshot de la salud de cada source. Pensado para
+// /admin/sources-health. La copia es defensiva: el caller puede serializar
+// sin worry de race con el worker que sigue corriendo.
+func (w *Worker) Health() map[string]SourceHealth {
+	w.healthMu.Lock()
+	defer w.healthMu.Unlock()
+	out := make(map[string]SourceHealth, len(w.health))
+	for name, h := range w.health {
+		out[name] = *h
+	}
+	return out
+}
+
+// recordSuccess y recordError actualizan las stats in-memory de una source.
+// Convención: success resetea consecutive_failures; error lo incrementa.
+// El last_error sobrescribe siempre — guardamos solo el más reciente.
+func (w *Worker) recordSuccess(source string) {
+	w.healthMu.Lock()
+	defer w.healthMu.Unlock()
+	h, ok := w.health[source]
+	if !ok {
+		h = &SourceHealth{}
+		w.health[source] = h
+	}
+	h.LastSuccessAt = time.Now().UTC()
+	h.ConsecutiveFailures = 0
+	h.LastError = ""
+}
+
+func (w *Worker) recordError(source string, err error) {
+	w.healthMu.Lock()
+	defer w.healthMu.Unlock()
+	h, ok := w.health[source]
+	if !ok {
+		h = &SourceHealth{}
+		w.health[source] = h
+	}
+	h.LastErrorAt = time.Now().UTC()
+	h.ConsecutiveFailures++
+	msg := err.Error()
+	if len(msg) > maxErrorMessage {
+		msg = msg[:maxErrorMessage] + "..."
+	}
+	h.LastError = msg
 }
 
 // Run bloquea hasta que ctx se cancele, corriendo RunOnce con el intervalo
@@ -225,10 +307,13 @@ func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releaseso
 
 	chapters, err := client.FetchChapters(ctx, sourceID, w.language, since)
 	if err != nil {
+		// Rate limit no es un error de salud — es backpressure normal.
+		// Lo logueamos como tal en lugar de incrementar consecutive_failures.
 		if errors.Is(err, releasesource.ErrRateLimited) {
 			next := time.Now().Add(RateLimitedDelay).UTC().Unix()
 			return w.scheduleNextCheck(ctx, mangaID, source, next)
 		}
+		w.recordError(source, err)
 		return err
 	}
 
@@ -236,6 +321,7 @@ func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releaseso
 	for _, ch := range chapters {
 		ok, err := w.insertChapter(ctx, mangaID, source, ch)
 		if err != nil {
+			w.recordError(source, err)
 			return fmt.Errorf("insert chapter %q: %w", ch.ID, err)
 		}
 		if ok {
@@ -245,8 +331,10 @@ func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releaseso
 
 	next := time.Now().Add(w.recheckInterval).UTC().Unix()
 	if err := w.scheduleNextCheck(ctx, mangaID, source, next); err != nil {
+		w.recordError(source, err)
 		return fmt.Errorf("schedule next: %w", err)
 	}
+	w.recordSuccess(source)
 
 	if inserted > 0 {
 		w.logger.Info("caps nuevos persistidos",

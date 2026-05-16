@@ -17,11 +17,19 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"encoding/json"
+
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/releases/digest"
+	"git.odin.do/kengru/mokuji/internal/releases/worker"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
 )
+
+// fakeHealth permite inyectar un snapshot fijo en los tests del endpoint.
+type fakeHealth struct{ snapshot map[string]worker.SourceHealth }
+
+func (f *fakeHealth) Health() map[string]worker.SourceHealth { return f.snapshot }
 
 type captureSMTP struct {
 	mu    sync.Mutex
@@ -249,5 +257,73 @@ func TestTriggerDigestMissingIdentifier(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: %d", w.Code)
+	}
+}
+
+// --- sources-health endpoint ---
+
+func TestSourcesHealthReturnsSnapshot(t *testing.T) {
+	h, _, _ := setup(t)
+	now := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+	h.health = &fakeHealth{snapshot: map[string]worker.SourceHealth{
+		"mangadex": {LastSuccessAt: now, ConsecutiveFailures: 0},
+		"asura":    {LastErrorAt: now, ConsecutiveFailures: 3, LastError: "boom"},
+	}}
+
+	r := httptest.NewRequest("GET", "/admin/sources-health", nil)
+	r.Header.Set("Authorization", "Bearer secreto")
+	w := httptest.NewRecorder()
+	h.sourcesHealth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Sources map[string]worker.SourceHealth `json:"sources"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, w.Body.String())
+	}
+	if len(body.Sources) != 2 {
+		t.Errorf("sources: esperado 2, obtenido %d", len(body.Sources))
+	}
+	md, ok := body.Sources["mangadex"]
+	if !ok || !md.LastSuccessAt.Equal(now) {
+		t.Errorf("mangadex snapshot incorrecto: %+v", md)
+	}
+	asura, ok := body.Sources["asura"]
+	if !ok || asura.LastError != "boom" || asura.ConsecutiveFailures != 3 {
+		t.Errorf("asura snapshot incorrecto: %+v", asura)
+	}
+}
+
+func TestSourcesHealthRequiresAuth(t *testing.T) {
+	h, _, _ := setup(t)
+	h.health = &fakeHealth{snapshot: map[string]worker.SourceHealth{}}
+
+	r := httptest.NewRequest("GET", "/admin/sources-health", nil)
+	w := httptest.NewRecorder()
+	h.sourcesHealth(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status: %d", w.Code)
+	}
+}
+
+func TestSourcesHealthNotMountedWithoutHealth(t *testing.T) {
+	// Si Config.Health es nil, /admin/sources-health no se monta.
+	h, _, _ := setup(t)
+	// h.health es nil por default.
+	mux := http.NewServeMux()
+	h.Mount(mux)
+
+	r := httptest.NewRequest("GET", "/admin/sources-health", nil)
+	r.Header.Set("Authorization", "Bearer secreto")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status: %d (esperaba 404 sin Health cableado)", w.Code)
 	}
 }

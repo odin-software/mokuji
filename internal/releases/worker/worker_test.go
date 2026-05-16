@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -484,5 +485,119 @@ func TestPollOneErrsOnUnknownSource(t *testing.T) {
 	err := w.PollOne(context.Background(), mangaID, "asura", "x")
 	if err == nil {
 		t.Fatal("source no cableada debería devolver error")
+	}
+}
+
+// --- SourceHealth tracking ---
+
+func TestHealthInitializedForAllConfiguredSources(t *testing.T) {
+	// Al construir, el worker debe inicializar entradas zero por cada
+	// source — para que /admin/sources-health muestre las configuradas
+	// desde el día 0, incluso si nunca se llamaron.
+	db := setupDB(t)
+	w, err := New(Config{
+		DB: db,
+		Clients: map[string]releasesource.Client{
+			"mangadex": &fakeClient{name: "mangadex"},
+			"asura":    &fakeClient{name: "asura"},
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := w.Health()
+	if len(h) != 2 {
+		t.Fatalf("health: esperado 2 entradas, obtenido %d", len(h))
+	}
+	for _, src := range []string{"mangadex", "asura"} {
+		entry, ok := h[src]
+		if !ok {
+			t.Errorf("%q ausente del health snapshot", src)
+			continue
+		}
+		if !entry.LastSuccessAt.IsZero() || !entry.LastErrorAt.IsZero() {
+			t.Errorf("%q debería tener zero al arranque, got %+v", src, entry)
+		}
+	}
+}
+
+func TestHealthRecordsSuccessAndResetsFailures(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertMatchedManga(t, db, "md-1", -3600)
+	addReadingEntry(t, db, userID, mangaID)
+
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
+		"md-1": {{ID: "ch-1", Number: "1", Language: "en", PublishedAt: time.Now()}},
+	}}
+	w := newTestWorker(t, db, client)
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	h := w.Health()["mangadex"]
+	if h.LastSuccessAt.IsZero() {
+		t.Error("LastSuccessAt no fue seteado tras éxito")
+	}
+	if h.ConsecutiveFailures != 0 {
+		t.Errorf("ConsecutiveFailures: %d, want 0", h.ConsecutiveFailures)
+	}
+	if h.LastError != "" {
+		t.Errorf("LastError debería estar vacío tras éxito, got %q", h.LastError)
+	}
+}
+
+func TestHealthRecordsErrorAndIncrementsFailures(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertMatchedManga(t, db, "md-1", -3600)
+	addReadingEntry(t, db, userID, mangaID)
+
+	client := &fakeClient{err: errors.New("network down")}
+	w := newTestWorker(t, db, client)
+
+	// Dos ticks consecutivos con error → ConsecutiveFailures debe ser 2.
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Forzar nuevo poll: marcar como vencido otra vez (el primer RunOnce
+	// no reagendó por el error genérico, pero el due query lo retoma).
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	h := w.Health()["mangadex"]
+	if h.LastErrorAt.IsZero() {
+		t.Error("LastErrorAt no fue seteado")
+	}
+	if h.ConsecutiveFailures < 2 {
+		t.Errorf("ConsecutiveFailures: %d, want >=2", h.ConsecutiveFailures)
+	}
+	if h.LastError == "" || !strings.Contains(h.LastError, "network down") {
+		t.Errorf("LastError debería contener el mensaje, got %q", h.LastError)
+	}
+}
+
+func TestHealthDoesNotCountRateLimitAsFailure(t *testing.T) {
+	// Rate limit es backpressure, no degradación de la source — no
+	// debería incrementar ConsecutiveFailures ni setear LastError.
+	db := setupDB(t)
+	userID := insertUser(t, db, "alice@example.com")
+	mangaID := insertMatchedManga(t, db, "md-1", -3600)
+	addReadingEntry(t, db, userID, mangaID)
+
+	client := &fakeClient{errFor: map[string]error{"md-1": releasesource.ErrRateLimited}}
+	w := newTestWorker(t, db, client)
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	h := w.Health()["mangadex"]
+	if h.ConsecutiveFailures != 0 {
+		t.Errorf("rate limit NO debería incrementar ConsecutiveFailures, got %d", h.ConsecutiveFailures)
+	}
+	if h.LastError != "" {
+		t.Errorf("rate limit NO debería poblar LastError, got %q", h.LastError)
 	}
 }

@@ -185,6 +185,8 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /library/entry/{id}", h.entryDetail)
 	mux.HandleFunc("POST /library/entry/{id}/read", h.entryReadAndOpen)
 	mux.HandleFunc("POST /library/entry/{id}/mark-read", h.entryMarkRead)
+	mux.HandleFunc("POST /library/entry/{id}/sources/{source}/retry", h.entrySourceRetry)
+	mux.HandleFunc("POST /library/entry/{id}/sources/{source}/unlink", h.entrySourceUnlink)
 	if h.signer != nil {
 		mux.HandleFunc("GET /r/{token}", h.emailRead)
 	}

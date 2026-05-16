@@ -36,6 +36,7 @@ type entryData struct {
 	Session       *session.Session
 	Entry         Entry
 	Chapters      []Chapter
+	Sources       []EntrySource
 	Sort          string // "asc" | "desc"
 	IncludeRead   bool
 	UnreadCount   int
@@ -79,10 +80,18 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sources, err := h.loadEntrySources(r.Context(), entry.Manga.ID)
+	if err != nil {
+		h.logger.Error("entry detail: cargar sources", "err", err, "entry_id", entryID)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	h.render(w, "library/entry.html", entryData{
 		Session:     s,
 		Entry:       entry,
 		Chapters:    chapters,
+		Sources:     sources,
 		Sort:        sort,
 		IncludeRead: includeRead,
 		UnreadCount: entry.UnreadCount,

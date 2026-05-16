@@ -19,6 +19,49 @@
   </div>
 </header>
 
+{{if .Sources}}
+<section class="sources-fieldset" aria-labelledby="sources-heading">
+  <h2 id="sources-heading">sources</h2>
+  <ul class="sources-list">
+  {{range .Sources}}
+    <li class="source-row source-{{.Status}}{{if not .Configured}} source-disabled{{end}}">
+      <div class="source-info">
+        <strong>{{.Source}}</strong>
+        <span class="source-status">
+          {{- if eq .Status "matched" -}}
+            ✓ matched
+          {{- else if eq .Status "needs_review" -}}
+            ⚠ matching incierto
+          {{- else if eq .Status "no_results" -}}
+            × no encontrado
+          {{- else -}}
+            · sin intentar
+          {{- end -}}
+        </span>
+        {{if and .HasRow (not .Configured)}}
+          <span class="muted" title="source deshabilitada por el operador">(deshabilitada)</span>
+        {{end}}
+      </div>
+      {{if .Configured}}
+      <div class="source-actions">
+        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/retry" class="inline-form">
+          {{ csrfInput $.Session }}
+          <button type="submit" class="link-button" title="re-correr el matcher contra esta source">reintentar</button>
+        </form>
+        {{if .HasRow}}
+        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/unlink" class="inline-form">
+          {{ csrfInput $.Session }}
+          <button type="submit" class="link-button" title="dejar de seguir caps en esta source (no borra los ya bajados)">desvincular</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </li>
+  {{end}}
+  </ul>
+</section>
+{{end}}
+
 <form method="GET" action="/library/entry/{{.Entry.ID}}" class="lib-filters">
   <label class="checkbox" style="margin: 0;">
     <input type="checkbox" name="include_read" value="1"{{if .IncludeRead}} checked{{end}}>
@@ -69,11 +112,11 @@
       <p class="muted">no hay capítulos nuevos. <a href="?include_read=1&sort={{.Sort}}">ver leídos</a>.</p>
     {{end}}
   {{else if eq .Entry.SourceStatus "needs_review"}}
-    <p class="muted">matching ambiguo con MangaDex — todavía no podemos seguir capítulos. confirmá el match manual (próximamente).</p>
+    <p class="muted">matching ambiguo en las sources — todavía no podemos seguir capítulos. usá los botones de arriba para reintentar.</p>
   {{else if eq .Entry.SourceStatus "no_results"}}
-    <p class="muted">no encontramos este manga en MangaDex. no vamos a poder seguir capítulos automáticamente.</p>
+    <p class="muted">no encontramos este manga en ninguna source habilitada. no vamos a poder seguir capítulos automáticamente.</p>
   {{else}}
-    <p class="muted">todavía no buscamos capítulos en MangaDex. el worker lo intentará en el próximo ciclo (~1h).</p>
+    <p class="muted">todavía no buscamos capítulos. el worker lo intentará en el próximo ciclo (~1h), o reintentá manualmente arriba.</p>
   {{end}}
 {{end}}
 

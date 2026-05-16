@@ -41,6 +41,7 @@ import (
 type Status string
 
 const (
+	StatusUnmatched   Status = "unmatched"
 	StatusMatched     Status = "matched"
 	StatusNeedsReview Status = "needs_review"
 	StatusNoResults   Status = "no_results"

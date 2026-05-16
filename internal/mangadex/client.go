@@ -145,7 +145,12 @@ func (c *Client) FetchFeed(ctx context.Context, mangaID, language string, since 
 		q.Set("offset", strconv.Itoa(offset))
 		q.Set("order[publishAt]", "asc")
 		q.Set("includeFuturePublishAt", "0")
-		q.Set("includeEmptyPages", "0")
+		// NO seteamos includeEmptyPages=0: muchos mangas oficiales (One Piece,
+		// One Punch Man, Spy x Family, etc.) publican via plataforma externa
+		// (MangaPlus, etc.) y MangaDex sólo mantiene el meta + externalUrl.
+		// Esos caps están marcados como "empty pages" en MangaDex y serían
+		// excluidos con el filtro, dejando esos mangas con 0 caps visibles.
+		// El default del API es incluir empty pages — lo dejamos así.
 		if !since.IsZero() {
 			q.Set("publishAtSince", since.UTC().Format("2006-01-02T15:04:05"))
 		}

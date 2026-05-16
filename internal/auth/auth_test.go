@@ -12,6 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 )
 
@@ -37,80 +38,8 @@ func newTestHandler(t *testing.T, db *sql.DB) *Handler {
 	}
 }
 
-func TestGenerateCodeProduces6Digits(t *testing.T) {
-	seen := map[string]int{}
-	for range 100 {
-		c, err := generateCode()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !isValidCode(c) {
-			t.Fatalf("código inválido: %q", c)
-		}
-		seen[c]++
-	}
-	// Con 100 muestras de 1M posibles, repetición es prácticamente cero.
-	if len(seen) < 95 {
-		t.Errorf("baja entropía: %d únicos de 100", len(seen))
-	}
-}
-
-func TestSanitizeCode(t *testing.T) {
-	cases := map[string]string{
-		"123456":        "123456",
-		"  123456 ":     "123456",
-		"123 456":       "123456",
-		"  123 456  ":   "123456",
-		"123 456":  "123456", // non-breaking space (Gmail/Apple Mail)
-		"1\t2\n3 4-5-6": "123456",
-		"abc":           "",
-		"":              "",
-		"123456abc":     "123456",
-	}
-	for in, want := range cases {
-		if got := sanitizeCode(in); got != want {
-			t.Errorf("sanitizeCode(%q): esperado %q, obtenido %q", in, want, got)
-		}
-	}
-}
-
-func TestIsValidCode(t *testing.T) {
-	cases := map[string]bool{
-		"123456": true,
-		"000000": true,
-		"12345":  false,
-		"1234567": false,
-		"12345a": false,
-		"":       false,
-		" 12345": false,
-	}
-	for in, want := range cases {
-		if got := isValidCode(in); got != want {
-			t.Errorf("isValidCode(%q): esperado %v, obtenido %v", in, want, got)
-		}
-	}
-}
-
-func TestFormatCode(t *testing.T) {
-	if got := formatCode("123456"); got != "123 456" {
-		t.Errorf("formatCode: esperado %q, obtenido %q", "123 456", got)
-	}
-	// Códigos de longitud incorrecta pasan sin tocar (defensa).
-	if got := formatCode("12345"); got != "12345" {
-		t.Errorf("formatCode con longitud rara debería pasar: %q", got)
-	}
-}
-
-func TestHashCodeIsConsistent(t *testing.T) {
-	a := hashCode("123456")
-	b := hashCode("123456")
-	if a != b {
-		t.Error("hashCode no es determinista")
-	}
-	if a == hashCode("123457") {
-		t.Error("hashCode colisiona en inputs distintos")
-	}
-}
+// Los tests de generate/format/sanitize/valid/hash viven en
+// internal/code/code_test.go — ese paquete es el dueño de los helpers.
 
 func TestStoreAndConsumeCode(t *testing.T) {
 	db := setupDB(t)
@@ -185,7 +114,7 @@ func TestConsumeExpiredCode(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
 		VALUES (?, ?, ?, ?)
-	`, "alice@example.com", hashCode("123456"), past, past); err != nil {
+	`, "alice@example.com", code.Hash("123456"), past, past); err != nil {
 		t.Fatal(err)
 	}
 

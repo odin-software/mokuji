@@ -3,16 +3,13 @@ package profile
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
-	"math/big"
 	"net/http"
 	"strconv"
 	"time"
 
+	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
@@ -38,10 +35,7 @@ import (
 //   - El delete real es soft: ponemos deleted_at, el hard delete lo hace
 //     un worker diario (ver cleanup_worker.go).
 
-const (
-	deletionCodeLength   = 6
-	deletionCodeDuration = 15 * time.Minute
-)
+const deletionCodeDuration = 15 * time.Minute
 
 // ---- handlers ----
 
@@ -95,7 +89,7 @@ func (h *Handler) deleteAccountRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := generateDeletionCode()
+	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("delete: generar código", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -129,13 +123,13 @@ func (h *Handler) deleteAccountConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	// Sanitizamos a solo dígitos (mismo motivo que /auth/verify: clients de
 	// email meten non-breaking spaces al copiar "123 456").
-	code := sanitizeDeletionCode(r.PostFormValue("code"))
-	if !isValidDeletionCode(code) {
+	otp := code.Sanitize(r.PostFormValue("code"))
+	if !code.Valid(otp) {
 		h.renderDeleteWithError(w, r, s, "código inválido")
 		return
 	}
 
-	valid, err := h.consumeDeletionCode(r.Context(), s.UserID, code)
+	valid, err := h.consumeDeletionCode(r.Context(), s.UserID, otp)
 	if err != nil {
 		h.logger.Error("delete: consume code", "err", err, "user_id", s.UserID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -270,67 +264,24 @@ var globalDeletionLogPepper string
 // una vez al arrancar el servidor.
 func SetDeletionLogPepper(p string) { globalDeletionLogPepper = p }
 
-// ---- helpers OTP-locales ----
-
-func generateDeletionCode() (string, error) {
-	var code [deletionCodeLength]byte
-	for i := range code {
-		n, err := rand.Int(rand.Reader, big.NewInt(10))
-		if err != nil {
-			return "", err
-		}
-		code[i] = byte('0' + n.Int64())
-	}
-	return string(code[:]), nil
-}
-
-func isValidDeletionCode(s string) bool {
-	if len(s) != deletionCodeLength {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// sanitizeDeletionCode extrae solo dígitos (cubre non-breaking spaces y otros
-// invisibles que algunos clients de email inyectan al pegar el código).
-func sanitizeDeletionCode(s string) string {
-	out := make([]byte, 0, deletionCodeLength)
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			out = append(out, byte(r))
-		}
-	}
-	return string(out)
-}
-
-func hashDeletionCode(c string) string {
-	sum := sha256.Sum256([]byte(c))
-	return hex.EncodeToString(sum[:])
-}
-
 // storeDeletionCode inserta una fila nueva; no borramos códigos previos,
 // solo expiran. El consume rechaza los expirados.
-func (h *Handler) storeDeletionCode(ctx context.Context, userID int64, code string) error {
+func (h *Handler) storeDeletionCode(ctx context.Context, userID int64, otp string) error {
 	now := time.Now().UTC()
 	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO deletion_codes (user_id, code_hash, created_at, expires_at)
 		VALUES (?, ?, ?, ?)
-	`, userID, hashDeletionCode(code), now.Unix(), now.Add(deletionCodeDuration).Unix())
+	`, userID, code.Hash(otp), now.Unix(), now.Add(deletionCodeDuration).Unix())
 	return err
 }
 
-// consumeDeletionCode busca el código (no expirado), lo borra (single-use)
-// y retorna true si existía.
-func (h *Handler) consumeDeletionCode(ctx context.Context, userID int64, code string) (bool, error) {
+// consumeDeletionCode borra el código si existe y no expiró. Retorna true
+// solo si la DELETE afectó una fila — esto garantiza single-use atómico.
+func (h *Handler) consumeDeletionCode(ctx context.Context, userID int64, otp string) (bool, error) {
 	res, err := h.db.ExecContext(ctx, `
 		DELETE FROM deletion_codes
 		WHERE user_id = ? AND code_hash = ? AND expires_at > ?
-	`, userID, hashDeletionCode(code), time.Now().UTC().Unix())
+	`, userID, code.Hash(otp), time.Now().UTC().Unix())
 	if err != nil {
 		return false, err
 	}
@@ -338,10 +289,10 @@ func (h *Handler) consumeDeletionCode(ctx context.Context, userID int64, code st
 	return n > 0, nil
 }
 
-func (h *Handler) sendDeletionEmail(to, code string) error {
+func (h *Handler) sendDeletionEmail(to, otp string) error {
 	var buf bytes.Buffer
 	if err := h.deleteT.Execute(&buf, map[string]any{
-		"Code":    code,
+		"Code":    otp,
 		"BaseURL": h.baseURL,
 	}); err != nil {
 		return err

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
@@ -178,7 +179,7 @@ func TestDeleteAccountConfirmRejectsExpiredCode(t *testing.T) {
 	past := time.Now().UTC().Add(-1 * time.Hour).Unix()
 	if _, err := db.Exec(
 		`INSERT INTO deletion_codes (user_id, code_hash, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		uid, hashDeletionCode("123456"), past, past,
+		uid, code.Hash("123456"), past, past,
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -11,16 +11,12 @@ package auth
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	htmltmpl "html/template"
 	"io/fs"
 	"log/slog"
-	"math/big"
 	"net"
 	"net/http"
 	"net/mail"
@@ -29,6 +25,7 @@ import (
 	texttmpl "text/template"
 	"time"
 
+	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
@@ -36,10 +33,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
-const (
-	codeLength   = 6
-	codeDuration = 10 * time.Minute
-)
+const codeDuration = 10 * time.Minute
 
 // Config agrupa las dependencias del handler.
 type Config struct {
@@ -204,7 +198,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := generateCode()
+	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("generar código", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -266,18 +260,18 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	// Sanitizamos a solo dígitos: algunos clients de email pegan el código
 	// con non-breaking spaces (U+00A0), tabs, o caracteres invisibles que
 	// strings.TrimSpace/ReplaceAll(" ", "") no cubre. sanitizeCode robusto.
-	code := sanitizeCode(r.PostFormValue("code"))
+	otp := code.Sanitize(r.PostFormValue("code"))
 
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
 		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "email inválido"})
 		return
 	}
-	if !isValidCode(code) {
+	if !code.Valid(otp) {
 		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "código inválido"})
 		return
 	}
 
-	ok, err := h.consumeCode(r.Context(), emailAddr, code)
+	ok, err := h.consumeCode(r.Context(), emailAddr, otp)
 	if err != nil {
 		h.logger.Error("validar código", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -329,9 +323,9 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	}
 }
 
-func (h *Handler) renderOTPEmail(code, to, ip, ua string) (string, error) {
+func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (string, error) {
 	data := otpEmailData{
-		Code:        formatCode(code),
+		Code:        code.Format(otp),
 		To:          to,
 		IPAddress:   ip,
 		UserAgent:   ua,
@@ -345,21 +339,21 @@ func (h *Handler) renderOTPEmail(code, to, ip, ua string) (string, error) {
 	return buf.String(), nil
 }
 
-func (h *Handler) storeCode(ctx context.Context, email, code, ip, ua string) error {
+func (h *Handler) storeCode(ctx context.Context, email, otp, ip, ua string) error {
 	now := time.Now().UTC()
 	expires := now.Add(codeDuration)
 	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO otp_codes (email, code_hash, created_at, expires_at, ip_address, user_agent)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, email, hashCode(code), now.Unix(), expires.Unix(), ip, ua)
+	`, email, code.Hash(otp), now.Unix(), expires.Unix(), ip, ua)
 	return err
 }
 
 // consumeCode valida y marca un código como usado. Retorna (true, nil) si fue
 // válido y se consumió; (false, nil) si no había match válido; (_, err) si
 // hubo error de DB.
-func (h *Handler) consumeCode(ctx context.Context, email, code string) (bool, error) {
-	hash := hashCode(code)
+func (h *Handler) consumeCode(ctx context.Context, email, otp string) (bool, error) {
+	hash := code.Hash(otp)
 	now := time.Now().UTC().Unix()
 
 	res, err := h.db.ExecContext(ctx, `
@@ -406,57 +400,6 @@ func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string, digest
 	return res.LastInsertId()
 }
 
-// generateCode produce un string de 6 dígitos numéricos crypto-random.
-func generateCode() (string, error) {
-	var code [codeLength]byte
-	for i := range code {
-		n, err := rand.Int(rand.Reader, big.NewInt(10))
-		if err != nil {
-			return "", err
-		}
-		code[i] = byte('0' + n.Int64())
-	}
-	return string(code[:]), nil
-}
-
-// formatCode inserta un espacio en el medio para legibilidad en email: "123456" -> "123 456".
-func formatCode(code string) string {
-	if len(code) != codeLength {
-		return code
-	}
-	return code[:3] + " " + code[3:]
-}
-
-func isValidCode(s string) bool {
-	if len(s) != codeLength {
-		return false
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-// sanitizeCode extrae solo los dígitos del input. Más tolerante que un
-// TrimSpace+ReplaceAll: cubre non-breaking spaces (U+00A0) que Gmail/Apple
-// Mail meten al renderear "123 456", tabs, zero-width chars, etc. Devuelve
-// los dígitos en orden; el caller chequea longitud después con isValidCode.
-func sanitizeCode(s string) string {
-	out := make([]byte, 0, codeLength)
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			out = append(out, byte(r))
-		}
-	}
-	return string(out)
-}
-
-func hashCode(c string) string {
-	sum := sha256.Sum256([]byte(c))
-	return hex.EncodeToString(sum[:])
-}
 
 // clientIP retorna el IP real del cliente. Si trustProxy está activo, lee
 // X-Forwarded-For (asume que el primer IP es el del cliente real, lo cual

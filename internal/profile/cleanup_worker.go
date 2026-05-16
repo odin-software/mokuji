@@ -146,8 +146,12 @@ func (w *CleanupWorker) Run(ctx context.Context) {
 func (w *CleanupWorker) tickOnce(ctx context.Context) {
 	cutoff := w.now().UTC().Add(-GracePeriod).Unix()
 
+	// LIMIT defensivo: si el worker estuvo caído por semanas y una cohorte
+	// se acumuló, procesamos en lotes — el próximo tick (24h después)
+	// retoma el resto. Tope alto porque hard delete es barato.
 	rows, err := w.db.QueryContext(ctx, `
 		SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?
+		LIMIT 500
 	`, cutoff)
 	if err != nil {
 		w.logger.Error("cleanup query", "err", err)

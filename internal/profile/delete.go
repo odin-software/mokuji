@@ -10,9 +10,9 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"strconv"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
@@ -360,36 +360,17 @@ func humanDuration(d time.Duration) string {
 		if days == 1 {
 			return "en 1 día"
 		}
-		return "en " + itoa(days) + " días"
+		return "en " + strconv.Itoa(days) + " días"
 	}
 	hours := int(d.Hours())
 	if hours >= 1 {
 		if hours == 1 {
 			return "en 1 hora"
 		}
-		return "en " + itoa(hours) + " horas"
+		return "en " + strconv.Itoa(hours) + " horas"
 	}
 	return "en menos de una hora"
 }
-
-// itoa minimal helper para no importar strconv en este archivo.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[pos:])
-}
-
-// Hint al linter de que email no está sin uso: la referencia mantiene el
-// import vivo cuando agreguemos features que usen Message directo.
-var _ = email.Message{}
 
 // ErrUserNotPendingDeletion lo devuelve HardDeleteUser cuando el user
 // existe pero no está soft-deleted. Útil para el worker.

@@ -178,7 +178,7 @@ func main() {
 		if envBool("SECURE_COOKIES", false) {
 			log.Fatal("UNSUBSCRIBE_SECRET requerido en producción")
 		}
-		unsubSecret = "dev-unsubscribe-secret-no-uses-en-produccion-32b!!"
+		unsubSecret = "dev-unsubscribe-secret-no-usar-en-produccion!"
 		logger.Warn("UNSUBSCRIBE_SECRET no configurado, usando default de dev")
 	}
 	unsubSigner, err := unsubscribe.NewSigner([]byte(unsubSecret))
@@ -243,8 +243,6 @@ func main() {
 		log.Fatalf("configurar releases: %v", err)
 	}
 
-	// El unsubSigner se construye arriba (antes de library.New) porque el
-	// library handler lo usa para montar /r/{token}.
 	unsubHandler, err := unsubscribe.New(unsubscribe.Config{
 		DB:            db,
 		Signer:        unsubSigner,
@@ -292,11 +290,6 @@ func main() {
 	}
 
 	go cleanupSessions(rootCtx, sessions, logger)
-
-	// El worker periódico de releases se construye arriba (antes del library
-	// handler) porque library lo usa como Poller para fetch inmediato al
-	// matchear. Acá arrancamos la goroutine recién, una vez todo el wiring
-	// está completo.
 	go releasesWorker.Run(rootCtx)
 
 	srv := server.New(server.Config{

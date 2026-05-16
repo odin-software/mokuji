@@ -80,13 +80,16 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, "library/entry.html", entryData{
-		Session:       s,
-		Entry:         entry,
-		Chapters:      chapters,
-		Sort:          sort,
-		IncludeRead:   includeRead,
-		UnreadCount:   entry.UnreadCount,
-		TotalChapters: len(chapters),
+		Session:     s,
+		Entry:       entry,
+		Chapters:    chapters,
+		Sort:        sort,
+		IncludeRead: includeRead,
+		UnreadCount: entry.UnreadCount,
+		// TotalChapters es el conteo real del manga en el idioma preferido
+		// del user, no el del slice mostrado: ese cambia con include_read y
+		// confunde ("0 capítulos" para un manga con 480 todos leídos).
+		TotalChapters: entry.TotalChapters,
 	})
 }
 

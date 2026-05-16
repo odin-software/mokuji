@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. Fase 2 (release tracking, email digest, GDPR export/delete) cerrada en branch `fase-2-release-tracking`, lista para merge a `main`. Producción `mokuji.org` corre v0.1.0; el bump a v0.2.0 va con el merge. Flow end-to-end: signup con OTP → biblioteca con search de AniList → matching automático MangaDex → caps nuevos en `/releases` + email digest semanal → privacy/digest toggle → export JSON → soft delete con gracia 7 días.
+Tracker de manga público en Go + SQLite. Fase 3 (multi-source release tracking: MangaDex + Asura Scans, scaffolding para más) en branch `fase-3-multi-source`, lista para merge a `main`. Producción `mokuji.org` corre v0.2.0; el bump a v0.3.0 va con el merge. Flow end-to-end: signup con OTP → biblioteca con search de AniList → matching automático contra cada source configurada → caps nuevos en `/releases` + email digest semanal → privacy/digest toggle → export JSON → soft delete con gracia 7 días + fieldset de sources por manga con reintentar/desvincular.
 
 ## Stack cerrado
 
@@ -24,29 +24,32 @@ Tracker de manga público en Go + SQLite. Fase 2 (release tracking, email digest
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
 | CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
-| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ implementado, pre-merge) |
+| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ mergeada en v0.2.0) |
+| Fase 3 — Multi-source | Tabla `manga_sources` + `releasesource.Client` + cliente Asura + backfill | [0014](adr/0014-fase-3-multi-source.md) (✅ implementado, pre-merge) |
 
 ## Mapa de paquetes
 
 ```
 internal/
-├── admin/         # /admin/trigger-digest (Bearer auth, opt-in con ADMIN_TOKEN)
+├── admin/         # /admin/trigger-digest + /admin/sources-health (Bearer auth)
+├── asura/         # cliente releasesource.Client contra api.asurascans.com
 ├── auth/          # /auth, /auth/start, /auth/verify, /auth/logout
 ├── csrf/          # middleware + helper de template
 ├── email/         # cliente SMTP (plain Send + multipart SendMessage)
 ├── home/          # GET / (redirect a /library si autenticado, /auth si no)
-├── library/       # /library + CRUD + search externa + matching mangadex on add
-├── mangadex/      # cliente HTTP (rate-limited, retry on 429/5xx)
-├── mangasource/   # interfaz Source + impl anilist/
+├── library/       # /library + CRUD + search externa + multi-source matching + backfiller
+├── mangadex/      # cliente releasesource.Client contra api.mangadex.org
+├── mangasource/   # interfaz Source (búsqueda externa: anilist) — distinto de releasesource
 ├── migrations/    # runner up-only
 ├── profile/       # /settings + /settings/export + /settings/delete-account/* + /restore-account + /u/{id}
 │                  # + CleanupWorker (hard delete a los 7 días)
 ├── ratelimit/     # buckets por clave con golang.org/x/time/rate
 ├── releases/
 │   ├── handler/   # /releases (caps no leídos) + /releases/mark-read (cursor)
-│   ├── matcher/   # exact-match normalizado anilist→mangadex
-│   ├── worker/    # poll periódico de mangadex (tick 1h, next_check_at por manga)
+│   ├── matcher/   # exact-match normalizado, una instancia por source
+│   ├── worker/    # poll periódico, dispatch por source via Clients map + SourceHealth in-memory
 │   └── digest/    # render multipart + Sender compartido + Worker semanal (dom 9am UTC)
+├── releasesource/ # interfaz Client (search+fetchChapters) + tipos compartidos
 ├── server/        # http.Server, routing, middleware, security headers, pendingDeletionRedirect
 ├── session/       # manager + middleware + cookies HttpOnly/Secure/SameSite=Lax
 └── unsubscribe/   # signer HMAC + GET/POST /unsubscribe (RFC 8058 one-click)
@@ -82,6 +85,11 @@ DELETION_LOG_PEPPER=<openssl rand -base64 32>
 
 # Fase 2 — opcional (vacío = endpoints admin deshabilitados)
 ADMIN_TOKEN=<openssl rand -base64 32>
+
+# Fase 3 — sources opt-in (default on)
+ASURA_ENABLED=true        # bajar a false para self-hosters conservadores
+ASURA_API_BASE_URL=       # vacío = api.asurascans.com (override si rotan dominio)
+ASURA_FRONTEND_BASE_URL=  # vacío = asurascans.com (para reconstruir reader URLs)
 ```
 
 ### Update flow (CD automático)
@@ -141,7 +149,7 @@ Vale dejarlos visibles para que no se rompa de nuevo en futuros deploys:
 
 Detalle en [decisiones-pendientes.md](decisiones-pendientes.md). Orden actual:
 
-1. **Merge `fase-2-release-tracking` → `main`** — feature completa, suite verde. Pre-merge: bump `VERSION` a `v0.2.0`, generar `UNSUBSCRIBE_SECRET` + `DELETION_LOG_PEPPER` en `/etc/mokuji/env` del Droplet, restart vía CD.
+1. **Merge `fase-3-multi-source` → `main`** — feature completa, suite verde. Pre-merge: bump VERSION ya está en `v0.3.0`. `ASURA_ENABLED=true` queda implícito (default); el operador puede setear `ASURA_API_BASE_URL` si Asura rota dominio. La migration 0007 corre automática al startup; el backfill recoge mangas existentes en biblioteca.
 2. **Widget "últimos releases" en home** — postergado de Fase 2 (la página `/releases` cubre el caso 80%).
 3. **Rate limit en `/unsubscribe`** — anotado en `decisiones-pendientes.md` (cheap por request pero acumula sin tope).
 4. **Tests en el deploy workflow** — anotado, no corre `go test` antes de deployar.

@@ -60,6 +60,40 @@ Cambio mínimo: agregar un step antes del build:
 
 Si `go test` no está disponible en el host del runner, instalar Go o usar un container action. Prioridad: media — bajo riesgo hoy porque los pushes a main pasan revisión local, pero antes de que más gente contribuya conviene cerrarlo.
 
+## Sources adicionales para multi-source
+
+Fase 3 cerró con MangaDex (siempre on) + Asura (opt-in default on). Comick.app
+quedó descartado de v1 porque su API real (`comick.dev`) está atrás de
+Cloudflare managed challenge — un cliente Go vanilla recibe un HTML
+"Just a moment…" en lugar de JSON. Reabrir cuando:
+
+- Comick relaje el bot detection (puede pasar si reciben quejas de
+  apps móviles legítimas que sufren el mismo bloqueo), o
+- Aceptemos depender de un sidecar headless tipo FlareSolverr — cambia
+  el shape de deploy (mokuji deja de ser un binario solo) y el self-hoster
+  pasa a necesitar Docker.
+
+Otras candidatas en backlog: Bato.to (HTML scraping, overlap con MD),
+Reaper Scans (overlap con Asura). Pegarlas se simplifica con el scaffolding
+de `internal/releasesource` ya cerrado en ADR 0014.
+
+## Vincular manualmente una source
+
+`/library/entry/{id}` ya muestra el fieldset de sources con reintentar y
+desvincular (ADR 0014 §6). Falta el flow para "vincular manualmente"
+cuando el matcher devuelve `needs_review` o `no_results` pero el manga
+sí existe en la source con un título completamente distinto al de
+AniList. UI candidata:
+
+- Botón "vincular manualmente" en cada source con status != matched
+- Mini-form que abre `?source=X&q=<title editable>` → llama
+  `SourceClient.Search` → lista candidatos con cover + título
+- User elige un candidato → UPSERT manga_sources con
+  `source_id=elegido, status=matched`
+
+Estimado ~150 LOC + tests. Bajo prioridad: el matching automático
+contra alt_titles cubre el 90% de los casos reales.
+
 ## Pendientes de explicación (no son decisiones, son aprendizaje)
 
 - **Passkeys / WebAuthn**: cómo se implementaría aunque no se haga ahora. Cubrir registration vs authentication ceremony, origin-binding criptográfico, almacenamiento server-side de public keys, recuperación multi-dispositivo, fallback path si el usuario pierde acceso a todos sus passkeys.

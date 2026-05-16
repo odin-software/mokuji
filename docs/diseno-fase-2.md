@@ -465,10 +465,10 @@ Modifica ADR 0007 (email transport): auth emails siguen plain, product emails pa
    8. ✅ **Unsubscribe endpoint**: paquete `internal/unsubscribe` con signer HMAC + `GET /unsubscribe` (confirmación) + `POST /unsubscribe` (one-click, RFC 8058 compatible). Env var `UNSUBSCRIBE_SECRET`. Idempotente.
    9. ✅ **Endpoint admin de prueba**: paquete `internal/admin` con `POST /admin/trigger-digest` autenticado vía `Authorization: Bearer $ADMIN_TOKEN`. Acepta `user_id` o `email`. Vacío = endpoint deshabilitado.
    10. ✅ **Worker de digest semanal**: `internal/releases/digest` con Sender (render multipart plain+HTML básico, headers List-Unsubscribe firmados) + Worker (tick 1h, dispara domingos 9am UTC, idempotente vía `users.last_digest_sent_at`). Cliente SMTP soporta multipart via `SendMessage`.
-   11. **Export de data**: `GET /settings/export` que serializa el user a JSON y devuelve como descarga.
-   12. **Account deletion**: `POST /settings/delete-account/request` + `/confirm` con re-OTP. Soft delete + cron diario para hard delete después de 7 días.
-   13. **Actualizar ADR 0007**: nota sobre product emails multipart vs auth emails plain.
-   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md), `.env.example` (`DELETION_LOG_PEPPER`). `UNSUBSCRIBE_SECRET` y `ADMIN_TOKEN` ya agregados en los pasos 8 y 9.
+   11. ✅ **Export de data**: `GET /settings/export` (en `internal/profile`) que serializa perfil + biblioteca + cursor de lectura como JSON descargable. Incluye `format_version` para evolución de schema.
+   12. ✅ **Account deletion**: `POST /settings/delete-account/request` + `/confirm` con re-OTP (tabla `deletion_codes`, vence 15min). Soft delete (`users.deleted_at`) + middleware `pendingDeletionRedirect` que manda a `/restore-account` para cancelar o borrar inmediatamente. `CleanupWorker` (tick 24h) hace hard delete de cuentas con `deleted_at + 7d < now` y registra en `deletion_log` con `SHA-256(user_id || ":" || pepper)`. Migration 0006 agrega `deletion_codes`.
+   13. ✅ **Actualizar ADR 0007**: nota sobre product emails multipart vs auth emails plain.
+   14. **Actualizar docs**: [estado.md](estado.md), [decisiones-pendientes.md](decisiones-pendientes.md). `.env.example` con `UNSUBSCRIBE_SECRET`, `ADMIN_TOKEN`, `DELETION_LOG_PEPPER` ya actualizado.
    15. **Bump `VERSION`** a `v0.2.0` antes de mergear a `main` (release feature-mayor visible al usuario).
 3. PR `fase-2-release-tracking` → `main` cuando esté todo verde. CD deploya automático.
 4. Mover este archivo a `docs/archivo/diseno-fase-2.md` o eliminarlo (decisión post-merge).

@@ -1,0 +1,27 @@
+{{define "title"}}cuenta pendiente de borrado — mokuji{{end}}
+{{define "content"}}
+<h1>tu cuenta está pendiente de borrado</h1>
+<p class="muted">cuenta: {{.Email}}</p>
+
+<p>marcaste esta cuenta para borrar el <strong>{{.DeletedAt.Format "2006-01-02 15:04 UTC"}}</strong>.</p>
+<p>se borra <strong>permanentemente {{.HardDeleteIn}}</strong> (el {{.HardDeleteAt.Format "2006-01-02"}}).</p>
+
+<h2 style="font-size: 1rem; margin-top: 1.5rem;">cancelar el borrado</h2>
+<p class="muted">vuelve tu cuenta a la normalidad. tu biblioteca y settings quedan intactos.</p>
+<form method="POST" action="/restore-account/cancel">
+  {{ csrfInput .Session }}
+  <button type="submit">cancelar borrado y volver</button>
+</form>
+
+<h2 style="font-size: 1rem; margin-top: 2rem;">o borrar ya</h2>
+<p class="muted">saltea el período de gracia. no se puede deshacer.</p>
+<form method="POST" action="/restore-account/delete-now">
+  {{ csrfInput .Session }}
+  <button type="submit" class="danger">borrar ahora</button>
+</form>
+
+<form method="POST" action="/auth/logout" class="logout-form">
+  {{ csrfInput .Session }}
+  <button type="submit">cerrar sesión sin tocar nada</button>
+</form>
+{{end}}

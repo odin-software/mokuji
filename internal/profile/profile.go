@@ -17,8 +17,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	texttmpl "text/template"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -46,16 +48,22 @@ type ProfileEntry struct {
 
 // Config agrupa las dependencias del handler.
 type Config struct {
-	DB            *sql.DB
-	HTMLTemplates fs.FS
-	Logger        *slog.Logger
+	DB             *sql.DB
+	HTMLTemplates  fs.FS
+	EmailTemplates fs.FS         // contiene account-deletion.txt; opcional si Email es nil
+	Email          *email.Client // opcional; sin él, los endpoints de borrado responden 503
+	BaseURL        string        // usado en el email de borrado
+	Logger         *slog.Logger
 }
 
-// Handler sirve /settings y /u/{id}.
+// Handler sirve /settings, /u/{id}, /settings/delete-account/* y /restore-account.
 type Handler struct {
-	db     *sql.DB
-	pages  map[string]*template.Template
-	logger *slog.Logger
+	db         *sql.DB
+	pages      map[string]*template.Template
+	email      *email.Client
+	deleteT    *texttmpl.Template // template del email de borrado
+	baseURL    string
+	logger     *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -78,7 +86,7 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	pages := map[string]*template.Template{}
-	for _, page := range []string{"settings.html", "profile.html"} {
+	for _, page := range []string{"settings.html", "profile.html", "delete-account.html", "restore-account.html"} {
 		clone, err := base.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
@@ -89,7 +97,24 @@ func New(cfg Config) (*Handler, error) {
 		pages[page] = clone
 	}
 
-	return &Handler{db: cfg.DB, pages: pages, logger: cfg.Logger}, nil
+	// El template de email es opcional para que tests que no necesitan
+	// borrado puedan construir el Handler sin EmailTemplates.
+	var deleteT *texttmpl.Template
+	if cfg.EmailTemplates != nil {
+		deleteT, err = texttmpl.ParseFS(cfg.EmailTemplates, "account-deletion.txt")
+		if err != nil {
+			return nil, fmt.Errorf("parsear account-deletion.txt: %w", err)
+		}
+	}
+
+	return &Handler{
+		db:      cfg.DB,
+		pages:   pages,
+		email:   cfg.Email,
+		deleteT: deleteT,
+		baseURL: cfg.BaseURL,
+		logger:  cfg.Logger,
+	}, nil
 }
 
 // Mount registra los endpoints en el mux.
@@ -97,6 +122,12 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings", h.settings)
 	mux.HandleFunc("POST /settings", h.updateSettings)
 	mux.HandleFunc("GET /settings/export", h.exportData)
+	mux.HandleFunc("GET /settings/delete-account", h.deleteAccountPage)
+	mux.HandleFunc("POST /settings/delete-account/request", h.deleteAccountRequest)
+	mux.HandleFunc("POST /settings/delete-account/confirm", h.deleteAccountConfirm)
+	mux.HandleFunc("GET /restore-account", h.restoreAccountPage)
+	mux.HandleFunc("POST /restore-account/cancel", h.restoreAccountCancel)
+	mux.HandleFunc("POST /restore-account/delete-now", h.restoreAccountDeleteNow)
 	mux.HandleFunc("GET /u/{id}", h.publicProfile)
 }
 

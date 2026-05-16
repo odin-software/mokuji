@@ -3,10 +3,19 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
+
+	"git.odin.do/kengru/mokuji/internal/session"
 )
+
+// sessionFromRequest extrae la sesión del contexto de la request.
+func sessionFromRequest(r *http.Request) (*session.Session, bool) {
+	return session.FromContext(r.Context())
+}
 
 // requestIDKey es la clave (tipo único, no exportada) bajo la cual se guarda
 // el request ID en el context.Context de cada request.
@@ -145,4 +154,59 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			"request_id", RequestIDFromContext(r.Context()),
 		)
 	})
+}
+
+// pendingDeletionRedirect interceptea requests autenticadas en las que el
+// user tiene users.deleted_at != NULL. La regla del ADR 0013 §11.2: durante
+// el período de gracia, el user NO puede navegar normalmente — todos los
+// paths lo mandan a /restore-account, donde puede cancelar el borrado o
+// confirmarlo inmediatamente.
+//
+// Paths exentos: /restore-account/*, /auth/logout, /health, /version, /static/,
+// el SW y el manifest. /unsubscribe también está exento porque puede recibir
+// POSTs sin sesión (RFC 8058).
+func (s *Server) pendingDeletionRedirect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sin DB no podemos chequear; si el server arrancó sin DB (tests
+		// transportistas), saltamos el middleware.
+		if s.cfg.DB == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		sess, ok := sessionFromRequest(r)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if isPendingDeletionExempt(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var deletedAt sql.NullInt64
+		err := s.cfg.DB.QueryRowContext(r.Context(),
+			`SELECT deleted_at FROM users WHERE id = ?`, sess.UserID,
+		).Scan(&deletedAt)
+		if err != nil || !deletedAt.Valid {
+			next.ServeHTTP(w, r)
+			return
+		}
+		http.Redirect(w, r, "/restore-account", http.StatusSeeOther)
+	})
+}
+
+func isPendingDeletionExempt(path string) bool {
+	switch path {
+	case "/restore-account",
+		"/restore-account/cancel",
+		"/restore-account/delete-now",
+		"/auth/logout",
+		"/health",
+		"/version",
+		"/manifest.webmanifest",
+		"/sw.js",
+		"/unsubscribe":
+		return true
+	}
+	return strings.HasPrefix(path, "/static/")
 }

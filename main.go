@@ -167,13 +167,36 @@ func main() {
 	}
 
 	profileHandler, err := profile.New(profile.Config{
-		DB:            db,
-		HTMLTemplates: htmlFS,
-		Logger:        logger,
+		DB:             db,
+		HTMLTemplates:  htmlFS,
+		EmailTemplates: emailFS,
+		Email:          emailClient,
+		BaseURL:        envOr("BASE_URL", "http://localhost:8080"),
+		Logger:         logger,
 	})
 	if err != nil {
 		log.Fatalf("configurar profile: %v", err)
 	}
+
+	// Pepper para el audit log de borrado de cuentas (deletion_log). Si no
+	// está seteado, los hashes son enumerables: aceptable en dev, no en prod.
+	pepper := os.Getenv("DELETION_LOG_PEPPER")
+	if pepper == "" && envBool("SECURE_COOKIES", false) {
+		log.Fatal("DELETION_LOG_PEPPER requerido en producción")
+	}
+	profile.SetDeletionLogPepper(pepper)
+
+	// Worker diario que hace hard delete de cuentas con deleted_at +
+	// GracePeriod < now (ADR 0013 §11.2).
+	cleanupWorker, err := profile.NewCleanupWorker(profile.CleanupWorkerConfig{
+		DB:     db,
+		Pepper: pepper,
+		Logger: logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar cleanup worker: %v", err)
+	}
+	go cleanupWorker.Run(rootCtx)
 
 	releasesHandler, err := releaseshandler.New(releaseshandler.Config{
 		DB:            db,

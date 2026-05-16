@@ -1,0 +1,40 @@
+{{define "title"}}borrar cuenta — mokuji{{end}}
+{{define "content"}}
+<h1>borrar cuenta</h1>
+<p class="muted">cuenta: {{.Email}}</p>
+
+<p>borrar tu cuenta:</p>
+<ul>
+  <li>borra tu perfil, biblioteca, sesiones y códigos de acceso</li>
+  <li>no borra los manga ni capítulos compartidos con otros usuarios</li>
+  <li>deja un hash one-way en un audit log (sin info personal recuperable)</li>
+</ul>
+<p>tenés 7 días después de confirmar para cancelar el borrado. después de eso es permanente.</p>
+
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+{{if .CodeSent}}
+  <p class="success">te enviamos un código a <strong>{{.Email}}</strong>. ingresá el código para confirmar:</p>
+  <form method="POST" action="/settings/delete-account/confirm">
+    {{ csrfInput .Session }}
+    <label>
+      código
+      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required autofocus>
+    </label>
+    <button type="submit" class="danger">confirmar borrado</button>
+  </form>
+  <form method="POST" action="/settings/delete-account/request" style="margin-top: 0.75rem;">
+    {{ csrfInput .Session }}
+    <button type="submit" class="link-button">pedir otro código</button>
+  </form>
+{{else}}
+  <form method="POST" action="/settings/delete-account/request">
+    {{ csrfInput .Session }}
+    <button type="submit" class="danger">enviarme un código de confirmación</button>
+  </form>
+{{end}}
+
+<p class="user-links">
+  <a href="/settings">← volver a settings</a>
+</p>
+{{end}}

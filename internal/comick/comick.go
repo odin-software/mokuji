@@ -343,13 +343,17 @@ type seriesEntity struct {
 	// `md_covers` o `default_thumbnail` según el contexto. Para el MVP
 	// del matcher no necesitamos cover (el matcher hace su decision
 	// por title/Titles). Cubrir cover requeriría una llamada extra.
-	Country string `json:"country"`
-	Status  int    `json:"status"` // 1=ongoing, 2=completed (heurística, no documentada)
+	Country       string  `json:"country"`
+	Status        int     `json:"status"`         // 1=ongoing, 2=completed (heurística, no documentada)
+	LastChapter   float64 `json:"last_chapter"`   // número del último cap; tie-breaker del matcher
+	LastChapterAt string  `json:"last_chapter_at"` // RFC3339; tie-breaker secundario
 }
 
 // toResult convierte el JSON a releasesource.MangaResult. Titles incluye
 // el title canónico (si no está duplicado) + el array titles que Comick
-// devuelve con variantes idiomáticas.
+// devuelve con variantes idiomáticas. LastChapter / LastChapterAt sirven
+// para que el matcher elija el slug correcto cuando Comick fragmenta una
+// serie en N entries (uno por scanlator).
 func (s seriesEntity) toResult() releasesource.MangaResult {
 	titles := make([]string, 0, len(s.Titles)+1)
 	titles = append(titles, s.Title)
@@ -358,11 +362,19 @@ func (s seriesEntity) toResult() releasesource.MangaResult {
 			titles = append(titles, t)
 		}
 	}
+	var lastAt time.Time
+	if s.LastChapterAt != "" {
+		if t, err := parseTimestamp(s.LastChapterAt); err == nil {
+			lastAt = t
+		}
+	}
 	return releasesource.MangaResult{
-		ID:     s.Slug,
-		Title:  s.Title,
-		Titles: titles,
-		Status: statusLabel(s.Status),
+		ID:            s.Slug,
+		Title:         s.Title,
+		Titles:        titles,
+		Status:        statusLabel(s.Status),
+		LastChapter:   s.LastChapter,
+		LastChapterAt: lastAt,
 	}
 }
 

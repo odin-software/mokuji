@@ -57,6 +57,18 @@ type MangaResult struct {
 	CoverURL string   // URL absoluta del cover; sin proxy
 	Year     int
 	Status   string // ongoing|completed|hiatus|cancelled (semántica por source)
+
+	// LastChapter es el número del último capítulo publicado, como float
+	// (acepta "70.5"). 0 = no reportado por la source. Lo usa el matcher
+	// como tie-breaker cuando hay múltiples exact-matches del title en
+	// la misma source — Comick fragmenta entries por scanlator/variante
+	// y el de mayor LastChapter suele ser el slug canónico.
+	LastChapter float64
+	// LastChapterAt es cuándo se publicó ese último cap conocido. Zero =
+	// no reportado. Tie-breaker secundario: entre slugs con mismo
+	// LastChapter, gana el más reciente (descarta slugs muertos hace
+	// meses que ya nadie sube).
+	LastChapterAt time.Time
 }
 
 // Chapter es un capítulo publicado en la source.

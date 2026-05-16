@@ -31,6 +31,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -118,7 +119,19 @@ func (m *Matcher) Match(ctx context.Context, titles ...string) (Result, error) {
 		return Result{Status: StatusMatched, SourceID: exact[0].ID}, nil
 	}
 
-	// 0 o >1 exact matches → pedir review.
+	// >1 exact matches: típico de Comick que fragmenta una serie en N
+	// entries (una por scanlator/variante). Intentamos tie-break sin
+	// pedir intervención del user — preferir el slug con más capítulos
+	// cubiertos (LastChapter) y, si empata, el más reciente.
+	// Si ningún candidato reporta esos campos (Asura/MangaDex), caemos
+	// a needs_review como antes.
+	if len(exact) > 1 {
+		if winner, ok := pickBestExact(exact); ok {
+			return Result{Status: StatusMatched, SourceID: winner.ID}, nil
+		}
+	}
+
+	// 0 o >1 exact matches sin tie-break posible → pedir review.
 	pool := candidates
 	if len(exact) > 1 {
 		pool = exact
@@ -136,6 +149,32 @@ func (m *Matcher) Match(ctx context.Context, titles ...string) (Result, error) {
 		})
 	}
 	return out, nil
+}
+
+// pickBestExact aplica la heurística de tie-break cuando >1 candidato
+// matchea exacto en una sola source. Orden:
+//   1. LastChapter descendente (más capítulos cubiertos)
+//   2. LastChapterAt descendente (más reciente, descarta slugs muertos)
+//
+// Devuelve (winner, true) solo si el ganador tiene alguna señal — al
+// menos LastChapter > 0 o LastChapterAt no-zero. Si todos los candidatos
+// vienen con campos cero (Asura/MangaDex no los reportan), retorna
+// (_, false) y el caller cae a needs_review.
+//
+// Mutación: ordena exact in-place. Aceptable porque el caller no usa
+// el slice después.
+func pickBestExact(exact []releasesource.MangaResult) (releasesource.MangaResult, bool) {
+	sort.SliceStable(exact, func(i, j int) bool {
+		if exact[i].LastChapter != exact[j].LastChapter {
+			return exact[i].LastChapter > exact[j].LastChapter
+		}
+		return exact[i].LastChapterAt.After(exact[j].LastChapterAt)
+	})
+	best := exact[0]
+	if best.LastChapter > 0 || !best.LastChapterAt.IsZero() {
+		return best, true
+	}
+	return releasesource.MangaResult{}, false
 }
 
 // normalizedSet retorna las versiones normalizadas no-vacías de titles

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"git.odin.do/kengru/mokuji/internal/mangadex"
 	"git.odin.do/kengru/mokuji/internal/releasesource"
@@ -203,6 +204,134 @@ func TestNormalize(t *testing.T) {
 		if got := normalize(in); got != want {
 			t.Errorf("normalize(%q):\n  esperado %q\n  obtenido %q", in, want, got)
 		}
+	}
+}
+
+// --- Tie-break heurístico cuando hay múltiples exact matches ---
+//
+// Comick fragmenta una serie en N entries (una por scanlator/variante);
+// el matcher debe elegir el slug "canónico" sin pedir intervención
+// manual. Estos tests usan datos reales sampleados de comick.art para
+// los 3 casos que validamos con el user.
+
+// helper: armar Results con LastChapter / LastChapterAt poblados.
+func mk(id, title string, lastCh float64, lastAtYear int, lastAtMonth time.Month, lastAtDay int) releasesource.MangaResult {
+	return releasesource.MangaResult{
+		ID:            id,
+		Title:         title,
+		Titles:        []string{title},
+		LastChapter:   lastCh,
+		LastChapterAt: time.Date(lastAtYear, lastAtMonth, lastAtDay, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+func TestTieBreakKnightOnlyLivesToday(t *testing.T) {
+	// Caso real: "The Knight Only Lives Today" (Anilist) matchea exacto
+	// con DOS slugs distintos de Comick:
+	//   - the-knight-only-lives-today (last_chapter=110, 2026-05-16)
+	//   - eternally-regressing-knight (last_chapter=109, 2026-05-10)
+	// Ambos tienen "The Knight Only Lives Today" en sus titles.
+	// Heurística: 110 > 109 → gana knight-only-lives.
+	stub := &stubClient{results: []releasesource.MangaResult{
+		mk("the-knight-only-lives-today", "The Knight Only Lives Today", 110, 2026, time.May, 16),
+		{
+			ID:            "eternally-regressing-knight",
+			Title:         "Eternally Regressing Knight",
+			Titles:        []string{"Eternally Regressing Knight", "The Knight Only Lives Today"},
+			LastChapter:   109,
+			LastChapterAt: time.Date(2026, time.May, 10, 0, 0, 0, 0, time.UTC),
+		},
+	}}
+	m := New(stub)
+	r, err := m.Match(context.Background(), "The Knight Only Lives Today")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != StatusMatched {
+		t.Fatalf("status: %q (esperaba matched). Result=%+v", r.Status, r)
+	}
+	if r.SourceID != "the-knight-only-lives-today" {
+		t.Errorf("SourceID: %q (esperaba el de mayor LastChapter)", r.SourceID)
+	}
+}
+
+func TestTieBreakOnePieceFavorsLiveSlug(t *testing.T) {
+	// Caso real One Piece en Comick:
+	//   - one-piece (last_chapter=1182, last_chapter_at=2026-05-08; al día)
+	//   - 02-one-piece (last_chapter=1160, last_chapter_at=2025-09-13; 8 meses sin update)
+	// Ambos con title="One Piece" (case difference → normalize iguala).
+	// Heurística: 1182 > 1160 → gana one-piece sin caer en needs_review.
+	stub := &stubClient{results: []releasesource.MangaResult{
+		mk("one-piece", "One Piece", 1182, 2026, time.May, 8),
+		mk("02-one-piece", "ONE PIECE", 1160, 2025, time.September, 13),
+	}}
+	m := New(stub)
+	r, err := m.Match(context.Background(), "One Piece")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != StatusMatched {
+		t.Fatalf("status: %q (esperaba matched). Result=%+v", r.Status, r)
+	}
+	if r.SourceID != "one-piece" {
+		t.Errorf("SourceID: %q (esperaba one-piece, el slug vivo)", r.SourceID)
+	}
+}
+
+func TestTieBreakSwordborneFavorsMostCoverage(t *testing.T) {
+	// Caso real "The Bastard of Swordborne": Comick devuelve 3 entries
+	// (una por scanlator). Heurística debe elegir la de más caps.
+	stub := &stubClient{results: []releasesource.MangaResult{
+		mk("the-bastard-of-swordborne", "The Bastard of Swordborne", 94, 2026, time.May, 6),
+		mk("the-bastard-of-swordborne-official", "The Bastard of Swordborne (Official)", 51, 2025, time.December, 10),
+		mk("the-bastard-of-swordborne-flame-comics", "The Bastard of Swordborne (Flame Comics)", 73, 2025, time.December, 10),
+	}}
+	m := New(stub)
+	r, err := m.Match(context.Background(), "The Bastard of Swordborne")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Solo el primer entry hace exact match con el title del query —
+	// los otros dos tienen sufijo "(Official)" / "(Flame Comics)" que
+	// el normalize() trata como tokens distintos.
+	if r.Status != StatusMatched {
+		t.Fatalf("status: %q. Result=%+v", r.Status, r)
+	}
+	if r.SourceID != "the-bastard-of-swordborne" {
+		t.Errorf("SourceID: %q", r.SourceID)
+	}
+}
+
+func TestTieBreakFallsBackToNeedsReviewWhenNoSignals(t *testing.T) {
+	// Sin LastChapter ni LastChapterAt (caso Asura/MangaDex), >1 exact
+	// match no debería tomar decisión automática — needs_review.
+	stub := &stubClient{results: []releasesource.MangaResult{
+		{ID: "a", Title: "Berserk", Titles: []string{"Berserk"}},
+		{ID: "b", Title: "Berserk", Titles: []string{"Berserk"}},
+	}}
+	m := New(stub)
+	r, err := m.Match(context.Background(), "Berserk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != StatusNeedsReview {
+		t.Errorf("sin señales para tie-break, esperaba needs_review, obtenido %q", r.Status)
+	}
+}
+
+func TestTieBreakUsesLastChapterAtAsSecondary(t *testing.T) {
+	// Empate en LastChapter → desempata por LastChapterAt desc.
+	stub := &stubClient{results: []releasesource.MangaResult{
+		mk("muerto", "X", 100, 2024, time.January, 1),
+		mk("vivo", "X", 100, 2026, time.May, 1),
+	}}
+	m := New(stub)
+	r, err := m.Match(context.Background(), "X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SourceID != "vivo" {
+		t.Errorf("SourceID: %q (esperaba el de LastChapterAt más reciente)", r.SourceID)
 	}
 }
 

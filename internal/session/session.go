@@ -36,6 +36,13 @@ type Session struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	ExpiresAt  time.Time
+	// PendingDeletion = true cuando users.deleted_at IS NOT NULL al momento
+	// de Load. Cacheado acá para que pendingDeletionRedirect no haga una
+	// query extra por request. Si el user se borra durante el lifetime de
+	// la sesión, deleteAccountConfirm también destruye sesiones (ver
+	// internal/profile/delete.go) — así que la próxima request del browser
+	// ya no tiene sesión y este flag queda consistente.
+	PendingDeletion bool
 }
 
 // Manager administra el ciclo de vida de sessions.
@@ -91,11 +98,20 @@ func (m *Manager) Load(r *http.Request) (*Session, error) {
 
 	hash := hashID(c.Value)
 	var s Session
-	var created, lastUsed, expires int64
+	var (
+		created, lastUsed, expires int64
+		deletedAt                  sql.NullInt64
+	)
+	// JOIN con users: cargamos deleted_at en la misma query para evitar un
+	// SELECT extra en cada request autenticada (ver pendingDeletionRedirect
+	// en internal/server/middleware.go).
 	err = m.db.QueryRowContext(r.Context(), `
-		SELECT id_hash, user_id, csrf_token, created_at, last_used_at, expires_at
-		FROM sessions WHERE id_hash = ?
-	`, hash).Scan(&s.IDHash, &s.UserID, &s.CSRFToken, &created, &lastUsed, &expires)
+		SELECT s.id_hash, s.user_id, s.csrf_token, s.created_at, s.last_used_at, s.expires_at,
+		       u.deleted_at
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.id_hash = ?
+	`, hash).Scan(&s.IDHash, &s.UserID, &s.CSRFToken, &created, &lastUsed, &expires, &deletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -105,6 +121,7 @@ func (m *Manager) Load(r *http.Request) (*Session, error) {
 	s.CreatedAt = time.Unix(created, 0).UTC()
 	s.LastUsedAt = time.Unix(lastUsed, 0).UTC()
 	s.ExpiresAt = time.Unix(expires, 0).UTC()
+	s.PendingDeletion = deletedAt.Valid
 
 	now := time.Now().UTC()
 	if now.After(s.ExpiresAt) {

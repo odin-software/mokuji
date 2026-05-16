@@ -12,6 +12,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"git.odin.do/kengru/mokuji/internal/migrations"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -22,12 +24,11 @@ func setupDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	schema, err := os.ReadFile("../../migrations/0001_users_and_sessions.sql")
-	if err != nil {
-		t.Fatalf("leer schema: %v", err)
-	}
-	if _, err := db.Exec(string(schema)); err != nil {
-		t.Fatalf("aplicar schema: %v", err)
+	// Aplicamos las migraciones reales — Session.Load ahora hace JOIN con
+	// users.deleted_at (columna agregada en 0004), así que un schema parcial
+	// no alcanza.
+	if _, err := migrations.Run(db, os.DirFS("../../migrations")); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 	return db
 }

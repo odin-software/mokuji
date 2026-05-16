@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -167,27 +166,12 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 // POSTs sin sesión (RFC 8058).
 func (s *Server) pendingDeletionRedirect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Sin DB no podemos chequear; si el server arrancó sin DB (tests
-		// transportistas), saltamos el middleware.
-		if s.cfg.DB == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
 		sess, ok := sessionFromRequest(r)
-		if !ok {
+		if !ok || !sess.PendingDeletion {
 			next.ServeHTTP(w, r)
 			return
 		}
 		if isPendingDeletionExempt(r.URL.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		var deletedAt sql.NullInt64
-		err := s.cfg.DB.QueryRowContext(r.Context(),
-			`SELECT deleted_at FROM users WHERE id = ?`, sess.UserID,
-		).Scan(&deletedAt)
-		if err != nil || !deletedAt.Valid {
 			next.ServeHTTP(w, r)
 			return
 		}

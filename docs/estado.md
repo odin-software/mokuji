@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. MVP completo y deployado en **mokuji.org**. Flow funcional end-to-end: signup con OTP → biblioteca con search de AniList → CRUD por entry → privacy toggle → vista pública `/u/{id}`. PWA instalable.
+Tracker de manga público en Go + SQLite. Fase 2 (release tracking, email digest, GDPR export/delete) cerrada en branch `fase-2-release-tracking`, lista para merge a `main`. Producción `mokuji.org` corre v0.1.0; el bump a v0.2.0 va con el merge. Flow end-to-end: signup con OTP → biblioteca con search de AniList → matching automático MangaDex → caps nuevos en `/releases` + email digest semanal → privacy/digest toggle → export JSON → soft delete con gracia 7 días.
 
 ## Stack cerrado
 
@@ -24,23 +24,32 @@ Tracker de manga público en Go + SQLite. MVP completo y deployado en **mokuji.o
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
 | CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
-| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (🚧 en branch) |
+| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ implementado, pre-merge) |
 
 ## Mapa de paquetes
 
 ```
 internal/
+├── admin/         # /admin/trigger-digest (Bearer auth, opt-in con ADMIN_TOKEN)
 ├── auth/          # /auth, /auth/start, /auth/verify, /auth/logout
 ├── csrf/          # middleware + helper de template
-├── email/         # cliente SMTP plain-text
+├── email/         # cliente SMTP (plain Send + multipart SendMessage)
 ├── home/          # GET / (redirect a /library si autenticado, /auth si no)
-├── library/       # /library + CRUD + search externa
+├── library/       # /library + CRUD + search externa + matching mangadex on add
+├── mangadex/      # cliente HTTP (rate-limited, retry on 429/5xx)
 ├── mangasource/   # interfaz Source + impl anilist/
 ├── migrations/    # runner up-only
-├── profile/       # /settings + /u/{id} público
+├── profile/       # /settings + /settings/export + /settings/delete-account/* + /restore-account + /u/{id}
+│                  # + CleanupWorker (hard delete a los 7 días)
 ├── ratelimit/     # buckets por clave con golang.org/x/time/rate
-├── server/        # http.Server, routing, middleware, security headers
-└── session/       # manager + middleware + cookies HttpOnly/Secure/SameSite=Lax
+├── releases/
+│   ├── handler/   # /releases (caps no leídos) + /releases/mark-read (cursor)
+│   ├── matcher/   # exact-match normalizado anilist→mangadex
+│   ├── worker/    # poll periódico de mangadex (tick 1h, next_check_at por manga)
+│   └── digest/    # render multipart + Sender compartido + Worker semanal (dom 9am UTC)
+├── server/        # http.Server, routing, middleware, security headers, pendingDeletionRedirect
+├── session/       # manager + middleware + cookies HttpOnly/Secure/SameSite=Lax
+└── unsubscribe/   # signer HMAC + GET/POST /unsubscribe (RFC 8058 one-click)
 ```
 
 ## Deploy en producción
@@ -66,6 +75,13 @@ SMTP_PORT=2587
 SMTP_USERNAME=resend
 SMTP_PASSWORD=re_<api_key_de_resend>
 SMTP_FROM=mokuji <auth@mokuji.org>
+
+# Fase 2 — required en prod (SECURE_COOKIES=true hace fail-fast si faltan)
+UNSUBSCRIBE_SECRET=<openssl rand -base64 32>
+DELETION_LOG_PEPPER=<openssl rand -base64 32>
+
+# Fase 2 — opcional (vacío = endpoints admin deshabilitados)
+ADMIN_TOKEN=<openssl rand -base64 32>
 ```
 
 ### Update flow (CD automático)
@@ -107,6 +123,10 @@ ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
 - Dark mode automático via `prefers-color-scheme`.
 - Versión inyectada en build, visible en footer y `/version` (ver sección Versionado arriba).
 - CD automático: push a `main` deploya solo (Forgejo runner en mimir).
+- **Workers en-proceso (Fase 2)**: poll mangadex (1h), digest semanal (dom 9am UTC), hard delete diario. Todos goroutines en el mismo binario; sin systemd units adicionales.
+- **Rate-limited HTTP client** para MangaDex (`golang.org/x/time/rate`, 2 req/s + retry on 429/5xx respetando Retry-After).
+- **Email outbound multipart** (plain+HTML básico) para product emails, plain-text para auth (ADR 0007 — nota Fase 2). Headers `List-Unsubscribe` + `List-Unsubscribe-Post` RFC 8058 one-click en cada digest.
+- **GDPR compliance**: export JSON al vuelo + soft delete 7d con cancelación self-service + hash one-way audit log.
 
 ## Gotchas operativos que aprendimos
 
@@ -121,13 +141,16 @@ Vale dejarlos visibles para que no se rompa de nuevo en futuros deploys:
 
 Detalle en [decisiones-pendientes.md](decisiones-pendientes.md). Orden actual:
 
-1. **Fase 2 — Release tracking** — 🚧 **EN PROGRESO** en branch `fase-2-release-tracking`. Diseño cerrado en [ADR 0013](adr/0013-fase-2-release-tracking.md) (destilado de [docs/diseno-fase-2.md](diseno-fase-2.md)). Incluye chapter linking (cursor por entry) y export+delete de data como must-have GDPR.
-2. **Usernames** — hoy `/u/{numeric_id}`, bloqueador para launch público real.
-3. **Marca / identidad visual** — habilita HTML emails enriquecidos (más allá del HTML básico de fase 2) y CSS de verdad.
-4. **`Type=notify` con `sd_notify`** — readiness real para systemd.
-5. **Soporte SMTP `:465`** — TLS implícito en lugar de STARTTLS. Bajo.
-6. **Activity feed público** — nice-to-have.
-7. **Rating** — explícitamente fuera de MVP.
+1. **Merge `fase-2-release-tracking` → `main`** — feature completa, suite verde. Pre-merge: bump `VERSION` a `v0.2.0`, generar `UNSUBSCRIBE_SECRET` + `DELETION_LOG_PEPPER` en `/etc/mokuji/env` del Droplet, restart vía CD.
+2. **Widget "últimos releases" en home** — postergado de Fase 2 (la página `/releases` cubre el caso 80%).
+3. **Rate limit en `/unsubscribe`** — anotado en `decisiones-pendientes.md` (cheap por request pero acumula sin tope).
+4. **Tests en el deploy workflow** — anotado, no corre `go test` antes de deployar.
+5. **Usernames** — hoy `/u/{numeric_id}`, bloqueador para launch público real.
+6. **Marca / identidad visual** — habilita HTML emails enriquecidos (más allá del HTML básico de fase 2) y CSS de verdad.
+7. **`Type=notify` con `sd_notify`** — readiness real para systemd.
+8. **Soporte SMTP `:465`** — TLS implícito en lugar de STARTTLS. Bajo.
+9. **Activity feed público** — nice-to-have.
+10. **Rating** — explícitamente fuera de MVP.
 
 ## Cómo retomar
 

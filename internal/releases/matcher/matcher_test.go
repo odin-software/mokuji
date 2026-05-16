@@ -6,23 +6,24 @@ import (
 	"testing"
 
 	"git.odin.do/kengru/mokuji/internal/mangadex"
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
 
 // stubClient implementa SearchClient con resultados/error programables y
 // captura los queries para verificar comportamiento.
 type stubClient struct {
-	results []mangadex.MangaResult
+	results []releasesource.MangaResult
 	err     error
 	queries []string
 }
 
-func (s *stubClient) Search(_ context.Context, q string) ([]mangadex.MangaResult, error) {
+func (s *stubClient) Search(_ context.Context, q string) ([]releasesource.MangaResult, error) {
 	s.queries = append(s.queries, q)
 	return s.results, s.err
 }
 
 func TestMatchSingleExactMatch(t *testing.T) {
-	stub := &stubClient{results: []mangadex.MangaResult{
+	stub := &stubClient{results: []releasesource.MangaResult{
 		{ID: "md-1", Title: "Chainsaw Man", Titles: []string{"Chainsaw Man", "チェンソーマン", "Hombre Motosierra"}},
 		{ID: "md-2", Title: "Chainsaw Girl", Titles: []string{"Chainsaw Girl"}},
 	}}
@@ -35,8 +36,8 @@ func TestMatchSingleExactMatch(t *testing.T) {
 	if r.Status != StatusMatched {
 		t.Fatalf("status: esperado matched, obtenido %q", r.Status)
 	}
-	if r.MangaDexID != "md-1" {
-		t.Errorf("MangaDexID: esperado md-1, obtenido %q", r.MangaDexID)
+	if r.SourceID != "md-1" {
+		t.Errorf("SourceID: esperado md-1, obtenido %q", r.SourceID)
 	}
 	if len(stub.queries) != 1 || stub.queries[0] != "Chainsaw Man" {
 		t.Errorf("query: esperado un solo Search('Chainsaw Man'); obtenido %v", stub.queries)
@@ -45,7 +46,7 @@ func TestMatchSingleExactMatch(t *testing.T) {
 
 func TestMatchMultipleExactMatchesNeedsReview(t *testing.T) {
 	// Caso: dos mangas en MangaDex con el mismo título exacto (spin-off, etc.).
-	stub := &stubClient{results: []mangadex.MangaResult{
+	stub := &stubClient{results: []releasesource.MangaResult{
 		{ID: "md-1", Title: "Berserk", Titles: []string{"Berserk"}, Year: 1989},
 		{ID: "md-2", Title: "Berserk", Titles: []string{"Berserk", "Berserk (spinoff)"}, Year: 2020},
 	}}
@@ -65,7 +66,7 @@ func TestMatchMultipleExactMatchesNeedsReview(t *testing.T) {
 
 func TestMatchNoExactMatchButResultsNeedsReview(t *testing.T) {
 	// MangaDex devuelve candidatos pero ninguno coincide exacto con el input.
-	stub := &stubClient{results: []mangadex.MangaResult{
+	stub := &stubClient{results: []releasesource.MangaResult{
 		{ID: "md-1", Title: "Chainsaw Man: Buddy Stories", Titles: []string{"Chainsaw Man: Buddy Stories"}},
 		{ID: "md-2", Title: "Chainsaw Maid", Titles: []string{"Chainsaw Maid"}},
 	}}
@@ -93,7 +94,7 @@ func TestMatchNoResults(t *testing.T) {
 	if r.Status != StatusNoResults {
 		t.Errorf("status: esperado no_results, obtenido %q", r.Status)
 	}
-	if r.MangaDexID != "" || len(r.Candidates) != 0 {
+	if r.SourceID != "" || len(r.Candidates) != 0 {
 		t.Errorf("no_results no debería tener id ni candidates; got %+v", r)
 	}
 }
@@ -148,9 +149,9 @@ func TestMatchUsesFirstNonEmptyTitleAsQuery(t *testing.T) {
 
 func TestMatchCapsNeedsReviewCandidates(t *testing.T) {
 	// 10 resultados, ninguno con match exacto → needs_review con top MaxCandidates.
-	results := make([]mangadex.MangaResult, 10)
+	results := make([]releasesource.MangaResult, 10)
 	for i := range results {
-		results[i] = mangadex.MangaResult{ID: "id", Title: "Different Title", Titles: []string{"Different Title"}}
+		results[i] = releasesource.MangaResult{ID: "id", Title: "Different Title", Titles: []string{"Different Title"}}
 	}
 	stub := &stubClient{results: results}
 	m := New(stub)
@@ -170,7 +171,7 @@ func TestMatchUsesAltTitlesForExactMatching(t *testing.T) {
 	// El query no matchea el Title principal, pero sí un altTitle (caso típico:
 	// AniList nos da el romaji, MangaDex tiene el inglés como primario y el
 	// romaji entre los altTitles).
-	stub := &stubClient{results: []mangadex.MangaResult{
+	stub := &stubClient{results: []releasesource.MangaResult{
 		{ID: "md-1", Title: "Solo Leveling", Titles: []string{"Solo Leveling", "I Alone Level Up", "나 혼자만 레벨업"}},
 	}}
 	m := New(stub)

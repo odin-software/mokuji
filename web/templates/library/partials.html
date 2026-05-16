@@ -1,5 +1,5 @@
 {{define "mangadex-badge"}}
-{{- if eq .MangadexStatus "matched" -}}
+{{- if eq .SourceStatus "matched" -}}
   {{- if eq .TotalChapters 0 -}}
     <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="match resuelto pero todavía no halamos capítulos">pendiente</a>
   {{- else if gt .UnreadCount 0 -}}
@@ -7,9 +7,9 @@
   {{- else -}}
     <a href="/library/entry/{{.ID}}" class="md-badge md-badge-ok" title="ver capítulos">al día</a>
   {{- end -}}
-{{- else if eq .MangadexStatus "needs_review" -}}
+{{- else if eq .SourceStatus "needs_review" -}}
   <a href="/library/entry/{{.ID}}" class="md-badge md-badge-warn" title="múltiples coincidencias en mangadex; matching ambiguo">matching incierto</a>
-{{- else if eq .MangadexStatus "no_results" -}}
+{{- else if eq .SourceStatus "no_results" -}}
   <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="no encontrado en mangadex; no vamos a poder seguir capítulos">sin source</a>
 {{- else -}}
   <a href="/library/entry/{{.ID}}" class="md-badge md-badge-muted" title="todavía no buscamos en mangadex; el worker lo intentará luego">buscando…</a>

@@ -224,9 +224,9 @@ func TestSearch5xxRetries(t *testing.T) {
 	}
 }
 
-// --- FetchFeed ---
+// --- FetchChapters ---
 
-func TestFetchFeedSuccess(t *testing.T) {
+func TestFetchChaptersSuccess(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/manga/m1/feed" {
 			t.Errorf("path: %q", r.URL.Path)
@@ -262,9 +262,9 @@ func TestFetchFeedSuccess(t *testing.T) {
 		}`))
 	})
 
-	chapters, err := c.FetchFeed(context.Background(), "m1", "en", time.Time{})
+	chapters, err := c.FetchChapters(context.Background(), "m1", "en", time.Time{})
 	if err != nil {
-		t.Fatalf("FetchFeed: %v", err)
+		t.Fatalf("FetchChapters: %v", err)
 	}
 	if len(chapters) != 2 {
 		t.Fatalf("esperado 2 caps, obtenido %d", len(chapters))
@@ -275,18 +275,18 @@ func TestFetchFeedSuccess(t *testing.T) {
 	if chapters[1].Number != "2.5" {
 		t.Errorf("second chapter number: %q", chapters[1].Number)
 	}
-	if chapters[0].ReaderURL() != "https://mangadex.org/chapter/ch-1" {
-		t.Errorf("ReaderURL sin externalUrl debe ser mangadex.org; obtenido %q", chapters[0].ReaderURL())
+	if chapters[0].ExternalURL != "" {
+		t.Errorf("primer cap sin externalUrl: ExternalURL debería ser vacío, obtenido %q", chapters[0].ExternalURL)
 	}
-	if chapters[1].ReaderURL() != "https://mangaplus.shueisha.co.jp/x" {
-		t.Errorf("ReaderURL con externalUrl debe usar el external; obtenido %q", chapters[1].ReaderURL())
+	if chapters[1].ExternalURL != "https://mangaplus.shueisha.co.jp/x" {
+		t.Errorf("segundo cap con externalUrl: parser no captura el campo, obtenido %q", chapters[1].ExternalURL)
 	}
 	if chapters[0].PublishedAt.IsZero() {
 		t.Error("PublishedAt no debería ser zero")
 	}
 }
 
-func TestFetchFeedPaginates(t *testing.T) {
+func TestFetchChaptersPaginates(t *testing.T) {
 	var pages int
 	var mu sync.Mutex
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -331,9 +331,9 @@ func TestFetchFeedPaginates(t *testing.T) {
 		}
 	})
 
-	chapters, err := c.FetchFeed(context.Background(), "m1", "en", time.Time{})
+	chapters, err := c.FetchChapters(context.Background(), "m1", "en", time.Time{})
 	if err != nil {
-		t.Fatalf("FetchFeed: %v", err)
+		t.Fatalf("FetchChapters: %v", err)
 	}
 	if len(chapters) != 150 {
 		t.Fatalf("esperado 150 caps (100+50), obtenido %d", len(chapters))
@@ -345,7 +345,7 @@ func TestFetchFeedPaginates(t *testing.T) {
 	}
 }
 
-func TestFetchFeedFiltersBySince(t *testing.T) {
+func TestFetchChaptersFiltersBySince(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		got := r.URL.Query().Get("publishAtSince")
 		if got != "2024-03-01T00:00:00" {
@@ -356,13 +356,13 @@ func TestFetchFeedFiltersBySince(t *testing.T) {
 	})
 
 	since := time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)
-	_, err := c.FetchFeed(context.Background(), "m1", "en", since)
+	_, err := c.FetchChapters(context.Background(), "m1", "en", since)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestFetchFeedSkipsChaptersWithInvalidPublishAt(t *testing.T) {
+func TestFetchChaptersSkipsChaptersWithInvalidPublishAt(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -375,7 +375,7 @@ func TestFetchFeedSkipsChaptersWithInvalidPublishAt(t *testing.T) {
 		}`))
 	})
 
-	chapters, err := c.FetchFeed(context.Background(), "m1", "en", time.Time{})
+	chapters, err := c.FetchChapters(context.Background(), "m1", "en", time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,12 +387,12 @@ func TestFetchFeedSkipsChaptersWithInvalidPublishAt(t *testing.T) {
 	}
 }
 
-func TestFetchFeed404(t *testing.T) {
+func TestFetchChapters404(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"result":"error"}`))
 	})
-	_, err := c.FetchFeed(context.Background(), "no-existe", "en", time.Time{})
+	_, err := c.FetchChapters(context.Background(), "no-existe", "en", time.Time{})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("esperado ErrNotFound, obtenido %v", err)
 	}

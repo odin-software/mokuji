@@ -15,19 +15,30 @@ import (
 
 var mangaSeq int64
 
-func insertMangaWithChapters(t *testing.T, db *sql.DB, userID int64, mangadexStatus string) (entryID, mangaID int64) {
+// insertMangaWithChapters crea manga + library_entry + fila en
+// manga_sources con la source 'mangadex' en el status dado. El sourceID
+// se deriva del seq para que sea único entre tests.
+func insertMangaWithChapters(t *testing.T, db *sql.DB, userID int64, sourceStatus string) (entryID, mangaID int64) {
 	t.Helper()
 	mangaSeq++
-	sourceID := "a-" + strconv.FormatInt(mangaSeq, 10)
+	anilistID := "a-" + strconv.FormatInt(mangaSeq, 10)
 	res, err := db.Exec(
-		`INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at, mangadex_id, mangadex_status)
-		 VALUES ('anilist', ?, 'Berserk', '', ?, ?, ?, ?)`,
-		sourceID, time.Now().Unix(), time.Now().Unix(), "mdx-"+sourceID, mangadexStatus,
+		`INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at)
+		 VALUES ('anilist', ?, 'Berserk', '', ?, ?)`,
+		anilistID, time.Now().Unix(), time.Now().Unix(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mangaID, _ = res.LastInsertId()
+
+	mangadexID := "mdx-" + anilistID
+	if _, err := db.Exec(
+		`INSERT INTO manga_sources (manga_id, source, source_id, status) VALUES (?, 'mangadex', ?, ?)`,
+		mangaID, mangadexID, sourceStatus,
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	res, err = db.Exec(
 		`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,

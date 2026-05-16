@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
 
 const (
@@ -40,13 +42,15 @@ const (
 	defaultRetryDelay  = 2 * time.Second
 )
 
-// ErrRateLimited indica que MangaDex respondió 429 incluso después del
-// retry interno. El caller (típicamente el worker) debe reagendar la
-// operación para más tarde — no es fatal, solo "intentá de nuevo".
-var ErrRateLimited = errors.New("mangadex: rate limited")
-
-// ErrNotFound indica que el recurso solicitado (manga, capítulo) no existe.
-var ErrNotFound = errors.New("mangadex: not found")
+// ErrRateLimited y ErrNotFound son alias hacia el paquete genérico
+// releasesource para que callers que importaban estos sentinels (worker,
+// matcher) sigan comparando con la misma identidad de error. La fuente
+// real vive en releasesource — el sentinel cliente-side es solo un
+// re-export. errors.Is sigue funcionando porque es la misma var.
+var (
+	ErrRateLimited = releasesource.ErrRateLimited
+	ErrNotFound    = releasesource.ErrNotFound
+)
 
 // Client habla con api.mangadex.org.
 type Client struct {
@@ -95,6 +99,11 @@ func New(opts ...Option) *Client {
 	return c
 }
 
+// Name retorna el identificador estable de la source. Cumple la
+// interfaz releasesource.Client; usado como key del map de clientes
+// en el worker y como valor de manga_sources.source.
+func (c *Client) Name() string { return "mangadex" }
+
 // Search busca manga por título. Devuelve hasta maxSearchResults
 // candidatos ordenados por relevancia según MangaDex. Filtra contenido
 // pornográfico (mokuji es público sin gate adulto).
@@ -124,11 +133,12 @@ func (c *Client) Search(ctx context.Context, title string) ([]MangaResult, error
 	return out, nil
 }
 
-// FetchFeed devuelve los capítulos de un manga en el idioma dado.
+// FetchChapters devuelve los capítulos de un manga en el idioma dado.
 // Si since no es zero, filtra a capítulos publicados después de esa fecha.
 // Maneja paginación (API es limit/offset, máx 100 por página) y ordena
 // por publishAt ascendente para que el caller pueda procesar cronológicamente.
-func (c *Client) FetchFeed(ctx context.Context, mangaID, language string, since time.Time) ([]Chapter, error) {
+// Cumple releasesource.Client.FetchChapters.
+func (c *Client) FetchChapters(ctx context.Context, mangaID, language string, since time.Time) ([]Chapter, error) {
 	if mangaID == "" {
 		return nil, errors.New("mangadex: mangaID requerido")
 	}

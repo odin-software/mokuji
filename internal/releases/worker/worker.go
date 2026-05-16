@@ -1,15 +1,14 @@
-// Package worker corre el job en background que polleea MangaDex por
-// capítulos nuevos de los mangas matcheados que algún usuario tiene en
-// status=reading. Diseño completo en ADR 0013 §5.
+// Package worker corre el job en background que polleea cada source de
+// release tracking por capítulos nuevos. Diseño completo en ADR 0014.
 //
 // Una goroutine única dentro del proceso de mokuji, schedule con
-// time.Ticker. En cada tick, query SQL devuelve hasta BatchSize mangas
-// cuyo mangadex_next_check_at venció, y por cada uno se hace 1 request a
-// /manga/{id}/feed (filtrado por publishAtSince con el último cap conocido
-// para no traer histórico cada vez). Caps nuevos se persisten en la tabla
-// chapter; next_check_at se setea a now+RecheckInterval.
+// time.Ticker. En cada tick, query SQL devuelve hasta BatchSize filas de
+// manga_sources cuyo next_check_at venció, y por cada una se hace 1
+// request al cliente correspondiente (lookup vía Clients[source]).
+// Capítulos nuevos se persisten en la tabla chapter (con source =
+// nombre de la fuente); next_check_at se setea a now+RecheckInterval.
 //
-// Cola implícita en la tabla manga (mangadex_next_check_at) — sin tabla
+// Cola implícita en manga_sources (columna next_check_at) — sin tabla
 // de jobs aparte.
 package worker
 
@@ -21,41 +20,39 @@ import (
 	"log/slog"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/mangadex"
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
 
 // Defaults conservadores. En producción se overridean vía Config.
 const (
 	DefaultTickInterval    = 1 * time.Hour
 	DefaultRecheckInterval = 6 * time.Hour
-	// RateLimitedDelay es cuánto esperamos antes de retomar un manga que
+	// RateLimitedDelay es cuánto esperamos antes de retomar una fila que
 	// nos devolvió ErrRateLimited. Más que el tick para que no monopolice.
 	RateLimitedDelay = 15 * time.Minute
-	// BatchSize es cuántos mangas procesamos por tick. Cota para no
+	// BatchSize es cuántas filas procesamos por tick. Cota para no
 	// bloquear demasiado tiempo en el loop si la cola creció.
 	BatchSize = 50
 )
 
-// FeedFetcher es lo mínimo que necesitamos del cliente MangaDex.
-// Inyectable para tests.
-type FeedFetcher interface {
-	FetchFeed(ctx context.Context, mangaID, language string, since time.Time) ([]mangadex.Chapter, error)
-}
-
 // Config agrupa las dependencias.
 type Config struct {
-	DB              *sql.DB
-	Client          FeedFetcher
+	DB *sql.DB
+	// Clients mapea nombre de source → cliente. El nombre debe coincidir
+	// con SourceClient.Name() y con manga_sources.source. Sources que no
+	// están en el map (deshabilitadas en config) se saltan: sus filas en
+	// manga_sources quedan dormant sin error.
+	Clients         map[string]releasesource.Client
 	Logger          *slog.Logger
 	TickInterval    time.Duration // 0 -> DefaultTickInterval
 	RecheckInterval time.Duration // 0 -> DefaultRecheckInterval
-	Language        string        // 0 -> "en"
+	Language        string        // "" -> "en"
 }
 
 // Worker es el job en background.
 type Worker struct {
 	db              *sql.DB
-	client          FeedFetcher
+	clients         map[string]releasesource.Client
 	logger          *slog.Logger
 	tickInterval    time.Duration
 	recheckInterval time.Duration
@@ -67,8 +64,8 @@ func New(cfg Config) (*Worker, error) {
 	if cfg.DB == nil {
 		return nil, errors.New("DB requerido")
 	}
-	if cfg.Client == nil {
-		return nil, errors.New("Client requerido")
+	if len(cfg.Clients) == 0 {
+		return nil, errors.New("al menos un Client requerido")
 	}
 	if cfg.TickInterval == 0 {
 		cfg.TickInterval = DefaultTickInterval
@@ -84,7 +81,7 @@ func New(cfg Config) (*Worker, error) {
 	}
 	return &Worker{
 		db:              cfg.DB,
-		client:          cfg.Client,
+		clients:         cfg.Clients,
 		logger:          cfg.Logger,
 		tickInterval:    cfg.TickInterval,
 		recheckInterval: cfg.RecheckInterval,
@@ -94,12 +91,13 @@ func New(cfg Config) (*Worker, error) {
 
 // Run bloquea hasta que ctx se cancele, corriendo RunOnce con el intervalo
 // configurado. Primer tick es inmediato — útil después de un restart para
-// retomar mangas vencidos sin esperar.
+// retomar filas vencidas sin esperar.
 func (w *Worker) Run(ctx context.Context) {
 	w.logger.Info("release worker arrancando",
 		"tick_interval", w.tickInterval,
 		"recheck_interval", w.recheckInterval,
-		"language", w.language)
+		"language", w.language,
+		"sources", w.sourceNames())
 
 	w.tick(ctx)
 
@@ -116,70 +114,89 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
+func (w *Worker) sourceNames() []string {
+	out := make([]string, 0, len(w.clients))
+	for n := range w.clients {
+		out = append(out, n)
+	}
+	return out
+}
+
 func (w *Worker) tick(ctx context.Context) {
 	if err := w.RunOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		w.logger.Error("release worker tick", "err", err)
 	}
 }
 
-// PollOne fetches y persiste capítulos para un solo manga sincrónicamente.
+// PollOne fetcha y persiste capítulos para un (manga, source) sincrónicamente.
 // Expuesto para que library.add (al matchear) dispare un poll inmediato sin
 // esperar al próximo tick — sin esto, un manga recién agregado puede tardar
-// hasta una hora en mostrar capítulos. Retorna el error directo del FetchFeed
-// (incluyendo mangadex.ErrRateLimited cuando aplique) para que el caller
-// decida si lo logguea como warn o aborta.
-func (w *Worker) PollOne(ctx context.Context, mangaID int64, mangadexID string) error {
-	return w.pollManga(ctx, mangaID, mangadexID)
+// hasta una hora en mostrar capítulos. Si el source no está en el map de
+// clientes (deshabilitada), devuelve un error explícito en vez de silenciarlo.
+func (w *Worker) PollOne(ctx context.Context, mangaID int64, source, sourceID string) error {
+	client, ok := w.clients[source]
+	if !ok {
+		return fmt.Errorf("worker: source %q sin cliente cableado", source)
+	}
+	return w.pollSource(ctx, mangaID, client, sourceID)
 }
 
-// RunOnce procesa un batch de mangas vencidos. Expuesto para tests y para
-// trigger manual (eventualmente vía endpoint admin si hace falta).
+// RunOnce procesa un batch de filas vencidas. Expuesto para tests y para
+// trigger manual.
 func (w *Worker) RunOnce(ctx context.Context) error {
-	mangas, err := w.dueMangas(ctx, BatchSize)
+	rows, err := w.dueSources(ctx, BatchSize)
 	if err != nil {
-		return fmt.Errorf("query mangas: %w", err)
+		return fmt.Errorf("query manga_sources: %w", err)
 	}
-	for _, m := range mangas {
+	for _, r := range rows {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := w.pollManga(ctx, m.id, m.mangadexID); err != nil {
-			// Loguear y seguir con los demás. Un manga roto no debe
-			// detener el tick.
-			w.logger.Warn("poll manga",
-				"manga_id", m.id,
-				"mangadex_id", m.mangadexID,
+		client, ok := w.clients[r.source]
+		if !ok {
+			// Source deshabilitada: sus filas siguen en DB pero no
+			// pollean. Lo logueamos como debug para no spamear.
+			w.logger.Debug("source sin cliente cableado; skip",
+				"manga_id", r.mangaID, "source", r.source)
+			continue
+		}
+		if err := w.pollSource(ctx, r.mangaID, client, r.sourceID); err != nil {
+			w.logger.Warn("poll source",
+				"manga_id", r.mangaID,
+				"source", r.source,
+				"source_id", r.sourceID,
 				"err", err)
 		}
 	}
 	return nil
 }
 
-type dueMangaRow struct {
-	id         int64
-	mangadexID string
+type dueSourceRow struct {
+	mangaID  int64
+	source   string
+	sourceID string
 }
 
-// dueMangas devuelve mangas que:
-//   - están matcheados con MangaDex (mangadex_id IS NOT NULL, status=matched)
-//   - tienen mangadex_next_check_at vencido (o NULL = nunca chequeados)
-//   - tienen al menos un library_entry en status=reading
+// dueSources devuelve filas de manga_sources que:
+//   - están matcheadas (status='matched')
+//   - tienen next_check_at vencido (o NULL = nunca chequeadas)
+//   - su manga tiene al menos un library_entry en status=reading
 //
 // Ordena por next_check_at ascendente (más viejos primero) para que el
 // trabajo se distribuya equitativamente.
-func (w *Worker) dueMangas(ctx context.Context, limit int) ([]dueMangaRow, error) {
+func (w *Worker) dueSources(ctx context.Context, limit int) ([]dueSourceRow, error) {
 	now := time.Now().UTC().Unix()
 	rows, err := w.db.QueryContext(ctx, `
-		SELECT manga.id, manga.mangadex_id
-		FROM manga
-		WHERE manga.mangadex_id IS NOT NULL
-		  AND manga.mangadex_status = 'matched'
-		  AND (manga.mangadex_next_check_at IS NULL OR manga.mangadex_next_check_at < ?)
+		SELECT ms.manga_id, ms.source, ms.source_id
+		FROM manga_sources ms
+		WHERE ms.status = 'matched'
+		  AND ms.source_id != ''
+		  AND (ms.next_check_at IS NULL OR ms.next_check_at < ?)
 		  AND EXISTS (
 		    SELECT 1 FROM library_entries
-		    WHERE library_entries.manga_id = manga.id AND library_entries.status = 'reading'
+		    WHERE library_entries.manga_id = ms.manga_id AND library_entries.status = 'reading'
 		  )
-		ORDER BY manga.mangadex_next_check_at IS NULL DESC, manga.mangadex_next_check_at ASC
+		ORDER BY ms.next_check_at IS NULL DESC, ms.next_check_at ASC
 		LIMIT ?
 	`, now, limit)
 	if err != nil {
@@ -187,10 +204,10 @@ func (w *Worker) dueMangas(ctx context.Context, limit int) ([]dueMangaRow, error
 	}
 	defer rows.Close()
 
-	var out []dueMangaRow
+	var out []dueSourceRow
 	for rows.Next() {
-		var r dueMangaRow
-		if err := rows.Scan(&r.id, &r.mangadexID); err != nil {
+		var r dueSourceRow
+		if err := rows.Scan(&r.mangaID, &r.source, &r.sourceID); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -198,27 +215,26 @@ func (w *Worker) dueMangas(ctx context.Context, limit int) ([]dueMangaRow, error
 	return out, rows.Err()
 }
 
-// pollManga fetch + persist de un manga.
-func (w *Worker) pollManga(ctx context.Context, mangaID int64, mangadexID string) error {
-	since, err := w.latestPublishedAt(ctx, mangaID)
+// pollSource fetch + persist de una (manga, source).
+func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releasesource.Client, sourceID string) error {
+	source := client.Name()
+	since, err := w.latestPublishedAt(ctx, mangaID, source)
 	if err != nil {
 		return fmt.Errorf("latest published_at: %w", err)
 	}
 
-	chapters, err := w.client.FetchFeed(ctx, mangadexID, w.language, since)
+	chapters, err := client.FetchChapters(ctx, sourceID, w.language, since)
 	if err != nil {
-		if errors.Is(err, mangadex.ErrRateLimited) {
-			// MangaDex apretó temporalmente. Reagendar un poco más tarde
-			// del tick normal para no insistir inmediatamente.
+		if errors.Is(err, releasesource.ErrRateLimited) {
 			next := time.Now().Add(RateLimitedDelay).UTC().Unix()
-			return w.scheduleNextCheck(ctx, mangaID, next)
+			return w.scheduleNextCheck(ctx, mangaID, source, next)
 		}
 		return err
 	}
 
 	inserted := 0
 	for _, ch := range chapters {
-		ok, err := w.insertChapter(ctx, mangaID, ch)
+		ok, err := w.insertChapter(ctx, mangaID, source, ch)
 		if err != nil {
 			return fmt.Errorf("insert chapter %q: %w", ch.ID, err)
 		}
@@ -228,27 +244,30 @@ func (w *Worker) pollManga(ctx context.Context, mangaID int64, mangadexID string
 	}
 
 	next := time.Now().Add(w.recheckInterval).UTC().Unix()
-	if err := w.scheduleNextCheck(ctx, mangaID, next); err != nil {
+	if err := w.scheduleNextCheck(ctx, mangaID, source, next); err != nil {
 		return fmt.Errorf("schedule next: %w", err)
 	}
 
 	if inserted > 0 {
 		w.logger.Info("caps nuevos persistidos",
 			"manga_id", mangaID,
-			"mangadex_id", mangadexID,
+			"source", source,
+			"source_id", sourceID,
 			"inserted", inserted)
 	}
 	return nil
 }
 
 // latestPublishedAt devuelve MAX(published_at) + 1s de chapters ya
-// persistidos para ese manga (o zero si nunca polleamos antes). El "+1s"
-// evita refetchear el último cap conocido.
-func (w *Worker) latestPublishedAt(ctx context.Context, mangaID int64) (time.Time, error) {
+// persistidos para ese (manga, source) — o zero si nunca polleamos antes.
+// El "+1s" evita refetchear el último cap conocido. Filtramos por source
+// porque cada source numera/publica independientemente; un cap viejo de
+// MangaDex no debe inhibir el primer poll de Asura.
+func (w *Worker) latestPublishedAt(ctx context.Context, mangaID int64, source string) (time.Time, error) {
 	var ts sql.NullInt64
 	err := w.db.QueryRowContext(ctx, `
-		SELECT MAX(published_at) FROM chapter WHERE manga_id = ?
-	`, mangaID).Scan(&ts)
+		SELECT MAX(published_at) FROM chapter WHERE manga_id = ? AND source = ?
+	`, mangaID, source).Scan(&ts)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -259,17 +278,18 @@ func (w *Worker) latestPublishedAt(ctx context.Context, mangaID int64) (time.Tim
 }
 
 // insertChapter hace upsert idempotente. Devuelve true si fue una fila
-// nueva (no si ya existía y se ignoró). ON CONFLICT cubre el caso del
-// segundo tick con caps que ya persistimos.
-func (w *Worker) insertChapter(ctx context.Context, mangaID int64, ch mangadex.Chapter) (bool, error) {
+// nueva. ON CONFLICT cubre el caso del segundo tick con caps que ya
+// persistimos. source viene del Client.Name() — la columna chapter.source
+// guarda el origen para que el cursor de lectura distinga sources distintas.
+func (w *Worker) insertChapter(ctx context.Context, mangaID int64, source string, ch releasesource.Chapter) (bool, error) {
 	now := time.Now().UTC().Unix()
 	publishedAt := ch.PublishedAt.UTC().Unix()
 	res, err := w.db.ExecContext(ctx, `
 		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, created_at)
-		VALUES (?, 'mangadex', ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (source, source_id) DO NOTHING
 	`,
-		mangaID, ch.ID,
+		mangaID, source, ch.ID,
 		nullIfEmpty(ch.Number), nullIfEmpty(ch.Title),
 		nullIfEmpty(ch.Language), publishedAt,
 		nullIfEmpty(ch.ExternalURL), now,
@@ -281,12 +301,12 @@ func (w *Worker) insertChapter(ctx context.Context, mangaID int64, ch mangadex.C
 	return affected > 0, nil
 }
 
-func (w *Worker) scheduleNextCheck(ctx context.Context, mangaID, nextTs int64) error {
+func (w *Worker) scheduleNextCheck(ctx context.Context, mangaID int64, source string, nextTs int64) error {
 	now := time.Now().UTC().Unix()
 	_, err := w.db.ExecContext(ctx, `
-		UPDATE manga SET mangadex_next_check_at = ?, mangadex_checked_at = ?
-		WHERE id = ?
-	`, nextTs, now, mangaID)
+		UPDATE manga_sources SET next_check_at = ?, checked_at = ?
+		WHERE manga_id = ? AND source = ?
+	`, nextTs, now, mangaID, source)
 	return err
 }
 

@@ -1,9 +1,13 @@
-// Package matcher decide cuál manga de MangaDex corresponde a un manga
-// de la biblioteca (agregado vía AniList).
+// Package matcher decide cuál manga de una source dada (MangaDex, Asura,
+// Comick, …) corresponde a un manga de la biblioteca (agregado vía AniList).
+//
+// Una instancia de Matcher = una source. Library corre N matchers en
+// paralelo (uno por source configurada) y persiste el resultado de cada
+// uno en una fila de manga_sources.
 //
 // Estrategia v1:
 //
-//	1. Buscar en MangaDex con el primer título no-vacío (inglés > romaji >
+//	1. Buscar en la source con el primer título no-vacío (inglés > romaji >
 //	   native, según el orden que pase el caller).
 //	2. Normalizar todos los inputs (lower + strip puntuación + collapse
 //	   espacios) en un set para comparación O(1).
@@ -15,8 +19,9 @@
 //	       (devolvemos top N para que el user elija)
 //	     - 0 candidatos en absoluto -> no_results
 //
-// Si el cliente devuelve mangadex.ErrRateLimited, propagamos sin envolver
-// para que el caller (worker o handler de "agregar manga") reagende.
+// Si el cliente devuelve releasesource.ErrRateLimited, propagamos sin
+// envolver para que el caller (worker o handler de "agregar manga")
+// reagende.
 //
 // Sin fuzzy match (Levenshtein, etc.) por ahora — YAGNI. Si la métrica
 // de needs_review en producción sube mucho, se agrega.
@@ -29,7 +34,7 @@ import (
 	"strings"
 	"unicode"
 
-	"git.odin.do/kengru/mokuji/internal/mangadex"
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
 
 // Status del match final.
@@ -48,12 +53,12 @@ const MaxCandidates = 5
 // Result del intento de matching.
 type Result struct {
 	Status     Status
-	MangaDexID string      // poblado solo si Status == StatusMatched
+	SourceID   string      // poblado solo si Status == StatusMatched; ID/slug específico de la source
 	Candidates []Candidate // poblado si Status == StatusNeedsReview
 }
 
-// Candidate es la representación delgada de un manga de MangaDex que se
-// presenta al user para elegir manualmente.
+// Candidate es la representación delgada de un manga (de la source)
+// que se presenta al user para elegir manualmente.
 type Candidate struct {
 	ID       string
 	Title    string
@@ -62,9 +67,10 @@ type Candidate struct {
 }
 
 // SearchClient es lo mínimo que el Matcher necesita del cliente. Permite
-// testear con stubs sin levantar httptest.Server.
+// testear con stubs sin levantar httptest.Server. releasesource.Client
+// cumple esta firma trivialmente (es un subset).
 type SearchClient interface {
-	Search(ctx context.Context, title string) ([]mangadex.MangaResult, error)
+	Search(ctx context.Context, title string) ([]releasesource.MangaResult, error)
 }
 
 // Matcher empaqueta el cliente + la lógica de scoring.
@@ -90,7 +96,7 @@ func (m *Matcher) Match(ctx context.Context, titles ...string) (Result, error) {
 	query := firstNonEmpty(titles)
 	candidates, err := m.client.Search(ctx, query)
 	if err != nil {
-		if errors.Is(err, mangadex.ErrRateLimited) {
+		if errors.Is(err, releasesource.ErrRateLimited) {
 			return Result{}, err
 		}
 		return Result{}, fmt.Errorf("matcher: search: %w", err)
@@ -100,7 +106,7 @@ func (m *Matcher) Match(ctx context.Context, titles ...string) (Result, error) {
 		return Result{Status: StatusNoResults}, nil
 	}
 
-	var exact []mangadex.MangaResult
+	var exact []releasesource.MangaResult
 	for _, cand := range candidates {
 		if hasExactMatch(cand.Titles, inputs) {
 			exact = append(exact, cand)
@@ -108,7 +114,7 @@ func (m *Matcher) Match(ctx context.Context, titles ...string) (Result, error) {
 	}
 
 	if len(exact) == 1 {
-		return Result{Status: StatusMatched, MangaDexID: exact[0].ID}, nil
+		return Result{Status: StatusMatched, SourceID: exact[0].ID}, nil
 	}
 
 	// 0 o >1 exact matches → pedir review.

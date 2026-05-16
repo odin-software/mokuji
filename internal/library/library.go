@@ -27,9 +27,10 @@ import (
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
-// Matcher resuelve el vínculo manga-de-AniList ↔ manga-de-MangaDex.
-// Definido acá como interface para que el handler sea testeable sin red
-// (en producción se cablea *matcher.Matcher en main.go).
+// Matcher resuelve el vínculo entre un manga de la biblioteca y su
+// contraparte en una source concreta. Una instancia = una source. Definido
+// como interface para que el handler sea testeable sin red (en producción
+// se cablea *matcher.Matcher en main.go por cada source habilitada).
 type Matcher interface {
 	Match(ctx context.Context, titles ...string) (matcher.Result, error)
 }
@@ -70,26 +71,26 @@ type Manga struct {
 
 // Entry es un library_entry de un usuario sobre un manga.
 type Entry struct {
-	ID             int64
-	Manga          Manga
-	Status         string
-	LastChapter    string
-	IsFavorite     bool
-	SourceURL      string
-	Notes          string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	MangadexStatus matcher.Status // unmatched | matched | needs_review | no_results
-	UnreadCount    int            // caps publicados después del cursor en preferred_language
-	TotalChapters  int            // caps en DB para este manga en preferred_language
+	ID            int64
+	Manga         Manga
+	Status        string
+	LastChapter   string
+	IsFavorite    bool
+	SourceURL     string
+	Notes         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	SourceStatus  matcher.Status // summary cross-source: matched si al menos una source matchea
+	UnreadCount   int            // caps publicados después del cursor en preferred_language
+	TotalChapters int            // caps en DB para este manga en preferred_language
 }
 
-// Poller dispara un fetch sincrónico de capítulos para un manga recién
-// matcheado. Implementado por internal/releases/worker.Worker. Opcional —
-// si Config.Poller es nil, los caps llegan en el siguiente tick del worker
-// periódico (hasta una hora de espera).
+// Poller dispara un fetch sincrónico de capítulos para un (manga, source)
+// recién matcheado. Implementado por internal/releases/worker.Worker.
+// Opcional — si Config.Poller es nil, los caps llegan en el siguiente tick
+// del worker periódico (hasta una hora de espera).
 type Poller interface {
-	PollOne(ctx context.Context, mangaID int64, mangadexID string) error
+	PollOne(ctx context.Context, mangaID int64, source, sourceID string) error
 }
 
 // Config agrupa las dependencias del handler.
@@ -97,33 +98,32 @@ type Config struct {
 	DB            *sql.DB
 	HTMLTemplates fs.FS
 	MangaSource   mangasource.Source
-	// Matcher es opcional. Si está cableado, el handler add llama Match
-	// sincrónicamente después de persistir el manga y guarda el resultado
-	// en manga.mangadex_id / manga.mangadex_status. Si es nil, los mangas
-	// quedan con mangadex_status='unmatched' (default de la migration) y
-	// el worker eventual los retomará en background.
-	Matcher Matcher
-	// Poller es opcional. Si está cableado, después de un match exitoso se
-	// dispara un FetchFeed inmediato para tener capítulos visibles sin
-	// esperar al tick del worker periódico. Ver Poller arriba.
+	// SourceMatchers mapea source name → matcher. El handler add corre
+	// cada matcher después de persistir el manga y guarda el resultado
+	// en una fila de manga_sources. Sources que no estén acá no tienen
+	// fila y el worker no las polleea. Si el map está vacío, todos los
+	// mangas quedan unmatched.
+	SourceMatchers map[string]Matcher
+	// Poller es opcional. Si está cableado, después de un match exitoso
+	// se dispara un FetchChapters inmediato para tener capítulos visibles
+	// sin esperar al tick del worker periódico.
 	Poller Poller
 	// Signer es opcional. Si está cableado, el handler monta GET /r/{token}
 	// — el shortcut del email digest que marca leído y abre el lector en
-	// una sola navegación. Sin signer, el endpoint queda no-existente y los
-	// emails no tendrán links auto-mark.
+	// una sola navegación.
 	Signer *unsubscribe.Signer
 	Logger *slog.Logger
 }
 
 // Handler sirve los endpoints de /library/*.
 type Handler struct {
-	db      *sql.DB
-	src     mangasource.Source
-	matcher Matcher
-	poller  Poller
-	signer  *unsubscribe.Signer
-	pages   map[string]*template.Template
-	logger  *slog.Logger
+	db       *sql.DB
+	src      mangasource.Source
+	matchers map[string]Matcher
+	poller   Poller
+	signer   *unsubscribe.Signer
+	pages    map[string]*template.Template
+	logger   *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -155,7 +155,7 @@ func New(cfg Config) (*Handler, error) {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
 		}
 		// partials.html contiene defines compartidos por las páginas de
-		// library (ej. mangadex-badge). Lo agregamos primero para que cada
+		// library (ej. source-badge). Lo agregamos primero para que cada
 		// página lo tenga disponible. Nombre sin "_" porque go:embed
 		// excluye archivos que empiezan con "_" o ".".
 		if _, err := clone.ParseFS(cfg.HTMLTemplates, "library/partials.html", page); err != nil {
@@ -165,13 +165,13 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:      cfg.DB,
-		src:     cfg.MangaSource,
-		matcher: cfg.Matcher,
-		poller:  cfg.Poller,
-		signer:  cfg.Signer,
-		pages:   pages,
-		logger:  cfg.Logger,
+		db:       cfg.DB,
+		src:      cfg.MangaSource,
+		matchers: cfg.SourceMatchers,
+		poller:   cfg.Poller,
+		signer:   cfg.Signer,
+		pages:    pages,
+		logger:   cfg.Logger,
 	}, nil
 }
 
@@ -311,52 +311,58 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Intento de matching contra MangaDex. Cualquier fallo se loguea pero
-	// no rompe el "agregar manga" — el manga queda como unmatched y un
-	// worker periódico puede retomarlo. (Si Matcher no está cableado,
-	// también queda unmatched y todo el sistema sigue funcionando.)
-	h.tryMatchManga(r.Context(), mangaID, title)
+	// Intento de matching contra cada source configurada. Errores per-source
+	// se loguean y no rompen el flow — la fila de manga_sources queda en el
+	// estado correspondiente y el worker la retoma luego (o el user puede
+	// "reintentar" desde el detail page más adelante).
+	h.tryMatchSources(r.Context(), mangaID, title)
 
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
-// tryMatchManga corre el matcher sincrónicamente y persiste el resultado.
-// Nunca devuelve error — el matching es best-effort y no debe bloquear el
-// flujo de "agregar manga" si MangaDex está caído o rate limited.
-func (h *Handler) tryMatchManga(ctx context.Context, mangaID int64, title string) {
-	if h.matcher == nil {
-		return
+// tryMatchSources corre cada matcher configurado contra el manga y
+// persiste una fila por (manga, source) en manga_sources. Nunca propaga
+// errores — el matching es best-effort y no debe bloquear "agregar
+// manga". Una source que falla con rate limit / red queda sin fila y el
+// worker la retoma cuando el user reintente o el ciclo periódico la
+// alcance. Por ahora corremos sequencial; cuando haya 3+ sources se
+// paraleliza con errgroup.
+func (h *Handler) tryMatchSources(ctx context.Context, mangaID int64, title string) {
+	for sourceName, m := range h.matchers {
+		h.tryMatchOne(ctx, mangaID, sourceName, m, title)
 	}
+}
 
-	result, err := h.matcher.Match(ctx, title)
+func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName string, m Matcher, title string) {
+	result, err := m.Match(ctx, title)
 	if err != nil {
-		// Rate limit y errores transitorios: dejamos el manga como
-		// unmatched para que el worker lo retome más tarde.
-		h.logger.Warn("matchear mangadex (queda unmatched)", "manga_id", mangaID, "title", title, "err", err)
+		// Rate limit y errores transitorios: no insertamos fila para
+		// que el user pueda reintentar manualmente o el worker periódico
+		// retome cuando vuelva el servicio.
+		h.logger.Warn("matchear source (sin fila persistida)",
+			"manga_id", mangaID, "source", sourceName, "title", title, "err", err)
 		return
 	}
 
-	var mangadexID *string
+	var sourceID string
 	if result.Status == matcher.StatusMatched {
-		id := result.MangaDexID
-		mangadexID = &id
+		sourceID = result.SourceID
 	}
 
-	if err := h.updateMangadexMatch(ctx, mangaID, string(result.Status), mangadexID); err != nil {
-		h.logger.Error("persistir match mangadex", "manga_id", mangaID, "err", err)
+	if err := h.upsertMangaSource(ctx, mangaID, sourceName, string(result.Status), sourceID); err != nil {
+		h.logger.Error("persistir manga_source",
+			"manga_id", mangaID, "source", sourceName, "err", err)
 		return
 	}
 
-	// Si matchó y tenemos un poller cableado, disparamos un fetch inmediato.
-	// El worker periódico tickea cada 1h — sin esto, un manga recién agregado
-	// quedaría sin capítulos durante una ventana de hasta 60 minutos, lo cual
-	// es UX inaceptable. Errores se loguean como warn; el worker eventual
-	// retomará el manga porque next_check_at queda NULL hasta que el poll
-	// termine.
-	if h.poller != nil && mangadexID != nil {
-		if err := h.poller.PollOne(ctx, mangaID, *mangadexID); err != nil {
+	// Poll inmediato si matchó y hay poller cableado. Sin esto el manga
+	// recién agregado quedaría sin caps hasta el próximo tick (~1h).
+	// Errores acá se loguean como warn; el worker lo retoma porque
+	// next_check_at queda NULL hasta que el poll termine exitoso.
+	if h.poller != nil && result.Status == matcher.StatusMatched && sourceID != "" {
+		if err := h.poller.PollOne(ctx, mangaID, sourceName, sourceID); err != nil {
 			h.logger.Warn("poll inmediato tras match (worker retomará luego)",
-				"manga_id", mangaID, "mangadex_id", *mangadexID, "err", err)
+				"manga_id", mangaID, "source", sourceName, "source_id", sourceID, "err", err)
 		}
 	}
 }
@@ -451,6 +457,22 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 
 // --- DB helpers ---
 
+// sourceStatusSummarySQL es el snippet SQL que computa el status
+// cross-source de un manga: matched si al menos una source matchea,
+// si no needs_review, si no no_results, default unmatched. Está aislado
+// como const para reusar entre listEntries y loadEntry. La subquery
+// referencia m.id del SELECT externo.
+const sourceStatusSummarySQL = `
+COALESCE((
+	SELECT CASE
+	  WHEN SUM(status = 'matched') > 0 THEN 'matched'
+	  WHEN SUM(status = 'needs_review') > 0 THEN 'needs_review'
+	  WHEN SUM(status = 'no_results') > 0 THEN 'no_results'
+	  ELSE 'unmatched'
+	END
+	FROM manga_sources WHERE manga_id = m.id
+), 'unmatched')`
+
 func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query string) ([]Entry, error) {
 	args := []any{userID}
 	where := "le.user_id = ?"
@@ -464,14 +486,16 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		args = append(args, "%"+query+"%")
 	}
 
-	// Dos subqueries: total_chapters (en idioma del user) y unread_count
-	// (caps publicados después del cursor). Distinguirlos permite que el
-	// badge muestre "pendiente" (matched + 0 caps) vs "al día" (matched +
-	// caps > 0 + UnreadCount = 0). El cursor NULL = leyó cero, cuenta todos.
+	// Dos subqueries de count: total_chapters (en idioma del user) y
+	// unread_count (caps publicados después del cursor). Distinguirlos
+	// permite que el badge muestre "pendiente" (matched + 0 caps) vs
+	// "al día" (matched + caps > 0 + UnreadCount = 0). Cursor NULL =
+	// leyó cero, cuenta todos.
 	q := fmt.Sprintf(`
 		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
-		       m.id, m.source, m.source_id, m.title, m.cover_url, m.mangadex_status,
+		       m.id, m.source, m.source_id, m.title, m.cover_url,
+		       %s AS source_status,
 		       (SELECT COUNT(*) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
@@ -486,7 +510,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		JOIN users u ON u.id = le.user_id
 		WHERE %s
 		ORDER BY le.is_favorite DESC, le.updated_at DESC
-	`, where)
+	`, sourceStatusSummarySQL, where)
 
 	rows, err := h.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -504,7 +528,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 			&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
 			&created, &updated,
 			&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-			&e.MangadexStatus, &e.TotalChapters, &e.UnreadCount,
+			&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
 		); err != nil {
 			return nil, err
 		}
@@ -542,20 +566,20 @@ func (h *Handler) createEntry(ctx context.Context, userID, mangaID int64) error 
 	return err
 }
 
-// updateMangadexMatch persiste el resultado del matcher en la fila manga.
-// mangadexID es *string para distinguir "match resuelto en NULL" (caso
-// no_results / needs_review) de "match resuelto en un UUID concreto".
-func (h *Handler) updateMangadexMatch(ctx context.Context, mangaID int64, status string, mangadexID *string) error {
-	now := time.Now().UTC().Unix()
-	var id any
-	if mangadexID != nil {
-		id = *mangadexID
-	}
+// upsertMangaSource persiste el resultado del matcher como una fila de
+// manga_sources. sourceID puede ser vacío (caso needs_review / no_results):
+// la columna sigue siendo NOT NULL así que guardamos '' — el worker filtra
+// estas filas con `source_id != ''`. ON CONFLICT update cubre el caso de
+// "reintentar matching" (el user dispara una segunda vez).
+func (h *Handler) upsertMangaSource(ctx context.Context, mangaID int64, source, status, sourceID string) error {
 	_, err := h.db.ExecContext(ctx, `
-		UPDATE manga
-		SET mangadex_id = ?, mangadex_status = ?, mangadex_checked_at = ?
-		WHERE id = ?
-	`, id, status, now, mangaID)
+		INSERT INTO manga_sources (manga_id, source, source_id, status, checked_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (manga_id, source) DO UPDATE
+		SET source_id = excluded.source_id,
+		    status    = excluded.status,
+		    checked_at = excluded.checked_at
+	`, mangaID, source, sourceID, status, time.Now().UTC().Unix())
 	return err
 }
 

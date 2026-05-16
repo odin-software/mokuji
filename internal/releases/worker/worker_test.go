@@ -12,26 +12,41 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/mangadex"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 )
 
-// fakeFetcher simula al cliente MangaDex con respuestas programables por
-// mangadexID y captura los args de las llamadas para verificación.
-type fakeFetcher struct {
-	feed   map[string][]mangadex.Chapter
-	err    error
-	calls  []fetchCall
-	errFor map[string]error // override de error por mangadexID
+// fakeClient implementa releasesource.Client con respuestas programables y
+// captura los args de cada llamada para verificación.
+type fakeClient struct {
+	name    string
+	feed    map[string][]releasesource.Chapter
+	err     error
+	errFor  map[string]error
+	calls   []fetchCall
+	queries []string
+	results []releasesource.MangaResult
 }
 
 type fetchCall struct {
-	MangaID  string
+	SourceID string
 	Language string
 	Since    time.Time
 }
 
-func (f *fakeFetcher) FetchFeed(_ context.Context, id, lang string, since time.Time) ([]mangadex.Chapter, error) {
+func (f *fakeClient) Name() string {
+	if f.name == "" {
+		return "mangadex"
+	}
+	return f.name
+}
+
+func (f *fakeClient) Search(_ context.Context, q string) ([]releasesource.MangaResult, error) {
+	f.queries = append(f.queries, q)
+	return f.results, f.err
+}
+
+func (f *fakeClient) FetchChapters(_ context.Context, id, lang string, since time.Time) ([]releasesource.Chapter, error) {
 	f.calls = append(f.calls, fetchCall{id, lang, since})
 	if e, ok := f.errFor[id]; ok {
 		return nil, e
@@ -65,26 +80,34 @@ func insertUser(t *testing.T, db *sql.DB, email string) int64 {
 	return id
 }
 
-// insertMatchedManga crea un manga con mangadex_status='matched' y devuelve su id.
-// nextCheckAt: 0 = NULL (nunca chequeado); negativo = vencido hace N segundos;
-// positivo = vence en el futuro.
-func insertMatchedManga(t *testing.T, db *sql.DB, mangadexID string, nextCheckOffsetSec int64) int64 {
+// insertMatchedManga crea un manga + fila manga_sources con
+// source='mangadex' y status='matched'. nextCheckAt: 0 = NULL (nunca
+// chequeado); negativo = vencido hace N segundos; positivo = vence en el
+// futuro.
+func insertMatchedManga(t *testing.T, db *sql.DB, sourceID string, nextCheckOffsetSec int64) int64 {
 	t.Helper()
 	now := time.Now().UTC().Unix()
+	res, err := db.Exec(`
+		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at)
+		VALUES ('anilist', ?, 'Test', '', ?, ?)
+	`, sourceID, now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mangaID, _ := res.LastInsertId()
+
 	var nextCheck any
 	if nextCheckOffsetSec != 0 {
 		nextCheck = now + nextCheckOffsetSec
 	}
-	res, err := db.Exec(`
-		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at,
-		                   mangadex_id, mangadex_status, mangadex_next_check_at)
-		VALUES ('anilist', ?, 'Test', '', ?, ?, ?, 'matched', ?)
-	`, mangadexID, now, now, mangadexID, nextCheck)
+	_, err = db.Exec(`
+		INSERT INTO manga_sources (manga_id, source, source_id, status, next_check_at)
+		VALUES (?, 'mangadex', ?, 'matched', ?)
+	`, mangaID, sourceID, nextCheck)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := res.LastInsertId()
-	return id
+	return mangaID
 }
 
 func addReadingEntry(t *testing.T, db *sql.DB, userID, mangaID int64) {
@@ -99,12 +122,12 @@ func addReadingEntry(t *testing.T, db *sql.DB, userID, mangaID int64) {
 	}
 }
 
-func newTestWorker(t *testing.T, db *sql.DB, client FeedFetcher) *Worker {
+func newTestWorker(t *testing.T, db *sql.DB, client *fakeClient) *Worker {
 	t.Helper()
 	w, err := New(Config{
-		DB:     db,
-		Client: client,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:      db,
+		Clients: map[string]releasesource.Client{client.Name(): client},
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +147,9 @@ func countChapters(t *testing.T, db *sql.DB, mangaID int64) int {
 func nextCheckAt(t *testing.T, db *sql.DB, mangaID int64) (sql.NullInt64, sql.NullInt64) {
 	t.Helper()
 	var nextCheck, checkedAt sql.NullInt64
-	if err := db.QueryRow(`SELECT mangadex_next_check_at, mangadex_checked_at FROM manga WHERE id = ?`, mangaID).Scan(&nextCheck, &checkedAt); err != nil {
+	if err := db.QueryRow(`
+		SELECT next_check_at, checked_at FROM manga_sources WHERE manga_id = ? AND source = 'mangadex'
+	`, mangaID).Scan(&nextCheck, &checkedAt); err != nil {
 		t.Fatal(err)
 	}
 	return nextCheck, checkedAt
@@ -139,13 +164,13 @@ func TestRunOnceInsertsChaptersAndSchedulesNext(t *testing.T) {
 	addReadingEntry(t, db, userID, mangaID)
 
 	publishedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
 		"md-1": {
 			{ID: "ch-1", Number: "1", Title: "First", Language: "en", PublishedAt: publishedAt},
 			{ID: "ch-2", Number: "2", Title: "Second", Language: "en", PublishedAt: publishedAt.Add(time.Hour)},
 		},
 	}}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -166,11 +191,11 @@ func TestRunOnceInsertsChaptersAndSchedulesNext(t *testing.T) {
 		t.Error("checked_at debería estar poblado")
 	}
 
-	if len(fetcher.calls) != 1 {
-		t.Fatalf("calls a FetchFeed: esperado 1, obtenido %d", len(fetcher.calls))
+	if len(client.calls) != 1 {
+		t.Fatalf("calls a FetchChapters: esperado 1, obtenido %d", len(client.calls))
 	}
-	if !fetcher.calls[0].Since.IsZero() {
-		t.Errorf("primer poll debería tener since=zero, obtenido %v", fetcher.calls[0].Since)
+	if !client.calls[0].Since.IsZero() {
+		t.Errorf("primer poll debería tener since=zero, obtenido %v", client.calls[0].Since)
 	}
 }
 
@@ -179,10 +204,10 @@ func TestRunOnceSkipsMangasWithoutReadingEntries(t *testing.T) {
 	mangaID := insertMatchedManga(t, db, "md-1", -3600)
 	// NO addReadingEntry — nadie tiene este manga en reading.
 
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
 		"md-1": {{ID: "ch-1", PublishedAt: time.Now()}},
 	}}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -190,8 +215,8 @@ func TestRunOnceSkipsMangasWithoutReadingEntries(t *testing.T) {
 	if got := countChapters(t, db, mangaID); got != 0 {
 		t.Errorf("no debería pollar manga sin reading entries; chapters=%d", got)
 	}
-	if len(fetcher.calls) != 0 {
-		t.Errorf("no debería llamar al fetcher; calls=%v", fetcher.calls)
+	if len(client.calls) != 0 {
+		t.Errorf("no debería llamar al fetcher; calls=%v", client.calls)
 	}
 }
 
@@ -201,40 +226,46 @@ func TestRunOnceSkipsNonDueMangas(t *testing.T) {
 	mangaID := insertMatchedManga(t, db, "md-1", 3600) // vence en una hora (futuro)
 	addReadingEntry(t, db, userID, mangaID)
 
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
 		"md-1": {{ID: "ch-1", PublishedAt: time.Now()}},
 	}}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(fetcher.calls) != 0 {
-		t.Errorf("no debería pollar manga no vencido; calls=%v", fetcher.calls)
+	if len(client.calls) != 0 {
+		t.Errorf("no debería pollar manga no vencido; calls=%v", client.calls)
 	}
 }
 
-func TestRunOnceSkipsNonMatchedMangas(t *testing.T) {
+func TestRunOnceSkipsNonMatchedSources(t *testing.T) {
 	db := setupDB(t)
 	userID := insertUser(t, db, "alice@example.com")
-	// Manga con mangadex_status='needs_review' (no es matched).
+	// Manga con source en needs_review (no es matched).
 	now := time.Now().UTC().Unix()
 	res, err := db.Exec(`
-		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at, mangadex_status)
-		VALUES ('anilist', 'x', 't', '', ?, ?, 'needs_review')
+		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at)
+		VALUES ('anilist', 'x', 't', '', ?, ?)
 	`, now, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mangaID, _ := res.LastInsertId()
+	if _, err := db.Exec(`
+		INSERT INTO manga_sources (manga_id, source, source_id, status)
+		VALUES (?, 'mangadex', '', 'needs_review')
+	`, mangaID); err != nil {
+		t.Fatal(err)
+	}
 	addReadingEntry(t, db, userID, mangaID)
 
-	fetcher := &fakeFetcher{}
-	w := newTestWorker(t, db, fetcher)
+	client := &fakeClient{}
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(fetcher.calls) != 0 {
-		t.Errorf("no debería pollar manga sin status=matched; calls=%v", fetcher.calls)
+	if len(client.calls) != 0 {
+		t.Errorf("no debería pollar source sin status=matched; calls=%v", client.calls)
 	}
 }
 
@@ -245,19 +276,21 @@ func TestRunOnceDeduplicatesChaptersOnSecondTick(t *testing.T) {
 	addReadingEntry(t, db, userID, mangaID)
 
 	publishedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
 		"md-1": {
 			{ID: "ch-1", Number: "1", Language: "en", PublishedAt: publishedAt},
 		},
 	}}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 
 	// Primer tick: inserta 1.
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	// Forzar que vuelva a estar vencido para el segundo tick.
-	_, _ = db.Exec(`UPDATE manga SET mangadex_next_check_at = ? WHERE id = ?`, time.Now().Unix()-100, mangaID)
+	_, _ = db.Exec(`
+		UPDATE manga_sources SET next_check_at = ? WHERE manga_id = ? AND source = 'mangadex'
+	`, time.Now().Unix()-100, mangaID)
 
 	// Segundo tick: el cliente devuelve el mismo cap; ON CONFLICT DO NOTHING.
 	if err := w.RunOnce(context.Background()); err != nil {
@@ -285,18 +318,18 @@ func TestRunOncePassesSinceFromLatestPublishedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{"md-1": nil}}
-	w := newTestWorker(t, db, fetcher)
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{"md-1": nil}}
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	if len(fetcher.calls) != 1 {
-		t.Fatalf("calls: esperado 1, obtenido %d", len(fetcher.calls))
+	if len(client.calls) != 1 {
+		t.Fatalf("calls: esperado 1, obtenido %d", len(client.calls))
 	}
 	wantSince := publishedAt.Add(time.Second).UTC()
-	if !fetcher.calls[0].Since.Equal(wantSince) {
-		t.Errorf("since: esperado %v, obtenido %v", wantSince, fetcher.calls[0].Since)
+	if !client.calls[0].Since.Equal(wantSince) {
+		t.Errorf("since: esperado %v, obtenido %v", wantSince, client.calls[0].Since)
 	}
 }
 
@@ -306,8 +339,8 @@ func TestRunOnceRateLimitedReschedulesShorter(t *testing.T) {
 	mangaID := insertMatchedManga(t, db, "md-1", -3600)
 	addReadingEntry(t, db, userID, mangaID)
 
-	fetcher := &fakeFetcher{errFor: map[string]error{"md-1": mangadex.ErrRateLimited}}
-	w := newTestWorker(t, db, fetcher)
+	client := &fakeClient{errFor: map[string]error{"md-1": releasesource.ErrRateLimited}}
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -331,13 +364,13 @@ func TestRunOnceContinuesAfterOneMangaFails(t *testing.T) {
 	addReadingEntry(t, db, userID, failID)
 	addReadingEntry(t, db, userID, okID)
 
-	fetcher := &fakeFetcher{
+	client := &fakeClient{
 		errFor: map[string]error{"md-fail": errors.New("network down")},
-		feed: map[string][]mangadex.Chapter{
+		feed: map[string][]releasesource.Chapter{
 			"md-ok": {{ID: "ch-ok", PublishedAt: time.Now()}},
 		},
 	}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -361,13 +394,13 @@ func TestRunOnceBatchLimit(t *testing.T) {
 		addReadingEntry(t, db, userID, mangaID)
 	}
 
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{}}
-	w := newTestWorker(t, db, fetcher)
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{}}
+	w := newTestWorker(t, db, client)
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(fetcher.calls) != BatchSize {
-		t.Errorf("primer tick debería procesar exactamente BatchSize=%d, obtuvo %d", BatchSize, len(fetcher.calls))
+	if len(client.calls) != BatchSize {
+		t.Errorf("primer tick debería procesar exactamente BatchSize=%d, obtuvo %d", BatchSize, len(client.calls))
 	}
 }
 
@@ -391,7 +424,7 @@ func TestNewValidatesDependencies(t *testing.T) {
 	}
 	_, err = New(Config{DB: &sql.DB{}})
 	if err == nil {
-		t.Error("Client requerido debería fallar")
+		t.Error("Clients requerido debería fallar")
 	}
 }
 
@@ -405,14 +438,14 @@ func TestPollOneBypassesDueQuery(t *testing.T) {
 	// Nota: NO agregamos library_entry; PollOne debe correr igual.
 
 	publishedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
-	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+	client := &fakeClient{feed: map[string][]releasesource.Chapter{
 		"md-poll": {
 			{ID: "ch-1", Number: "1", Language: "en", PublishedAt: publishedAt},
 		},
 	}}
-	w := newTestWorker(t, db, fetcher)
+	w := newTestWorker(t, db, client)
 
-	if err := w.PollOne(context.Background(), mangaID, "md-poll"); err != nil {
+	if err := w.PollOne(context.Background(), mangaID, "mangadex", "md-poll"); err != nil {
 		t.Fatalf("PollOne: %v", err)
 	}
 	if got := countChapters(t, db, mangaID); got != 1 {
@@ -423,11 +456,11 @@ func TestPollOneBypassesDueQuery(t *testing.T) {
 func TestPollOnePropagatesRateLimitedError(t *testing.T) {
 	db := setupDB(t)
 	mangaID := insertMatchedManga(t, db, "md-rl", 0)
-	fetcher := &fakeFetcher{err: mangadex.ErrRateLimited}
-	w := newTestWorker(t, db, fetcher)
+	client := &fakeClient{err: releasesource.ErrRateLimited}
+	w := newTestWorker(t, db, client)
 
-	err := w.PollOne(context.Background(), mangaID, "md-rl")
-	// pollManga maneja ErrRateLimited reagendando, no propagando — verificar
+	err := w.PollOne(context.Background(), mangaID, "mangadex", "md-rl")
+	// pollSource maneja ErrRateLimited reagendando, no propagando — verificar
 	// que next_check_at quedó en el futuro cercano (RateLimitedDelay).
 	if err != nil {
 		t.Errorf("PollOne debe manejar ErrRateLimited internamente: %v", err)
@@ -439,5 +472,17 @@ func TestPollOnePropagatesRateLimitedError(t *testing.T) {
 	delta := nextCheck.Int64 - time.Now().UTC().Unix()
 	if delta < 60 || delta > 30*60 {
 		t.Errorf("next_check_at tras rate limit fuera de rango (~15min): %d seg", delta)
+	}
+}
+
+func TestPollOneErrsOnUnknownSource(t *testing.T) {
+	db := setupDB(t)
+	mangaID := insertMatchedManga(t, db, "md-x", 0)
+	client := &fakeClient{}
+	w := newTestWorker(t, db, client)
+
+	err := w.PollOne(context.Background(), mangaID, "asura", "x")
+	if err == nil {
+		t.Fatal("source no cableada debería devolver error")
 	}
 }

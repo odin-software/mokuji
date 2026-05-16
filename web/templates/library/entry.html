@@ -62,15 +62,15 @@
 {{end}}
 </ul>
 {{else}}
-  {{if eq .Entry.MangadexStatus "matched"}}
+  {{if eq .Entry.SourceStatus "matched"}}
     {{if .IncludeRead}}
       <p class="muted">no hay capítulos publicados aún.</p>
     {{else}}
       <p class="muted">no hay capítulos nuevos. <a href="?include_read=1&sort={{.Sort}}">ver leídos</a>.</p>
     {{end}}
-  {{else if eq .Entry.MangadexStatus "needs_review"}}
+  {{else if eq .Entry.SourceStatus "needs_review"}}
     <p class="muted">matching ambiguo con MangaDex — todavía no podemos seguir capítulos. confirmá el match manual (próximamente).</p>
-  {{else if eq .Entry.MangadexStatus "no_results"}}
+  {{else if eq .Entry.SourceStatus "no_results"}}
     <p class="muted">no encontramos este manga en MangaDex. no vamos a poder seguir capítulos automáticamente.</p>
   {{else}}
     <p class="muted">todavía no buscamos capítulos en MangaDex. el worker lo intentará en el próximo ciclo (~1h).</p>

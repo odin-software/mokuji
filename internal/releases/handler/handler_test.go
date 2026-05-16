@@ -60,13 +60,18 @@ func insertManga(t *testing.T, db *sql.DB, mangadexID string) int64 {
 	t.Helper()
 	now := time.Now().UTC().Unix()
 	res, err := db.Exec(`
-		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at, mangadex_id, mangadex_status)
-		VALUES ('anilist', ?, 'Test Manga', '', ?, ?, ?, 'matched')
-	`, mangadexID, now, now, mangadexID)
+		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at)
+		VALUES ('anilist', ?, 'Test Manga', '', ?, ?)
+	`, mangadexID, now, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id, _ := res.LastInsertId()
+	if _, err := db.Exec(`
+		INSERT INTO manga_sources (manga_id, source, source_id, status) VALUES (?, 'mangadex', ?, 'matched')
+	`, id, mangadexID); err != nil {
+		t.Fatal(err)
+	}
 	return id
 }
 

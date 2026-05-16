@@ -204,10 +204,11 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		coverURL     sql.NullString
 		created, updated int64
 	)
-	err := h.db.QueryRowContext(ctx, `
+	q := fmt.Sprintf(`
 		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
-		       m.id, m.source, m.source_id, m.title, m.cover_url, m.mangadex_status,
+		       m.id, m.source, m.source_id, m.title, m.cover_url,
+		       %s AS source_status,
 		       (SELECT COUNT(*) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
@@ -221,11 +222,12 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		JOIN manga m ON m.id = le.manga_id
 		JOIN users u ON u.id = le.user_id
 		WHERE le.id = ? AND le.user_id = ?
-	`, entryID, userID).Scan(
+	`, sourceStatusSummarySQL)
+	err := h.db.QueryRowContext(ctx, q, entryID, userID).Scan(
 		&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
 		&created, &updated,
 		&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-		&e.MangadexStatus, &e.TotalChapters, &e.UnreadCount,
+		&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, false, nil

@@ -45,12 +45,22 @@ type exportEntry struct {
 }
 
 type exportManga struct {
-	ID         int64  `json:"id"`
-	Title      string `json:"title"`
-	Source     string `json:"source"`
-	SourceID   string `json:"source_id"`
-	CoverURL   string `json:"cover_url,omitempty"`
-	MangadexID string `json:"mangadex_id,omitempty"`
+	ID       int64                `json:"id"`
+	Title    string               `json:"title"`
+	Source   string               `json:"source"`
+	SourceID string               `json:"source_id"`
+	CoverURL string               `json:"cover_url,omitempty"`
+	Sources  []exportMangaSource  `json:"sources,omitempty"`
+}
+
+// exportMangaSource es una fila de manga_sources que reportamos al user
+// en el export — por dónde mokuji está siguiendo el manga (MangaDex,
+// Asura, Comick…). Util para portabilidad: re-importar a otra instancia
+// regenera el matching sin re-buscar.
+type exportMangaSource struct {
+	Source   string `json:"source"`
+	SourceID string `json:"source_id,omitempty"`
+	Status   string `json:"status"`
 }
 
 type exportChapter struct {
@@ -130,7 +140,7 @@ func (h *Handler) loadProfile(ctx context.Context, userID int64) (exportProfile,
 
 func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]exportEntry, error) {
 	rows, err := h.db.QueryContext(ctx, `
-		SELECT m.id, m.title, m.source, m.source_id, m.cover_url, m.mangadex_id,
+		SELECT m.id, m.title, m.source, m.source_id, m.cover_url,
 		       le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
 		       cur.id, cur.number, cur.title, cur.language, cur.external_url, cur.published_at
@@ -145,28 +155,28 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 	}
 	defer rows.Close()
 
+	byMangaID := map[int64]int{} // manga_id -> index en out (para attach de sources)
 	var out []exportEntry
 	for rows.Next() {
 		var (
-			e               exportEntry
-			coverURL        sql.NullString
-			mangadexID      sql.NullString
-			lastChapter     sql.NullString
-			sourceURL       sql.NullString
-			notes           sql.NullString
-			isFavorite      int
-			createdAt       int64
-			updatedAt       int64
-			curID           sql.NullInt64
-			curNumber       sql.NullString
-			curTitle        sql.NullString
-			curLanguage     sql.NullString
-			curExternalURL  sql.NullString
-			curPublishedAt  sql.NullInt64
+			e              exportEntry
+			coverURL       sql.NullString
+			lastChapter    sql.NullString
+			sourceURL      sql.NullString
+			notes          sql.NullString
+			isFavorite     int
+			createdAt      int64
+			updatedAt      int64
+			curID          sql.NullInt64
+			curNumber      sql.NullString
+			curTitle       sql.NullString
+			curLanguage    sql.NullString
+			curExternalURL sql.NullString
+			curPublishedAt sql.NullInt64
 		)
 		if err := rows.Scan(
 			&e.Manga.ID, &e.Manga.Title, &e.Manga.Source, &e.Manga.SourceID,
-			&coverURL, &mangadexID,
+			&coverURL,
 			&e.Status, &lastChapter, &isFavorite, &sourceURL, &notes,
 			&createdAt, &updatedAt,
 			&curID, &curNumber, &curTitle, &curLanguage, &curExternalURL, &curPublishedAt,
@@ -174,7 +184,6 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 			return nil, err
 		}
 		e.Manga.CoverURL = coverURL.String
-		e.Manga.MangadexID = mangadexID.String
 		e.LastChapter = lastChapter.String
 		e.SourceURL = sourceURL.String
 		e.Notes = notes.String
@@ -194,7 +203,50 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 			}
 			e.LastReadChapter = c
 		}
+		byMangaID[e.Manga.ID] = len(out)
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Segundo query: cargar manga_sources de los mangas que el user tiene
+	// en biblioteca. Una sola query con scope por user, attach por mangaID
+	// para evitar N+1. Si el user no tiene biblioteca, byMangaID es vacío
+	// y se saltea.
+	if len(byMangaID) == 0 {
+		return out, nil
+	}
+	srcRows, err := h.db.QueryContext(ctx, `
+		SELECT ms.manga_id, ms.source, ms.source_id, ms.status
+		FROM manga_sources ms
+		JOIN library_entries le ON le.manga_id = ms.manga_id
+		WHERE le.user_id = ?
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer srcRows.Close()
+
+	for srcRows.Next() {
+		var (
+			mangaID  int64
+			source   string
+			sourceID string
+			status   string
+		)
+		if err := srcRows.Scan(&mangaID, &source, &sourceID, &status); err != nil {
+			return nil, err
+		}
+		idx, ok := byMangaID[mangaID]
+		if !ok {
+			continue
+		}
+		out[idx].Manga.Sources = append(out[idx].Manga.Sources, exportMangaSource{
+			Source:   source,
+			SourceID: sourceID,
+			Status:   status,
+		})
+	}
+	return out, srcRows.Err()
 }

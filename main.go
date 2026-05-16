@@ -38,6 +38,7 @@ import (
 	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
+	"git.odin.do/kengru/mokuji/internal/releasesource"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
@@ -150,18 +151,26 @@ func main() {
 		log.Fatalf("configurar home: %v", err)
 	}
 
-	// Cliente MangaDex + matcher: alimentan la columna manga.mangadex_id al
-	// agregar un manga a la library (matching híbrido, ADR 0013 §3).
+	// Multi-source release tracking (ADR 0014). Cada source es un
+	// releasesource.Client; main wirea el map por nombre. Por ahora solo
+	// MangaDex está habilitado — Asura y Comick aterrizan en commits
+	// posteriores con sus propios paquetes.
 	mangadexClient := mangadex.New()
-	releaseMatcher := matcher.New(mangadexClient)
+	sourceClients := map[string]releasesource.Client{
+		mangadexClient.Name(): mangadexClient,
+	}
+	// Un matcher por source. El library handler los corre en paralelo al
+	// agregar un manga; cada uno persiste su propia fila en manga_sources.
+	sourceMatchers := map[string]library.Matcher{
+		mangadexClient.Name(): matcher.New(mangadexClient),
+	}
 
-	// Worker periódico que polleea MangaDex (ADR 0013 §5). Reusa el mismo
-	// cliente que el matcher — el rate limiter cliente-side garantiza que
-	// los dos callers se mantengan bajo el techo de MangaDex.
+	// Worker periódico que polleea cada source (ADR 0014 §5). dispatch
+	// vía Clients[source] según la fila de manga_sources.
 	releasesWorker, err := worker.New(worker.Config{
-		DB:     db,
-		Client: mangadexClient,
-		Logger: logger,
+		DB:      db,
+		Clients: sourceClients,
+		Logger:  logger,
 	})
 	if err != nil {
 		log.Fatalf("configurar release worker: %v", err)
@@ -187,12 +196,12 @@ func main() {
 	}
 
 	libraryHandler, err := library.New(library.Config{
-		DB:          db,
-		MangaSource: anilist.New(),
-		Matcher:     releaseMatcher,
-		// Poller sincrónico: cuando library.add matchea, dispara un FetchFeed
-		// inmediato para que el manga tenga capítulos visibles sin esperar
-		// hasta una hora al próximo tick del worker.
+		DB:             db,
+		MangaSource:    anilist.New(),
+		SourceMatchers: sourceMatchers,
+		// Poller sincrónico: cuando library.add matchea una source, dispara
+		// un FetchChapters inmediato para esa source sin esperar al próximo
+		// tick del worker periódico (~1h).
 		Poller:        releasesWorker,
 		Signer:        unsubSigner,
 		HTMLTemplates: htmlFS,

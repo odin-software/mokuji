@@ -141,14 +141,18 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 
 // startData es el modelo de datos para auth/start.html.
 type startData struct {
-	Email string
-	Error string
+	// Session siempre nil en /auth (páginas anónimas), pero el layout lo
+	// chequea para decidir si renderear el nav — el campo tiene que existir.
+	Session *session.Session
+	Email   string
+	Error   string
 }
 
 // verifyData es el modelo de datos para auth/verify.html.
 type verifyData struct {
-	Email string
-	Error string
+	Session *session.Session // ver comentario en startData
+	Email   string
+	Error   string
 }
 
 // otpEmailData es el modelo para otp.txt.

@@ -255,9 +255,36 @@ button.danger:hover { background: #800; }
   color: var(--text-muted);
 }
 .app-footer a { color: inherit; }
+.app-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin: -1rem 0 2rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.app-nav-logo {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text);
+}
+.app-nav nav { display: flex; gap: 1rem; font-size: 0.875rem; }
+.app-nav nav a { color: var(--text-muted); text-decoration: none; }
+.app-nav nav a:hover { color: var(--text); }
 </style>
 </head>
 <body>
+<header class="app-nav">
+  <a href="/" class="app-nav-logo">mokuji</a>
+  {{if .Session}}
+  <nav>
+    <a href="/library">biblioteca</a>
+    <a href="/releases">releases</a>
+    <a href="/settings">settings</a>
+  </nav>
+  {{end}}
+</header>
 {{block "content" .}}<p>contenido vacío</p>{{end}}
 <footer class="app-footer">mokuji <a href="/version">{{appVersion}}</a></footer>
 </body>

@@ -79,9 +79,9 @@ type Entry struct {
 	Notes          string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-	MangadexStatus string // 'unmatched' | 'matched' | 'needs_review' | 'no_results'
-	UnreadCount    int    // caps publicados después del cursor en preferred_language
-	TotalChapters  int    // caps en DB para este manga en preferred_language
+	MangadexStatus matcher.Status // unmatched | matched | needs_review | no_results
+	UnreadCount    int            // caps publicados después del cursor en preferred_language
+	TotalChapters  int            // caps en DB para este manga en preferred_language
 }
 
 // Poller dispara un fetch sincrónico de capítulos para un manga recién

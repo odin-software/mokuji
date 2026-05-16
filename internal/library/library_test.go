@@ -642,3 +642,60 @@ func TestUpdateMangadexMatchWithNilID(t *testing.T) {
 		t.Errorf("mangadex_id debería ser NULL, obtenido %q", id.String)
 	}
 }
+
+func TestListEntriesCountsTotalAndUnread(t *testing.T) {
+	// Verifica que el query de listEntries calcula bien los counts que
+	// alimentan el badge: TotalChapters (todos los caps en idioma del user)
+	// vs UnreadCount (caps posteriores al cursor).
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+	userID := insertUser(t, db, "alice@example.com")
+
+	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
+	res, err := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
+		userID, mangaID, time.Now().Unix(), time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entryID, _ := res.LastInsertId()
+
+	// 3 caps en 'en' + 1 en 'es'. Solo los 3 'en' cuentan para 'en'-user.
+	publishedAt := time.Now().Add(-72 * time.Hour)
+	var chFirst int64
+	for i, lang := range []string{"en", "en", "en", "es"} {
+		r, err := db.Exec(`INSERT INTO chapter (manga_id, source, source_id, number, language, published_at, external_url, created_at)
+			VALUES (?, 'mangadex', ?, ?, ?, ?, '', 0)`,
+			mangaID, "ch-"+strconv.Itoa(i), strconv.Itoa(i), lang, publishedAt.Add(time.Duration(i)*time.Hour).Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			chFirst, _ = r.LastInsertId()
+		}
+	}
+
+	// Sin cursor: Total=3, Unread=3.
+	entries, err := h.listEntries(ctx, userID, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries: %d", len(entries))
+	}
+	if entries[0].TotalChapters != 3 || entries[0].UnreadCount != 3 {
+		t.Errorf("sin cursor: Total=%d Unread=%d (esperado 3/3)", entries[0].TotalChapters, entries[0].UnreadCount)
+	}
+
+	// Avanzamos el cursor al primer cap: Total=3, Unread=2.
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chFirst, entryID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = h.listEntries(ctx, userID, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries[0].TotalChapters != 3 || entries[0].UnreadCount != 2 {
+		t.Errorf("con cursor: Total=%d Unread=%d (esperado 3/2)", entries[0].TotalChapters, entries[0].UnreadCount)
+	}
+}

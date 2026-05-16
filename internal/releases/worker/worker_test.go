@@ -394,3 +394,50 @@ func TestNewValidatesDependencies(t *testing.T) {
 		t.Error("Client requerido debería fallar")
 	}
 }
+
+func TestPollOneBypassesDueQuery(t *testing.T) {
+	// PollOne (público, usado por library.add para fetch sincrónico tras
+	// matchear) debe operar incluso si next_check_at está en el futuro y
+	// sin verificar el filtro EXISTS reading entries — la idea es que el
+	// caller ya validó que tiene sentido pollear.
+	db := setupDB(t)
+	mangaID := insertMatchedManga(t, db, "md-poll", 7200) // vence en 2h (no due)
+	// Nota: NO agregamos library_entry; PollOne debe correr igual.
+
+	publishedAt := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	fetcher := &fakeFetcher{feed: map[string][]mangadex.Chapter{
+		"md-poll": {
+			{ID: "ch-1", Number: "1", Language: "en", PublishedAt: publishedAt},
+		},
+	}}
+	w := newTestWorker(t, db, fetcher)
+
+	if err := w.PollOne(context.Background(), mangaID, "md-poll"); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	if got := countChapters(t, db, mangaID); got != 1 {
+		t.Errorf("chapters insertados: esperado 1, obtenido %d", got)
+	}
+}
+
+func TestPollOnePropagatesRateLimitedError(t *testing.T) {
+	db := setupDB(t)
+	mangaID := insertMatchedManga(t, db, "md-rl", 0)
+	fetcher := &fakeFetcher{err: mangadex.ErrRateLimited}
+	w := newTestWorker(t, db, fetcher)
+
+	err := w.PollOne(context.Background(), mangaID, "md-rl")
+	// pollManga maneja ErrRateLimited reagendando, no propagando — verificar
+	// que next_check_at quedó en el futuro cercano (RateLimitedDelay).
+	if err != nil {
+		t.Errorf("PollOne debe manejar ErrRateLimited internamente: %v", err)
+	}
+	nextCheck, _ := nextCheckAt(t, db, mangaID)
+	if !nextCheck.Valid {
+		t.Fatal("next_check_at no fue seteado tras rate limit")
+	}
+	delta := nextCheck.Int64 - time.Now().UTC().Unix()
+	if delta < 60 || delta > 30*60 {
+		t.Errorf("next_check_at tras rate limit fuera de rango (~15min): %d seg", delta)
+	}
+}

@@ -291,3 +291,39 @@ func TestCleanupExpired(t *testing.T) {
 		t.Errorf("esperado solo [hash-vigente], obtenido %v", ids)
 	}
 }
+
+func TestLoadCachesDeletedAtAsPendingDeletion(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "alice@example.com")
+	m := newManager(db)
+
+	// Crear sesión + recargar = baseline sin pending.
+	w := httptest.NewRecorder()
+	if err := m.Create(w, httptest.NewRequest("GET", "/", nil), userID); err != nil {
+		t.Fatal(err)
+	}
+	cookie := extractCookie(w, cookieName)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(cookie)
+	s, err := m.Load(req)
+	if err != nil || s == nil {
+		t.Fatalf("Load baseline: s=%v err=%v", s, err)
+	}
+	if s.PendingDeletion {
+		t.Error("baseline: PendingDeletion debería ser false")
+	}
+
+	// Soft-delete el user; el JOIN en Load ahora ve deleted_at != NULL.
+	if _, err := db.Exec(`UPDATE users SET deleted_at = ? WHERE id = ?`, time.Now().Unix(), userID); err != nil {
+		t.Fatal(err)
+	}
+	req2 := httptest.NewRequest("GET", "/", nil)
+	req2.AddCookie(cookie)
+	s, err = m.Load(req2)
+	if err != nil || s == nil {
+		t.Fatalf("Load post-soft-delete: s=%v err=%v", s, err)
+	}
+	if !s.PendingDeletion {
+		t.Error("PendingDeletion no fue cacheado tras setear deleted_at")
+	}
+}

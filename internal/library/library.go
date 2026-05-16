@@ -23,6 +23,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/mangasource"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/unsubscribe"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
@@ -106,6 +107,11 @@ type Config struct {
 	// dispara un FetchFeed inmediato para tener capítulos visibles sin
 	// esperar al tick del worker periódico. Ver Poller arriba.
 	Poller Poller
+	// Signer es opcional. Si está cableado, el handler monta GET /r/{token}
+	// — el shortcut del email digest que marca leído y abre el lector en
+	// una sola navegación. Sin signer, el endpoint queda no-existente y los
+	// emails no tendrán links auto-mark.
+	Signer *unsubscribe.Signer
 	Logger *slog.Logger
 }
 
@@ -115,6 +121,7 @@ type Handler struct {
 	src     mangasource.Source
 	matcher Matcher
 	poller  Poller
+	signer  *unsubscribe.Signer
 	pages   map[string]*template.Template
 	logger  *slog.Logger
 }
@@ -162,6 +169,7 @@ func New(cfg Config) (*Handler, error) {
 		src:     cfg.MangaSource,
 		matcher: cfg.Matcher,
 		poller:  cfg.Poller,
+		signer:  cfg.Signer,
 		pages:   pages,
 		logger:  cfg.Logger,
 	}, nil
@@ -177,6 +185,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /library/entry/{id}", h.entryDetail)
 	mux.HandleFunc("POST /library/entry/{id}/read", h.entryReadAndOpen)
 	mux.HandleFunc("POST /library/entry/{id}/mark-read", h.entryMarkRead)
+	if h.signer != nil {
+		mux.HandleFunc("GET /r/{token}", h.emailRead)
+	}
 }
 
 func (h *Handler) requireSession(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {

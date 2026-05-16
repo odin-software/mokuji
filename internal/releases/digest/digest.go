@@ -113,12 +113,18 @@ func New(cfg Config) (*Sender, error) {
 }
 
 // Item es una fila del digest: un cap + metadata del manga, suficiente para
-// renderizar línea + link.
+// renderizar línea + link. ReaderURL apunta a /r/{token} en nuestro server
+// — un shortcut que valida el token HMAC, marca el cap leído, y redirige al
+// lector externo en una sola navegación (ver internal/library/emailread.go).
 type Item struct {
 	MangaTitle    string
 	ChapterNumber string
 	ChapterTitle  string
 	ReaderURL     string
+	// chapterID es solo para uso interno: lo necesitamos para firmar el
+	// token del shortcut. No se exporta para que las plantillas (que iteran
+	// los Items) no lo serialicen accidentalmente.
+	chapterID int64
 }
 
 // templateData es lo que pasamos a las plantillas. Exportado para tests.
@@ -151,6 +157,13 @@ func (s *Sender) SendToUser(ctx context.Context, userID int64) error {
 	}
 	if len(items) == 0 {
 		return ErrNoNewChapters
+	}
+	// Sobrescribimos ReaderURL para que apunte al shortcut /r/{token} en
+	// vez del lector externo directo. El query trae external_url para que
+	// loadUser-side fallback funcione, pero en el email nunca exponemos
+	// la URL real — pasa por nuestro server primero (mark + redirect).
+	for i := range items {
+		items[i].ReaderURL = s.shortcutURL(userID, items[i].chapterID)
 	}
 
 	plainBody, htmlBody, err := s.render(userID, items)
@@ -207,7 +220,7 @@ func (s *Sender) cutoff(lastSentAt sql.NullInt64) time.Time {
 
 func (s *Sender) unreadChapters(ctx context.Context, userID int64, since time.Time, limit int) ([]Item, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT manga.title, chapter.number, chapter.title, chapter.source_id, chapter.external_url
+		SELECT chapter.id, manga.title, chapter.number, chapter.title, chapter.source_id, chapter.external_url
 		FROM chapter
 		JOIN manga          ON manga.id = chapter.manga_id
 		JOIN library_entries le ON le.manga_id = manga.id
@@ -235,11 +248,14 @@ func (s *Sender) unreadChapters(ctx context.Context, userID int64, since time.Ti
 			sourceID    string
 			externalURL sql.NullString
 		)
-		if err := rows.Scan(&it.MangaTitle, &number, &title, &sourceID, &externalURL); err != nil {
+		if err := rows.Scan(&it.chapterID, &it.MangaTitle, &number, &title, &sourceID, &externalURL); err != nil {
 			return nil, err
 		}
 		it.ChapterNumber = number.String
 		it.ChapterTitle = title.String
+		// ReaderURL "raw" — el caller (SendToUser) lo sobrescribe con el
+		// shortcut /r/{token} antes de renderear. Lo dejamos como fallback
+		// para que tests del query puedan ver una URL razonable.
 		if externalURL.Valid && externalURL.String != "" {
 			it.ReaderURL = externalURL.String
 		} else {
@@ -248,6 +264,14 @@ func (s *Sender) unreadChapters(ctx context.Context, userID int64, since time.Ti
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// shortcutURL produce el link del email que pasa por nuestro server:
+// BaseURL + /r/{token}. Token = HMAC(userID, chapterID) con MaxAgeReadChapter
+// (30 días). Ver internal/library/emailread.go para el handler.
+func (s *Sender) shortcutURL(userID, chapterID int64) string {
+	token := s.signer.SignReadChapter(userID, chapterID)
+	return s.baseURL + "/r/" + token
 }
 
 func (s *Sender) render(userID int64, items []Item) (plain, html string, err error) {

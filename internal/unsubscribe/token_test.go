@@ -117,6 +117,72 @@ func TestVerifyRejectsMalformed(t *testing.T) {
 	}
 }
 
+func TestSignVerifyReadChapterRoundtrip(t *testing.T) {
+	s := newTestSigner(t)
+	tok := s.SignReadChapter(42, 1234)
+	uid, cid, err := s.VerifyReadChapter(tok)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if uid != 42 || cid != 1234 {
+		t.Errorf("ids: got userID=%d chapterID=%d", uid, cid)
+	}
+}
+
+func TestVerifyReadChapterRejectsCrossScopeToken(t *testing.T) {
+	// Token de unsubscribe NO debe valer para read_chapter (distinto payload
+	// → la firma no matchea cuando hmac re-firma con el formato de read).
+	s := newTestSigner(t)
+	tok := s.Sign(42, ScopeReleasesDigest)
+	if _, _, err := s.VerifyReadChapter(tok); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("token de unsubscribe aceptado como read_chapter: %v", err)
+	}
+}
+
+func TestVerifyReadChapterRejectsExpired(t *testing.T) {
+	s := newTestSigner(t)
+	old := time.Now().Add(-31 * 24 * time.Hour)
+	s.now = func() time.Time { return old }
+	tok := s.SignReadChapter(42, 1234)
+	s.now = time.Now
+	if _, _, err := s.VerifyReadChapter(tok); !errors.Is(err, ErrExpiredToken) {
+		t.Errorf("token expirado aceptado: %v", err)
+	}
+}
+
+func TestVerifyReadChapterAcceptsRecent(t *testing.T) {
+	s := newTestSigner(t)
+	old := time.Now().Add(-29 * 24 * time.Hour)
+	s.now = func() time.Time { return old }
+	tok := s.SignReadChapter(42, 1234)
+	s.now = time.Now
+	if _, _, err := s.VerifyReadChapter(tok); err != nil {
+		t.Errorf("token reciente rechazado: %v", err)
+	}
+}
+
+func TestVerifyReadChapterRejectsTampered(t *testing.T) {
+	s := newTestSigner(t)
+	tok := s.SignReadChapter(42, 1234)
+	// Tamper en el medio de la firma — flipear el último char puede caer
+	// en bits de padding que RawURLEncoding ignora.
+	dot := strings.IndexByte(tok, '.')
+	mid := dot + 1 + (len(tok)-dot-1)/2
+	tampered := tok[:mid] + flipByte(tok[mid]) + tok[mid+1:]
+	if _, _, err := s.VerifyReadChapter(tampered); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("sig tampered aceptado: %v", err)
+	}
+}
+
+// flipByte cambia b por 'A' (si ya era 'A', por 'B'). Garantiza que el byte
+// resultante sea distinto y siga siendo válido en base64url.
+func flipByte(b byte) string {
+	if b == 'A' {
+		return "B"
+	}
+	return "A"
+}
+
 // flipChar cambia el último caracter del input por '_' (válido en base64url),
 // o por 'A' si ya era '_', garantizando que el output difiera del input.
 func flipChar(s string) string {

@@ -167,14 +167,34 @@ func main() {
 		log.Fatalf("configurar release worker: %v", err)
 	}
 
+	// Signer de tokens HMAC para opt-out de emails (ADR 0013 §6, RFC 8058)
+	// y para el shortcut /r/{token} del digest. El secret es server-side;
+	// rotarlo invalida todos los tokens previos. En dev usamos default fijo
+	// si no hay env var, en prod fallamos rápido para evitar firmas con
+	// secret nulo. Se construye acá (antes del library handler) porque
+	// library lo necesita para montar /r/{token}.
+	unsubSecret := os.Getenv("UNSUBSCRIBE_SECRET")
+	if unsubSecret == "" {
+		if envBool("SECURE_COOKIES", false) {
+			log.Fatal("UNSUBSCRIBE_SECRET requerido en producción")
+		}
+		unsubSecret = "dev-unsubscribe-secret-no-uses-en-produccion-32b!!"
+		logger.Warn("UNSUBSCRIBE_SECRET no configurado, usando default de dev")
+	}
+	unsubSigner, err := unsubscribe.NewSigner([]byte(unsubSecret))
+	if err != nil {
+		log.Fatalf("configurar unsubscribe signer: %v", err)
+	}
+
 	libraryHandler, err := library.New(library.Config{
-		DB:            db,
-		MangaSource:   anilist.New(),
-		Matcher:       releaseMatcher,
+		DB:          db,
+		MangaSource: anilist.New(),
+		Matcher:     releaseMatcher,
 		// Poller sincrónico: cuando library.add matchea, dispara un FetchFeed
 		// inmediato para que el manga tenga capítulos visibles sin esperar
 		// hasta una hora al próximo tick del worker.
 		Poller:        releasesWorker,
+		Signer:        unsubSigner,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,
 	})
@@ -223,22 +243,8 @@ func main() {
 		log.Fatalf("configurar releases: %v", err)
 	}
 
-	// Signer de tokens HMAC para opt-out de emails (ADR 0013 §6, RFC 8058).
-	// El secret es server-side; rotarlo invalida todos los links de baja
-	// pendientes. En dev usamos default fijo si no hay env var, en prod
-	// fallamos rápido para evitar firmas con secret nulo.
-	unsubSecret := os.Getenv("UNSUBSCRIBE_SECRET")
-	if unsubSecret == "" {
-		if envBool("SECURE_COOKIES", false) {
-			log.Fatal("UNSUBSCRIBE_SECRET requerido en producción")
-		}
-		unsubSecret = "dev-unsubscribe-secret-no-uses-en-produccion-32b!!"
-		logger.Warn("UNSUBSCRIBE_SECRET no configurado, usando default de dev")
-	}
-	unsubSigner, err := unsubscribe.NewSigner([]byte(unsubSecret))
-	if err != nil {
-		log.Fatalf("configurar unsubscribe signer: %v", err)
-	}
+	// El unsubSigner se construye arriba (antes de library.New) porque el
+	// library handler lo usa para montar /r/{token}.
 	unsubHandler, err := unsubscribe.New(unsubscribe.Config{
 		DB:            db,
 		Signer:        unsubSigner,

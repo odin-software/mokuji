@@ -318,15 +318,13 @@ func TestSendToUserFirstRunUsesLookback(t *testing.T) {
 	if err := s.SendToUser(context.Background(), uid); err != nil {
 		t.Fatalf("SendToUser: %v", err)
 	}
+	// Los URLs en el email ya no contienen source_id (ahora pasan por
+	// /r/{token}). Verificamos por el número del cap, único acá.
 	msg := cap.last()
-	if !strings.Contains(msg, "ch-recent") {
-		// Note: el body NO contiene el source_id literal, sino "ch 11";
-		// chequeamos por la URL mangadex que incluye source_id.
-		if !strings.Contains(msg, "/chapter/ch-recent") {
-			t.Errorf("falta cap reciente: %s", msg)
-		}
+	if !strings.Contains(msg, "cap 11") {
+		t.Errorf("falta cap reciente (11): %s", msg)
 	}
-	if strings.Contains(msg, "/chapter/ch-old") {
+	if strings.Contains(msg, "cap 10") {
 		t.Error("incluyó cap > lookback")
 	}
 }
@@ -353,10 +351,10 @@ func TestSendToUserUsesLastSentCutoff(t *testing.T) {
 		t.Fatalf("SendToUser: %v", err)
 	}
 	msg := cap.last()
-	if !strings.Contains(msg, "/chapter/ch-new") {
+	if !strings.Contains(msg, "cap 11") {
 		t.Errorf("falta cap nuevo: %s", msg)
 	}
-	if strings.Contains(msg, "/chapter/ch-old") {
+	if strings.Contains(msg, "cap 10") {
 		t.Error("incluyó cap antes del cutoff")
 	}
 }
@@ -379,11 +377,10 @@ func TestSendToUserMaxItems(t *testing.T) {
 		t.Fatalf("SendToUser: %v", err)
 	}
 
-	// Contamos cuántas líneas "/chapter/ch-" hay en el mensaje plain
-	// (multipart, pero el patrón aparece en ambos cuerpos — dividimos).
+	// Cada Item se renderiza con un link /r/{token}. Contamos las
+	// ocurrencias del prefix del shortcut en plain + HTML (2x).
 	msg := cap.last()
-	count := strings.Count(msg, "/chapter/ch-")
-	// 2 partes (plain + HTML) cada una con MaxItems entries = 2*MaxItems refs.
+	count := strings.Count(msg, "https://mokuji.test/r/")
 	expected := 2 * MaxItemsPerDigest
 	if count != expected {
 		t.Errorf("items renderizados: esperado %d, obtenido %d", expected, count)

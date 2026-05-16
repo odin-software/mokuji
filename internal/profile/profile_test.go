@@ -1,7 +1,6 @@
 package profile
 
 import (
-	"context"
 	"database/sql"
 	"io"
 	"log/slog"
@@ -122,8 +121,7 @@ func TestUpdateSettingsValidatesVisibility(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/settings",
 				strings.NewReader(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			req = req.WithContext(session.NewContext(context.Background(),
-				&session.Session{UserID: userID}))
+			req = session.WithUserID(req, userID)
 
 			rec := httptest.NewRecorder()
 			h.updateSettings(rec, req)
@@ -144,8 +142,7 @@ func TestUpdateSettingsPersists(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/settings",
 		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req = req.WithContext(session.NewContext(context.Background(),
-		&session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 
 	rec := httptest.NewRecorder()
 	h.updateSettings(rec, req)
@@ -172,7 +169,7 @@ func TestUpdateSettingsTogglesDigest(t *testing.T) {
 	form := url.Values{"list_visibility": {"public"}}
 	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.updateSettings(rec, req)
 
@@ -186,7 +183,7 @@ func TestUpdateSettingsTogglesDigest(t *testing.T) {
 	form2 := url.Values{"list_visibility": {"public"}, "email_digest_enabled": {"on"}}
 	req2 := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form2.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2 = req2.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	req2 = session.WithUserID(req2, userID)
 	h.updateSettings(httptest.NewRecorder(), req2)
 
 	db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, userID).Scan(&got)
@@ -247,8 +244,7 @@ func TestPublicProfileVisibleToOwnerWhenPrivate(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(userID, 10), nil)
 	req.SetPathValue("id", strconv.FormatInt(userID, 10))
-	req = req.WithContext(session.NewContext(context.Background(),
-		&session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 
@@ -270,8 +266,7 @@ func TestPublicProfile404WhenPrivateAndOtherUser(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(alice, 10), nil)
 	req.SetPathValue("id", strconv.FormatInt(alice, 10))
-	req = req.WithContext(session.NewContext(context.Background(),
-		&session.Session{UserID: bob}))
+	req = session.WithUserID(req, bob)
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 

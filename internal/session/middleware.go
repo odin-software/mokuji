@@ -47,3 +47,10 @@ func FromContext(ctx context.Context) (*Session, bool) {
 func NewContext(ctx context.Context, s *Session) context.Context {
 	return context.WithValue(ctx, sessionKey{}, s)
 }
+
+// WithUserID es un helper para tests: devuelve la request con una sesión
+// mínima (solo UserID) adjuntada al context. Reemplaza el patrón verboso
+// r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid})).
+func WithUserID(r *http.Request, userID int64) *http.Request {
+	return r.WithContext(NewContext(r.Context(), &Session{UserID: userID}))
+}

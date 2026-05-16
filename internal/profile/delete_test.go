@@ -86,7 +86,7 @@ func TestDeleteAccountRequestSendsEmailAndStoresCode(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/settings/delete-account/request", strings.NewReader(""))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.deleteAccountRequest(w, r)
 
@@ -126,7 +126,7 @@ func TestDeleteAccountConfirmMarksDeletedAt(t *testing.T) {
 	form := url.Values{"code": {code}}
 	r := httptest.NewRequest("POST", "/settings/delete-account/confirm", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.deleteAccountConfirm(w, r)
 
@@ -157,7 +157,7 @@ func TestDeleteAccountConfirmRejectsWrongCode(t *testing.T) {
 	form := url.Values{"code": {"999999"}}
 	r := httptest.NewRequest("POST", "/settings/delete-account/confirm", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.deleteAccountConfirm(w, r)
 
@@ -187,7 +187,7 @@ func TestDeleteAccountConfirmRejectsExpiredCode(t *testing.T) {
 	form := url.Values{"code": {"123456"}}
 	r := httptest.NewRequest("POST", "/settings/delete-account/confirm", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.deleteAccountConfirm(w, r)
 
@@ -236,7 +236,7 @@ func TestRestoreAccountCancelClearsDeletedAt(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/restore-account/cancel", strings.NewReader(""))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.restoreAccountCancel(w, r)
 
@@ -261,7 +261,7 @@ func TestRestoreAccountDeleteNowDoesHardDelete(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/restore-account/delete-now", strings.NewReader(""))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.restoreAccountDeleteNow(w, r)
 
@@ -310,7 +310,7 @@ func TestDeleteAccountRequestServiceUnavailableWithoutEmail(t *testing.T) {
 
 	r := httptest.NewRequest("POST", "/settings/delete-account/request", strings.NewReader(""))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid}))
+	r = session.WithUserID(r, uid)
 	w := httptest.NewRecorder()
 	h.deleteAccountRequest(w, r)
 

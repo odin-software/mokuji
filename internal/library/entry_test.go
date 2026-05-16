@@ -1,7 +1,6 @@
 package library
 
 import (
-	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
@@ -59,7 +58,7 @@ func authReq(method, target string, body string, userID int64) *http.Request {
 	if body != "" {
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	r = r.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	r = session.WithUserID(r, userID)
 	return r
 }
 

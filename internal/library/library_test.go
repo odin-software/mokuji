@@ -281,7 +281,7 @@ func TestUpdateRejectsOtherUsersEntry(t *testing.T) {
 		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetPathValue("id", strconv.FormatInt(aliceEntryID, 10))
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: bob}))
+	req = session.WithUserID(req, bob)
 
 	rec := httptest.NewRecorder()
 	h.update(rec, req)
@@ -314,7 +314,7 @@ func TestDeleteRejectsOtherUsersEntry(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost,
 		"/library/"+strconv.FormatInt(aliceEntryID, 10)+"/delete", nil)
 	req.SetPathValue("id", strconv.FormatInt(aliceEntryID, 10))
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: bob}))
+	req = session.WithUserID(req, bob)
 
 	rec := httptest.NewRecorder()
 	h.delete(rec, req)
@@ -341,8 +341,7 @@ func TestSearchRendersResults(t *testing.T) {
 	userID := insertUser(t, db, "alice@example.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/library/search?q=berserk", nil)
-	req = req.WithContext(session.NewContext(context.Background(),
-		&session.Session{UserID: userID, CSRFToken: "tok123"}))
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID, CSRFToken: "tok123"}))
 	rec := httptest.NewRecorder()
 	h.search(rec, req)
 
@@ -367,8 +366,7 @@ func TestSearchEmptyQueryNoCall(t *testing.T) {
 
 	userID := insertUser(t, db, "alice@example.com")
 	req := httptest.NewRequest(http.MethodGet, "/library/search", nil)
-	req = req.WithContext(session.NewContext(context.Background(),
-		&session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.search(rec, req)
 

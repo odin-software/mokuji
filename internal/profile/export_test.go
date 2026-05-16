@@ -1,7 +1,6 @@
 package profile
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +31,7 @@ func TestExportShape(t *testing.T) {
 	addEntry(t, db, userID, "Berserk")
 
 	req := httptest.NewRequest(http.MethodGet, "/settings/export", nil)
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.exportData(rec, req)
 
@@ -88,7 +87,7 @@ func TestExportIncludesPrivateFields(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/settings/export", nil)
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.exportData(rec, req)
 
@@ -107,7 +106,7 @@ func TestExportEmptyLibrary(t *testing.T) {
 	userID := insertUser(t, db, "alice@example.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/settings/export", nil)
-	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.exportData(rec, req)
 

@@ -133,10 +133,11 @@ func New(cfg Config) (*Handler, error) {
 		if err != nil {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
 		}
-		// _partials.html contiene defines compartidos por las páginas de
+		// partials.html contiene defines compartidos por las páginas de
 		// library (ej. mangadex-badge). Lo agregamos primero para que cada
-		// página lo tenga disponible.
-		if _, err := clone.ParseFS(cfg.HTMLTemplates, "library/_partials.html", page); err != nil {
+		// página lo tenga disponible. Nombre sin "_" porque go:embed
+		// excluye archivos que empiezan con "_" o ".".
+		if _, err := clone.ParseFS(cfg.HTMLTemplates, "library/partials.html", page); err != nil {
 			return nil, fmt.Errorf("parsear %s: %w", page, err)
 		}
 		pages[page] = clone

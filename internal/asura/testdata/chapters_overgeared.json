@@ -1,0 +1,82 @@
+{
+  "data": [
+    {
+      "id": 258501,
+      "series_id": 2165,
+      "number": 323,
+      "title": "Another Man's Choice",
+      "slug": "chapter-323",
+      "page_count": 19,
+      "is_premium": false,
+      "comments_enabled": false,
+      "early_access_until": "2026-05-16T12:27:23.129Z",
+      "published_at": "2026-05-16T06:27:23.129Z",
+      "view_count": 4995,
+      "created_at": "2026-05-16T06:27:24.92544Z",
+      "series_slug": "overgeared",
+      "is_locked": false
+    },
+    {
+      "id": 258193,
+      "series_id": 2165,
+      "number": 322,
+      "title": "Eternal Hammering",
+      "slug": "chapter-322",
+      "page_count": 18,
+      "is_premium": false,
+      "comments_enabled": false,
+      "early_access_until": "2026-05-08T21:56:51.87Z",
+      "published_at": "2026-05-08T15:56:51.87Z",
+      "view_count": 89738,
+      "created_at": "2026-05-08T15:56:53.293716Z",
+      "series_slug": "overgeared",
+      "is_locked": false
+    },
+    {
+      "id": 258037,
+      "series_id": 2165,
+      "number": 321,
+      "slug": "chapter-321",
+      "page_count": 20,
+      "is_premium": false,
+      "comments_enabled": false,
+      "early_access_until": "2026-05-03T08:14:02.664Z",
+      "published_at": "2026-05-03T02:14:02.664Z",
+      "view_count": 100136,
+      "created_at": "2026-05-03T02:14:03.863762Z",
+      "series_slug": "overgeared",
+      "is_locked": false
+    },
+    {
+      "id": 257950,
+      "series_id": 2165,
+      "number": 320,
+      "slug": "chapter-320",
+      "page_count": 14,
+      "is_premium": false,
+      "comments_enabled": false,
+      "early_access_until": "2026-04-30T06:12:45.718Z",
+      "published_at": "2026-04-30T00:12:45.718Z",
+      "view_count": 105749,
+      "created_at": "2026-04-30T00:12:45.86929Z",
+      "series_slug": "overgeared",
+      "is_locked": false
+    },
+    {
+      "id": 257827,
+      "series_id": 2165,
+      "number": 319,
+      "title": "Appetizer",
+      "slug": "chapter-319",
+      "page_count": 19,
+      "is_premium": false,
+      "comments_enabled": false,
+      "early_access_until": "2026-04-24T05:35:14.585Z",
+      "published_at": "2026-04-23T23:35:14.585Z",
+      "view_count": 119046,
+      "created_at": "2026-04-23T23:35:15.811948Z",
+      "series_slug": "overgeared",
+      "is_locked": false
+    }
+  ]
+}

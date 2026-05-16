@@ -25,6 +25,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"git.odin.do/kengru/mokuji/internal/admin"
+	"git.odin.do/kengru/mokuji/internal/asura"
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
@@ -42,6 +43,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"git.odin.do/kengru/mokuji/internal/version"
 )
 
 //go:embed migrations/*.sql
@@ -152,17 +154,32 @@ func main() {
 	}
 
 	// Multi-source release tracking (ADR 0014). Cada source es un
-	// releasesource.Client; main wirea el map por nombre. Por ahora solo
-	// MangaDex está habilitado — Asura y Comick aterrizan en commits
-	// posteriores con sus propios paquetes.
+	// releasesource.Client; main wirea el map por nombre. MangaDex
+	// siempre on; Asura es opt-in via ASURA_ENABLED (default on en
+	// mokuji.org; self-hosters conservadores la apagan). Comick queda
+	// fuera de v1 por Cloudflare managed challenge — no se puede hablar
+	// con su API desde Go vanilla.
 	mangadexClient := mangadex.New()
 	sourceClients := map[string]releasesource.Client{
 		mangadexClient.Name(): mangadexClient,
 	}
-	// Un matcher por source. El library handler los corre en paralelo al
-	// agregar un manga; cada uno persiste su propia fila en manga_sources.
 	sourceMatchers := map[string]library.Matcher{
 		mangadexClient.Name(): matcher.New(mangadexClient),
+	}
+	if envBool("ASURA_ENABLED", true) {
+		opts := []asura.Option{
+			asura.WithUserAgent("mokuji/" + version.Value + " (+" + envOr("BASE_URL", "https://mokuji.org") + ")"),
+		}
+		if u := os.Getenv("ASURA_API_BASE_URL"); u != "" {
+			opts = append(opts, asura.WithAPIBaseURL(u))
+		}
+		if u := os.Getenv("ASURA_FRONTEND_BASE_URL"); u != "" {
+			opts = append(opts, asura.WithFrontendBaseURL(u))
+		}
+		asuraClient := asura.New(opts...)
+		sourceClients[asuraClient.Name()] = asuraClient
+		sourceMatchers[asuraClient.Name()] = matcher.New(asuraClient)
+		logger.Info("source asura habilitada", "api_base", envOr("ASURA_API_BASE_URL", "default"))
 	}
 
 	// Worker periódico que polleea cada source (ADR 0014 §5). dispatch

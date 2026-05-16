@@ -30,3 +30,4 @@ Cada ADR documenta una decisión arquitectónica de peso: el contexto en el que 
 | [0011](0011-licencia-agpl.md)                  | Licencia: AGPL-3.0                                   | Aceptada  | 2026-05-13 |
 | [0012](0012-cicd-forgejo-runner.md)            | CI/CD con Forgejo runner host-based + sudoers        | Aceptada  | 2026-05-15 |
 | [0013](0013-fase-2-release-tracking.md)        | Fase 2 — Release tracking (diseño completo)          | Aceptada  | 2026-05-15 |
+| [0014](0014-fase-3-multi-source.md)            | Fase 3 — Multi-source (MangaDex + Asura + Comick)    | Aceptada  | 2026-05-16 |

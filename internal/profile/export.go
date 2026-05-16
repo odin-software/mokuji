@@ -33,15 +33,19 @@ type exportProfile struct {
 }
 
 type exportEntry struct {
-	Manga             exportManga    `json:"manga"`
-	Status            string         `json:"status"`
-	LastChapter       string         `json:"last_chapter,omitempty"`
-	IsFavorite        bool           `json:"is_favorite"`
-	SourceURL         string         `json:"source_url,omitempty"`
-	Notes             string         `json:"notes,omitempty"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
-	LastReadChapter   *exportChapter `json:"last_read_chapter,omitempty"`
+	Manga                 exportManga `json:"manga"`
+	Status                string      `json:"status"`
+	LastChapter           string      `json:"last_chapter,omitempty"`
+	IsFavorite            bool        `json:"is_favorite"`
+	SourceURL             string      `json:"source_url,omitempty"`
+	Notes                 string      `json:"notes,omitempty"`
+	CreatedAt             time.Time   `json:"created_at"`
+	UpdatedAt             time.Time   `json:"updated_at"`
+	// LastReadChapterNumber es el cursor de lectura como número (cap 70,
+	// 70.5, etc). Reemplazó al puntero por chapter_id de v0.2.0 con la
+	// migration 0008 — el cursor es por número, no por row, para que
+	// funcione con multi-source donde varias filas representan el mismo cap.
+	LastReadChapterNumber float64 `json:"last_read_chapter_number,omitempty"`
 }
 
 type exportManga struct {
@@ -61,15 +65,6 @@ type exportMangaSource struct {
 	Source   string `json:"source"`
 	SourceID string `json:"source_id,omitempty"`
 	Status   string `json:"status"`
-}
-
-type exportChapter struct {
-	ID          int64     `json:"id"`
-	Number      string    `json:"number,omitempty"`
-	Title       string    `json:"title,omitempty"`
-	Language    string    `json:"language,omitempty"`
-	ExternalURL string    `json:"external_url,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitzero"`
 }
 
 // exportHandler sirve GET /settings/export: devuelve un JSON descargable con
@@ -142,11 +137,9 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT m.id, m.title, m.source, m.source_id, m.cover_url,
 		       le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
-		       le.created_at, le.updated_at,
-		       cur.id, cur.number, cur.title, cur.language, cur.external_url, cur.published_at
+		       le.created_at, le.updated_at, le.last_read_chapter_number
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id
-		LEFT JOIN chapter cur ON cur.id = le.last_read_chapter_id
 		WHERE le.user_id = ?
 		ORDER BY le.created_at ASC
 	`, userID)
@@ -159,27 +152,21 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 	var out []exportEntry
 	for rows.Next() {
 		var (
-			e              exportEntry
-			coverURL       sql.NullString
-			lastChapter    sql.NullString
-			sourceURL      sql.NullString
-			notes          sql.NullString
-			isFavorite     int
-			createdAt      int64
-			updatedAt      int64
-			curID          sql.NullInt64
-			curNumber      sql.NullString
-			curTitle       sql.NullString
-			curLanguage    sql.NullString
-			curExternalURL sql.NullString
-			curPublishedAt sql.NullInt64
+			e            exportEntry
+			coverURL     sql.NullString
+			lastChapter  sql.NullString
+			sourceURL    sql.NullString
+			notes        sql.NullString
+			isFavorite   int
+			createdAt    int64
+			updatedAt    int64
+			cursorNumber sql.NullFloat64
 		)
 		if err := rows.Scan(
 			&e.Manga.ID, &e.Manga.Title, &e.Manga.Source, &e.Manga.SourceID,
 			&coverURL,
 			&e.Status, &lastChapter, &isFavorite, &sourceURL, &notes,
-			&createdAt, &updatedAt,
-			&curID, &curNumber, &curTitle, &curLanguage, &curExternalURL, &curPublishedAt,
+			&createdAt, &updatedAt, &cursorNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -190,18 +177,8 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 		e.IsFavorite = isFavorite == 1
 		e.CreatedAt = time.Unix(createdAt, 0).UTC()
 		e.UpdatedAt = time.Unix(updatedAt, 0).UTC()
-		if curID.Valid {
-			c := &exportChapter{
-				ID:          curID.Int64,
-				Number:      curNumber.String,
-				Title:       curTitle.String,
-				Language:    curLanguage.String,
-				ExternalURL: curExternalURL.String,
-			}
-			if curPublishedAt.Valid {
-				c.PublishedAt = time.Unix(curPublishedAt.Int64, 0).UTC()
-			}
-			e.LastReadChapter = c
+		if cursorNumber.Valid {
+			e.LastReadChapterNumber = cursorNumber.Float64
 		}
 		byMangaID[e.Manga.ID] = len(out)
 		out = append(out, e)

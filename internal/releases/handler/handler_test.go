@@ -75,22 +75,29 @@ func insertManga(t *testing.T, db *sql.DB, mangadexID string) int64 {
 	return id
 }
 
-// insertEntry crea library_entry y opcionalmente setea last_read_chapter_id.
+// insertEntry crea library_entry y opcionalmente setea el cursor de
+// lectura. Por compatibilidad con tests existentes, el parámetro sigue
+// siendo un puntero a chapter.id — internamente lo resolvemos al number
+// del cap para setear last_read_chapter_number (cursor por número desde
+// la migration 0008).
 func insertEntry(t *testing.T, db *sql.DB, userID, mangaID int64, status string, lastReadChapterID *int64) int64 {
 	t.Helper()
 	now := time.Now().UTC().Unix()
-	var lastRead any
-	if lastReadChapterID != nil {
-		lastRead = *lastReadChapterID
-	}
 	res, err := db.Exec(`
-		INSERT INTO library_entries (user_id, manga_id, status, last_read_chapter_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, mangaID, status, lastRead, now, now)
+		INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, userID, mangaID, status, now, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id, _ := res.LastInsertId()
+	if lastReadChapterID != nil {
+		if _, err := db.Exec(`UPDATE library_entries
+			SET last_read_chapter_number = (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+			WHERE id = ?`, *lastReadChapterID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return id
 }
 
@@ -329,10 +336,10 @@ func markReadRequest(userID, chapterID int64) *http.Request {
 	return req
 }
 
-func cursorOfEntry(t *testing.T, db *sql.DB, entryID int64) sql.NullInt64 {
+func cursorOfEntry(t *testing.T, db *sql.DB, entryID int64) sql.NullFloat64 {
 	t.Helper()
-	var v sql.NullInt64
-	if err := db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, entryID).Scan(&v); err != nil {
+	var v sql.NullFloat64
+	if err := db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, entryID).Scan(&v); err != nil {
 		t.Fatal(err)
 	}
 	return v
@@ -355,9 +362,10 @@ func TestMarkReadAdvancesCursor(t *testing.T) {
 	if loc := rec.Header().Get("Location"); loc != "/releases" {
 		t.Errorf("location: %q", loc)
 	}
+	// Cursor por número: el cap insertado tiene number="1" → cursor=1.0.
 	got := cursorOfEntry(t, db, entryID)
-	if !got.Valid || got.Int64 != chID {
-		t.Errorf("cursor: esperado %d, obtenido %+v", chID, got)
+	if !got.Valid || got.Float64 != 1.0 {
+		t.Errorf("cursor: esperado 1.0 (number del cap %d), obtenido %+v", chID, got)
 	}
 }
 

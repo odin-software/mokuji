@@ -103,12 +103,13 @@ func TestEmailReadSuccessAdvancesCursorAndRedirects(t *testing.T) {
 		t.Errorf("URL externa ausente: %s", body)
 	}
 
-	var cur sql.NullInt64
-	if err := db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, entryID).Scan(&cur); err != nil {
+	// Cursor por número. El cap insertado tiene number="1" → cursor=1.0.
+	var cur sql.NullFloat64
+	if err := db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, entryID).Scan(&cur); err != nil {
 		t.Fatal(err)
 	}
-	if !cur.Valid || cur.Int64 != chID {
-		t.Errorf("cursor: esperado %d, obtenido %v", chID, cur)
+	if !cur.Valid || cur.Float64 != 1.0 {
+		t.Errorf("cursor: esperado 1.0 (number del cap %d), obtenido %v", chID, cur)
 	}
 }
 

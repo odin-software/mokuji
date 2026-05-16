@@ -219,18 +219,30 @@ func (s *Sender) cutoff(lastSentAt sql.NullInt64) time.Time {
 }
 
 func (s *Sender) unreadChapters(ctx context.Context, userID int64, since time.Time, limit int) ([]Item, error) {
+	// Dedup por (manga, number, language): un cap del mismo número
+	// publicado en N sources aparece UNA vez en el digest. Cursor por
+	// número: marcar leído un row marca leídos sus hermanos de cualquier
+	// scanlator.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT chapter.id, manga.title, chapter.number, chapter.title, chapter.source_id, chapter.external_url
 		FROM chapter
 		JOIN manga          ON manga.id = chapter.manga_id
 		JOIN library_entries le ON le.manga_id = manga.id
 		JOIN users          ON users.id = le.user_id
-		LEFT JOIN chapter cur ON cur.id = le.last_read_chapter_id
 		WHERE le.user_id = ?
 		  AND le.status = 'reading'
 		  AND chapter.language = users.preferred_language
 		  AND chapter.published_at > ?
-		  AND (cur.published_at IS NULL OR chapter.published_at > cur.published_at)
+		  AND (le.last_read_chapter_number IS NULL
+		       OR CAST(chapter.number AS REAL) > le.last_read_chapter_number)
+		  AND chapter.id = (
+		    SELECT c2.id FROM chapter c2
+		    WHERE c2.manga_id = chapter.manga_id
+		      AND c2.number = chapter.number
+		      AND c2.language = chapter.language
+		    ORDER BY c2.published_at DESC, c2.id DESC
+		    LIMIT 1
+		  )
 		ORDER BY chapter.published_at DESC
 		LIMIT ?
 	`, userID, since.Unix(), limit)

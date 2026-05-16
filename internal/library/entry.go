@@ -218,14 +218,14 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
-		       (SELECT COUNT(*) FROM chapter c
+		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
-		       (SELECT COUNT(*) FROM chapter c
+		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id
 		          AND c.language = u.preferred_language
-		          AND (le.last_read_chapter_id IS NULL
-		               OR c.published_at > (SELECT cur.published_at FROM chapter cur WHERE cur.id = le.last_read_chapter_id))
+		          AND (le.last_read_chapter_number IS NULL
+		               OR CAST(c.number AS REAL) > le.last_read_chapter_number)
 		       ) AS unread_count
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id
@@ -254,32 +254,44 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 	return e, true, nil
 }
 
-// loadChaptersForEntry trae los caps del manga en el idioma preferido del user,
-// con el flag Read precalculado contra el cursor. Si includeRead=false, filtra
-// fuera los caps cuya published_at sea <= cursor.published_at.
+// loadChaptersForEntry trae los caps del manga en el idioma preferido
+// del user, con dedup por número: si varias sources tienen el mismo cap
+// (típico en Comick con N scanlators), elegimos solo el row con
+// published_at máximo. El flag Read se calcula contra
+// last_read_chapter_number — semántica monotónica por número.
 func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int64, sort string, includeRead bool) ([]Chapter, error) {
 	order := "DESC"
 	if sort == "asc" {
 		order = "ASC"
 	}
 
-	// El CASE genera el flag Read para que el template muestre el estado sin
-	// queries adicionales. cur.published_at NULL = cursor sin setear = todos
-	// unread.
+	// El subquery "c.id = (...)" hace el dedup: por cada
+	// (manga, number, language) elegimos la fila con MAX(published_at).
+	// MAX(id) en caso de empate de published_at — determinístico.
+	//
+	// El read_flag compara el número del cap contra el cursor numérico.
+	// Cursor NULL = nunca leyó = todos unread.
 	q := fmt.Sprintf(`
 		SELECT c.id, c.number, c.title, c.language, c.source_id, c.external_url, c.published_at,
 		       CASE
-		         WHEN cur.published_at IS NULL THEN 0
-		         WHEN c.published_at <= cur.published_at THEN 1
+		         WHEN le.last_read_chapter_number IS NULL THEN 0
+		         WHEN CAST(c.number AS REAL) <= le.last_read_chapter_number THEN 1
 		         ELSE 0
 		       END AS read_flag
 		FROM chapter c
 		JOIN manga m ON m.id = c.manga_id
 		JOIN users u ON u.id = ?
 		JOIN library_entries le ON le.user_id = u.id AND le.manga_id = m.id
-		LEFT JOIN chapter cur ON cur.id = le.last_read_chapter_id
 		WHERE m.id = ?
 		  AND c.language = u.preferred_language
+		  AND c.id = (
+		    SELECT c2.id FROM chapter c2
+		    WHERE c2.manga_id = c.manga_id
+		      AND c2.number = c.number
+		      AND c2.language = c.language
+		    ORDER BY c2.published_at DESC, c2.id DESC
+		    LIMIT 1
+		  )
 		  %s
 		ORDER BY c.published_at %s
 	`, includeReadFilter(includeRead), order)
@@ -326,16 +338,21 @@ func includeReadFilter(include bool) string {
 	if include {
 		return "" // sin filtro extra: trae todos
 	}
-	return "AND (cur.published_at IS NULL OR c.published_at > cur.published_at)"
+	return "AND (le.last_read_chapter_number IS NULL OR CAST(c.number AS REAL) > le.last_read_chapter_number)"
 }
 
-// markChapterRead avanza el cursor del entry al chapter dado, validando que
-// el chapter pertenezca al manga del entry. La condición compuesta protege
-// contra que un user marque caps de otros mangas (devolvería 0 rows).
+// markChapterRead avanza el cursor del entry al MAX(cursor_actual, número
+// del cap marcado). Cursor monotónico: leer cap 3 después de cap 10 no
+// retrocede. Valida que el chapter pertenezca al manga del entry (devuelve
+// 0 rows si no — un user no puede mover el cursor de otro user).
 func (h *Handler) markChapterRead(ctx context.Context, userID, entryID, chapterID int64) error {
 	res, err := h.db.ExecContext(ctx, `
 		UPDATE library_entries
-		SET last_read_chapter_id = ?, updated_at = ?
+		SET last_read_chapter_number = MAX(
+		      COALESCE(last_read_chapter_number, 0),
+		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		    ),
+		    updated_at = ?
 		WHERE id = ?
 		  AND user_id = ?
 		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)

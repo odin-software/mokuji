@@ -488,24 +488,24 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		args = append(args, "%"+query+"%")
 	}
 
-	// Dos subqueries de count: total_chapters (en idioma del user) y
-	// unread_count (caps publicados después del cursor). Distinguirlos
-	// permite que el badge muestre "pendiente" (matched + 0 caps) vs
-	// "al día" (matched + caps > 0 + UnreadCount = 0). Cursor NULL =
-	// leyó cero, cuenta todos.
+	// Dos subqueries de count: total_chapters (números únicos en idioma
+	// del user) y unread_count (números únicos posteriores al cursor).
+	// DISTINCT c.number: con multi-source un mismo cap puede tener N
+	// filas (uno por scanlator), pero al user le importa el cap, no la
+	// fuente. Cursor NULL = nunca leyó, cuenta todos.
 	q := fmt.Sprintf(`
 		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
-		       (SELECT COUNT(*) FROM chapter c
+		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
-		       (SELECT COUNT(*) FROM chapter c
+		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id
 		          AND c.language = u.preferred_language
-		          AND (le.last_read_chapter_id IS NULL
-		               OR c.published_at > (SELECT cur.published_at FROM chapter cur WHERE cur.id = le.last_read_chapter_id))
+		          AND (le.last_read_chapter_number IS NULL
+		               OR CAST(c.number AS REAL) > le.last_read_chapter_number)
 		       ) AS unread_count
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id

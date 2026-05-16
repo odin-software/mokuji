@@ -70,16 +70,17 @@ func (h *Handler) emailRead(w http.ResponseWriter, r *http.Request) {
 // library_entry activa (status='reading') del user, o si el user está
 // soft-deleted, o si no hay match con mangadex.
 func (h *Handler) markFromEmail(ctx context.Context, userID, chapterID int64) (string, error) {
-	// Cargamos external_url + source_id + entry_id en una query con joins
-	// que aseguran ownership. Si la cadena rompe en cualquier lado, no
-	// devuelve filas.
+	// Cargamos external_url + source_id + entry_id + chapter number en
+	// una query con joins que aseguran ownership. Si la cadena rompe en
+	// cualquier lado, no devuelve filas.
 	var (
 		entryID     int64
 		sourceID    string
 		externalURL sql.NullString
+		chapterNum  string
 	)
 	err := h.db.QueryRowContext(ctx, `
-		SELECT le.id, c.source_id, c.external_url
+		SELECT le.id, c.source_id, c.external_url, c.number
 		FROM chapter c
 		JOIN library_entries le ON le.manga_id = c.manga_id
 		JOIN users u ON u.id = le.user_id
@@ -87,16 +88,23 @@ func (h *Handler) markFromEmail(ctx context.Context, userID, chapterID int64) (s
 		  AND le.user_id = ?
 		  AND le.status = 'reading'
 		  AND u.deleted_at IS NULL
-	`, chapterID, userID).Scan(&entryID, &sourceID, &externalURL)
+	`, chapterID, userID).Scan(&entryID, &sourceID, &externalURL, &chapterNum)
 	if err != nil {
 		return "", err
 	}
 
-	// Avanzamos el cursor. No fallamos si el UPDATE no afecta filas (race
-	// con un delete) — lo importante es responder al link, no marcar.
+	// Avanzamos el cursor al MAX(cursor_actual, número del cap). No
+	// fallamos si el UPDATE no afecta filas (race con un delete) — lo
+	// importante es responder al link, no marcar.
 	_, err = h.db.ExecContext(ctx, `
-		UPDATE library_entries SET last_read_chapter_id = ?, updated_at = ? WHERE id = ?
-	`, chapterID, time.Now().UTC().Unix(), entryID)
+		UPDATE library_entries
+		SET last_read_chapter_number = MAX(
+		      COALESCE(last_read_chapter_number, 0),
+		      CAST(? AS REAL)
+		    ),
+		    updated_at = ?
+		WHERE id = ?
+	`, chapterNum, time.Now().UTC().Unix(), entryID)
 	if err != nil {
 		return "", err
 	}

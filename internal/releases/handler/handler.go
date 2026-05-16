@@ -2,10 +2,12 @@
 //   - GET /releases -> lista flat de capítulos no leídos del usuario,
 //     ordenados por publishAt descendente (más nuevos arriba).
 //
-// "No leído" se define vía el cursor library_entries.last_read_chapter_id
-// (ADR 0013 §9): cap.published_at > cursor.published_at, o todos los caps
-// si el cursor es NULL. Filtra por status='reading' y por idioma preferido
-// del usuario.
+// "No leído" se define vía el cursor numérico
+// library_entries.last_read_chapter_number (migration 0008): un cap
+// cuenta como no leído si CAST(c.number AS REAL) > cursor, o si el
+// cursor es NULL (nunca marcó). Cursor por número permite dedup
+// cross-source: ch70 publicado por dos scanlators cuenta como un solo
+// cap leído cuando avanza el cursor.
 package handler
 
 import (
@@ -119,10 +121,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// markRead avanza el cursor library_entries.last_read_chapter_id al cap
-// indicado en el form. La query bloquea cualquier intento de marcar un
-// cap que no pertenezca a un manga en la biblioteca del user (subselect
-// devuelve NULL y la igualdad falsa => 0 rows affected).
+// markRead avanza el cursor library_entries.last_read_chapter_number al
+// MAX(cursor_actual, número del cap clickeado). Monotónico: leer cap 3
+// después de cap 10 no retrocede el cursor. La subquery bloquea
+// cualquier intento de marcar un cap que no pertenezca a un manga en
+// la biblioteca del user (subselect devuelve NULL => 0 rows affected).
 func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	s, ok := session.FromContext(r.Context())
 	if !ok {
@@ -142,7 +145,11 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.db.ExecContext(r.Context(), `
 		UPDATE library_entries
-		SET last_read_chapter_id = ?, updated_at = ?
+		SET last_read_chapter_number = MAX(
+		      COALESCE(last_read_chapter_number, 0),
+		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		    ),
+		    updated_at = ?
 		WHERE user_id = ?
 		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)
 	`, chapterID, time.Now().UTC().Unix(), s.UserID, chapterID)
@@ -169,6 +176,13 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 // Exportado para que el widget en home (en un commit posterior) reuse
 // el mismo query con un limit más chico.
 func (h *Handler) unreadReleases(ctx context.Context, userID int64, limit int) ([]Release, error) {
+	// Dedup por (manga, number, language): elegimos el row con MAX
+	// published_at por grupo (tie-break por id desc). Sin esto, un cap
+	// publicado por dos scanlators en Comick aparecería dos veces en
+	// /releases. El cursor compara CAST(c.number AS REAL) > cursor —
+	// si el user marcó cap N, ningún row de ese número aparece (la
+	// semántica monotónica por número resuelve el problema clásico de
+	// "ya lo leí pero otro scanlator lo subió 2 días después").
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT chapter.id, chapter.source_id, chapter.number, chapter.title, chapter.language,
 		       chapter.published_at, chapter.external_url,
@@ -177,11 +191,19 @@ func (h *Handler) unreadReleases(ctx context.Context, userID int64, limit int) (
 		JOIN manga          ON manga.id = chapter.manga_id
 		JOIN library_entries le ON le.manga_id = manga.id
 		JOIN users          ON users.id = le.user_id
-		LEFT JOIN chapter cur ON cur.id = le.last_read_chapter_id
 		WHERE le.user_id = ?
 		  AND le.status = 'reading'
 		  AND chapter.language = users.preferred_language
-		  AND (cur.published_at IS NULL OR chapter.published_at > cur.published_at)
+		  AND (le.last_read_chapter_number IS NULL
+		       OR CAST(chapter.number AS REAL) > le.last_read_chapter_number)
+		  AND chapter.id = (
+		    SELECT c2.id FROM chapter c2
+		    WHERE c2.manga_id = chapter.manga_id
+		      AND c2.number = chapter.number
+		      AND c2.language = chapter.language
+		    ORDER BY c2.published_at DESC, c2.id DESC
+		    LIMIT 1
+		  )
 		ORDER BY chapter.published_at DESC
 		LIMIT ?
 	`, userID, limit)

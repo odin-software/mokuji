@@ -705,8 +705,10 @@ func TestListEntriesCountsTotalAndUnread(t *testing.T) {
 		t.Errorf("sin cursor: Total=%d Unread=%d (esperado 3/3)", entries[0].TotalChapters, entries[0].UnreadCount)
 	}
 
-	// Avanzamos el cursor al primer cap: Total=3, Unread=2.
-	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chFirst, entryID); err != nil {
+	// Avanzamos el cursor al primer cap (cap número 1.0): Total=3, Unread=2.
+	if _, err := db.Exec(`UPDATE library_entries
+		SET last_read_chapter_number = (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		WHERE id = ?`, chFirst, entryID); err != nil {
 		t.Fatal(err)
 	}
 	entries, err = h.listEntries(ctx, userID, "all", "")

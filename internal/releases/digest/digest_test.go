@@ -275,7 +275,9 @@ func TestSendToUserRespectsCursor(t *testing.T) {
 	read := insertChapter(t, db, mid, "ch-old", "10", "en", time.Now().Add(-48*time.Hour))
 	insertChapter(t, db, mid, "ch-new", "11", "en", time.Now().Add(-1*time.Hour))
 
-	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE user_id = ?`, read, uid); err != nil {
+	if _, err := db.Exec(`UPDATE library_entries
+		SET last_read_chapter_number = (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		WHERE user_id = ?`, read, uid); err != nil {
 		t.Fatal(err)
 	}
 

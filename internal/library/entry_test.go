@@ -170,7 +170,11 @@ func TestEntryDetailHidesReadByDefault(t *testing.T) {
 	chRead := insertChapter(t, db, mangaID, "ch-read", "1", "en", "", time.Now().Add(-48*time.Hour))
 	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "", time.Now().Add(-1*time.Hour))
 
-	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chRead, entryID); err != nil {
+	// Set cursor to the number of chRead via subquery — el cursor por
+	// número evita acoplar el test a IDs específicos.
+	if _, err := db.Exec(`UPDATE library_entries
+		SET last_read_chapter_number = (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		WHERE id = ?`, chRead, entryID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -195,7 +199,11 @@ func TestEntryDetailIncludeReadShowsAll(t *testing.T) {
 	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
 	chRead := insertChapter(t, db, mangaID, "ch-read", "1", "en", "", time.Now().Add(-48*time.Hour))
 	chNew := insertChapter(t, db, mangaID, "ch-new", "2", "en", "", time.Now().Add(-1*time.Hour))
-	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_id = ? WHERE id = ?`, chRead, entryID); err != nil {
+	// Set cursor to the number of chRead via subquery — el cursor por
+	// número evita acoplar el test a IDs específicos.
+	if _, err := db.Exec(`UPDATE library_entries
+		SET last_read_chapter_number = (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		WHERE id = ?`, chRead, entryID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,12 +247,13 @@ func TestEntryReadAndOpenAdvancesCursorAndRendersRedirectPage(t *testing.T) {
 		t.Errorf("URL ausente en body: %s", body)
 	}
 
-	var cur sql.NullInt64
-	if err := db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, entryID).Scan(&cur); err != nil {
+	// Cursor por número: el chID tiene number="1", el cursor debe quedar en 1.0.
+	var cur sql.NullFloat64
+	if err := db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, entryID).Scan(&cur); err != nil {
 		t.Fatal(err)
 	}
-	if !cur.Valid || cur.Int64 != chID {
-		t.Errorf("cursor: esperado %d, obtenido %v", chID, cur)
+	if !cur.Valid || cur.Float64 != 1.0 {
+		t.Errorf("cursor: esperado 1.0 (number del cap), obtenido %v", cur)
 	}
 }
 
@@ -288,8 +297,8 @@ func TestEntryReadAndOpen404OnOtherUserChapter(t *testing.T) {
 	}
 
 	// El cursor de Alice no debe haberse tocado.
-	var cur sql.NullInt64
-	_ = db.QueryRow(`SELECT last_read_chapter_id FROM library_entries WHERE id = ?`, aliceEntry).Scan(&cur)
+	var cur sql.NullFloat64
+	_ = db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, aliceEntry).Scan(&cur)
 	if cur.Valid {
 		t.Error("cursor de Alice fue alterado por chapter de Bob")
 	}

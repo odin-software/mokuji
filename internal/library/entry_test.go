@@ -203,7 +203,7 @@ func TestEntryDetailIncludeReadShowsAll(t *testing.T) {
 	}
 }
 
-func TestEntryReadAndOpenAdvancesCursorAndRedirects(t *testing.T) {
+func TestEntryReadAndOpenAdvancesCursorAndRendersRedirectPage(t *testing.T) {
 	db := setupDB(t)
 	h := newFullHandler(t, db, nil)
 	uid := insertUser(t, db, "alice@example.com")
@@ -216,11 +216,17 @@ func TestEntryReadAndOpenAdvancesCursorAndRedirects(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.entryReadAndOpen(w, r)
 
-	if w.Code != http.StatusSeeOther {
+	// La respuesta es HTML con meta refresh (no 303) para evitar CSP
+	// form-action bloqueando redirects cross-origin del form submission.
+	if w.Code != http.StatusOK {
 		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
 	}
-	if loc := w.Header().Get("Location"); loc != "https://reader.example/ch-1" {
-		t.Errorf("Location: %q", loc)
+	body := w.Body.String()
+	if !strings.Contains(body, `meta http-equiv="refresh"`) {
+		t.Errorf("falta meta refresh en body: %s", body)
+	}
+	if !strings.Contains(body, "https://reader.example/ch-1") {
+		t.Errorf("URL ausente en body: %s", body)
 	}
 
 	var cur sql.NullInt64
@@ -245,8 +251,8 @@ func TestEntryReadAndOpenFallsBackToMangadexURL(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.entryReadAndOpen(w, r)
 
-	if loc := w.Header().Get("Location"); loc != "https://mangadex.org/chapter/ch-x" {
-		t.Errorf("fallback URL: %q", loc)
+	if !strings.Contains(w.Body.String(), "https://mangadex.org/chapter/ch-x") {
+		t.Errorf("fallback URL ausente en body: %s", w.Body.String())
 	}
 }
 

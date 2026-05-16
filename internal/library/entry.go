@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	htmltmpl "html/template"
 	"net/http"
 	"strconv"
 	"time"
@@ -90,8 +91,14 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 // entryReadAndOpen sirve POST /library/entry/{id}/read.
-// Mark-read del capítulo indicado + 303 redirect a su external_url para que
-// el form con target="_blank" abra el lector en una pestaña nueva.
+//
+// Marca leído + redirige al external_url del capítulo. No podemos usar
+// http.Redirect cross-origin: el CSP del server tiene `form-action 'self'`
+// y la spec dice que la directiva se aplica a TODOS los URLs del redirect
+// chain de un form submission — el browser bloquearía el 303 a mangadex
+// silenciosamente, dejando una pestaña en blanco. Por eso respondemos con
+// HTML mínimo que dispara la navegación vía <meta http-equiv="refresh">;
+// eso no cuenta como parte del form-action chain.
 func (h *Handler) entryReadAndOpen(w http.ResponseWriter, r *http.Request) {
 	s, entry, chapterID, ok := h.parseEntryReadForm(w, r)
 	if !ok {
@@ -110,7 +117,27 @@ func (h *Handler) entryReadAndOpen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, external, http.StatusSeeOther)
+
+	writeRedirectPage(w, external)
+}
+
+// writeRedirectPage emite una página HTML mínima que redirige al destino
+// via <meta http-equiv="refresh"> + fallback con <a> visible. Evita la
+// restricción CSP form-action que se aplica al redirect chain de un
+// http.Redirect. El destino se renderiza con html/template para escapar
+// cualquier carácter peligroso. URL validada por context attribute.
+var redirectTmpl = htmltmpl.Must(htmltmpl.New("redir").Parse(`<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url={{.URL}}">
+<title>abriendo el lector…</title>
+</head><body>
+<p>abriendo el lector… si no pasa nada, <a href="{{.URL}}" rel="noopener">click acá</a>.</p>
+</body></html>`))
+
+func writeRedirectPage(w http.ResponseWriter, url string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = redirectTmpl.Execute(w, struct{ URL string }{URL: url})
 }
 
 // entryMarkRead sirve POST /library/entry/{id}/mark-read.

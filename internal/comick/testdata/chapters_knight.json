@@ -1,0 +1,126 @@
+{
+  "data": [
+    {
+      "id": 10034400,
+      "hid": "JW5mkJX",
+      "chap": "110",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-16T13:59:46.000000Z",
+      "updated_at": "2026-05-16T13:59:46.000000Z"
+    },
+    {
+      "id": 9979756,
+      "hid": "OCCjqUL",
+      "chap": "109",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-10T03:46:12.000000Z",
+      "updated_at": "2026-05-10T03:46:12.000000Z"
+    },
+    {
+      "id": 9941947,
+      "hid": "O6JE7er",
+      "chap": "108",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-06T08:12:05.000000Z",
+      "updated_at": "2026-05-06T08:12:05.000000Z"
+    },
+    {
+      "id": 9942092,
+      "hid": "O6JESuB",
+      "chap": "107",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-06T08:12:11.000000Z",
+      "updated_at": "2026-05-06T08:12:11.000000Z"
+    },
+    {
+      "id": 9941229,
+      "hid": "O6JC83N",
+      "chap": "106",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-06T08:11:36.000000Z",
+      "updated_at": "2026-05-06T08:11:36.000000Z"
+    },
+    {
+      "id": 9938833,
+      "hid": "O6J5OMG",
+      "chap": "105",
+      "title": "",
+      "vol": null,
+      "lang": "en",
+      "publish_at": null,
+      "group_name": [
+        "Mangakakalot"
+      ],
+      "created_at": "2026-05-06T08:09:59.000000Z",
+      "updated_at": "2026-05-06T08:09:59.000000Z"
+    }
+  ],
+  "pagination": {
+    "current_page": 1,
+    "per_page": 60,
+    "last_page": 4,
+    "total": 202,
+    "links": [
+      {
+        "url": null,
+        "label": "&laquo; Previous",
+        "active": false
+      },
+      {
+        "url": "http://comick.art/api/comics/the-knight-only-lives-today/chapter-list?page=1",
+        "label": "1",
+        "active": true
+      },
+      {
+        "url": "http://comick.art/api/comics/the-knight-only-lives-today/chapter-list?page=2",
+        "label": "2",
+        "active": false
+      },
+      {
+        "url": "http://comick.art/api/comics/the-knight-only-lives-today/chapter-list?page=3",
+        "label": "3",
+        "active": false
+      },
+      {
+        "url": "http://comick.art/api/comics/the-knight-only-lives-today/chapter-list?page=4",
+        "label": "4",
+        "active": false
+      },
+      {
+        "url": "http://comick.art/api/comics/the-knight-only-lives-today/chapter-list?page=2",
+        "label": "Next &raquo;",
+        "active": false
+      }
+    ]
+  }
+}

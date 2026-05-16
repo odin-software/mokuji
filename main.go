@@ -27,6 +27,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/admin"
 	"git.odin.do/kengru/mokuji/internal/asura"
 	"git.odin.do/kengru/mokuji/internal/auth"
+	"git.odin.do/kengru/mokuji/internal/comick"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
@@ -180,6 +181,21 @@ func main() {
 		sourceClients[asuraClient.Name()] = asuraClient
 		sourceMatchers[asuraClient.Name()] = matcher.New(asuraClient)
 		logger.Info("source asura habilitada", "api_base", envOr("ASURA_API_BASE_URL", "default"))
+	}
+	if envBool("COMICK_ENABLED", true) {
+		opts := []comick.Option{
+			comick.WithUserAgent("mokuji/" + version.Value + " (+" + envOr("BASE_URL", "https://mokuji.org") + ")"),
+		}
+		if u := os.Getenv("COMICK_API_BASE_URL"); u != "" {
+			opts = append(opts, comick.WithAPIBaseURL(u))
+		}
+		if u := os.Getenv("COMICK_FRONTEND_BASE_URL"); u != "" {
+			opts = append(opts, comick.WithFrontendBaseURL(u))
+		}
+		comickClient := comick.New(opts...)
+		sourceClients[comickClient.Name()] = comickClient
+		sourceMatchers[comickClient.Name()] = matcher.New(comickClient)
+		logger.Info("source comick habilitada", "api_base", envOr("COMICK_API_BASE_URL", "default"))
 	}
 
 	// Worker periódico que polleea cada source (ADR 0014 §5). dispatch

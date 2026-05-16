@@ -127,7 +127,9 @@ func (h *Handler) deleteAccountConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	code := r.PostFormValue("code")
+	// Sanitizamos a solo dígitos (mismo motivo que /auth/verify: clients de
+	// email meten non-breaking spaces al copiar "123 456").
+	code := sanitizeDeletionCode(r.PostFormValue("code"))
 	if !isValidDeletionCode(code) {
 		h.renderDeleteWithError(w, r, s, "código inválido")
 		return
@@ -292,6 +294,18 @@ func isValidDeletionCode(s string) bool {
 		}
 	}
 	return true
+}
+
+// sanitizeDeletionCode extrae solo dígitos (cubre non-breaking spaces y otros
+// invisibles que algunos clients de email inyectan al pegar el código).
+func sanitizeDeletionCode(s string) string {
+	out := make([]byte, 0, deletionCodeLength)
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			out = append(out, byte(r))
+		}
+	}
+	return string(out)
 }
 
 func hashDeletionCode(c string) string {

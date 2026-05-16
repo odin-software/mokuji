@@ -55,6 +55,25 @@ func TestGenerateCodeProduces6Digits(t *testing.T) {
 	}
 }
 
+func TestSanitizeCode(t *testing.T) {
+	cases := map[string]string{
+		"123456":        "123456",
+		"  123456 ":     "123456",
+		"123 456":       "123456",
+		"  123 456  ":   "123456",
+		"123 456":  "123456", // non-breaking space (Gmail/Apple Mail)
+		"1\t2\n3 4-5-6": "123456",
+		"abc":           "",
+		"":              "",
+		"123456abc":     "123456",
+	}
+	for in, want := range cases {
+		if got := sanitizeCode(in); got != want {
+			t.Errorf("sanitizeCode(%q): esperado %q, obtenido %q", in, want, got)
+		}
+	}
+}
+
 func TestIsValidCode(t *testing.T) {
 	cases := map[string]bool{
 		"123456": true,

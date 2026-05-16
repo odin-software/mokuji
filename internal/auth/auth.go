@@ -259,7 +259,10 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	emailAddr := strings.TrimSpace(r.PostFormValue("email"))
-	code := strings.TrimSpace(strings.ReplaceAll(r.PostFormValue("code"), " ", ""))
+	// Sanitizamos a solo dígitos: algunos clients de email pegan el código
+	// con non-breaking spaces (U+00A0), tabs, o caracteres invisibles que
+	// strings.TrimSpace/ReplaceAll(" ", "") no cubre. sanitizeCode robusto.
+	code := sanitizeCode(r.PostFormValue("code"))
 
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
 		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "email inválido"})
@@ -430,6 +433,20 @@ func isValidCode(s string) bool {
 		}
 	}
 	return true
+}
+
+// sanitizeCode extrae solo los dígitos del input. Más tolerante que un
+// TrimSpace+ReplaceAll: cubre non-breaking spaces (U+00A0) que Gmail/Apple
+// Mail meten al renderear "123 456", tabs, zero-width chars, etc. Devuelve
+// los dígitos en orden; el caller chequea longitud después con isValidCode.
+func sanitizeCode(s string) string {
+	out := make([]byte, 0, codeLength)
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			out = append(out, byte(r))
+		}
+	}
+	return string(out)
 }
 
 func hashCode(c string) string {

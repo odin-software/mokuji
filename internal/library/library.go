@@ -69,15 +69,17 @@ type Manga struct {
 
 // Entry es un library_entry de un usuario sobre un manga.
 type Entry struct {
-	ID          int64
-	Manga       Manga
-	Status      string
-	LastChapter string
-	IsFavorite  bool
-	SourceURL   string
-	Notes       string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             int64
+	Manga          Manga
+	Status         string
+	LastChapter    string
+	IsFavorite     bool
+	SourceURL      string
+	Notes          string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	MangadexStatus string // 'unmatched' | 'matched' | 'needs_review' | 'no_results'
+	UnreadCount    int    // caps publicados después del cursor en preferred_language
 }
 
 // Config agrupa las dependencias del handler.
@@ -415,12 +417,23 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		args = append(args, "%"+query+"%")
 	}
 
+	// Subquery de unread_count: caps del manga en el idioma preferido del
+	// user publicados después del cursor (last_read_chapter_id). Si el
+	// cursor es NULL, cuenta todo el histórico. Cero si el manga aún no
+	// está matcheado (no hay caps).
 	q := fmt.Sprintf(`
 		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
-		       m.id, m.source, m.source_id, m.title, m.cover_url
+		       m.id, m.source, m.source_id, m.title, m.cover_url, m.mangadex_status,
+		       (SELECT COUNT(*) FROM chapter c
+		        WHERE c.manga_id = m.id
+		          AND c.language = u.preferred_language
+		          AND (le.last_read_chapter_id IS NULL
+		               OR c.published_at > (SELECT cur.published_at FROM chapter cur WHERE cur.id = le.last_read_chapter_id))
+		       ) AS unread_count
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id
+		JOIN users u ON u.id = le.user_id
 		WHERE %s
 		ORDER BY le.is_favorite DESC, le.updated_at DESC
 	`, where)
@@ -441,6 +454,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 			&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
 			&created, &updated,
 			&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
+			&e.MangadexStatus, &e.UnreadCount,
 		); err != nil {
 			return nil, err
 		}

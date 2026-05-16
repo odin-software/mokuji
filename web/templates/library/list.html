@@ -1,4 +1,21 @@
 {{define "title"}}biblioteca — mokuji{{end}}
+
+{{define "mangadex-badge"}}
+{{- if eq .MangadexStatus "matched" -}}
+  {{- if gt .UnreadCount 0 -}}
+    <a href="/releases" class="md-badge md-badge-new">{{.UnreadCount}} nuevo{{if gt .UnreadCount 1}}s{{end}}</a>
+  {{- else -}}
+    <span class="md-badge md-badge-ok" title="caps al día">al día</span>
+  {{- end -}}
+{{- else if eq .MangadexStatus "needs_review" -}}
+  <span class="md-badge md-badge-warn" title="múltiples coincidencias en mangadex; matching ambiguo">matching incierto</span>
+{{- else if eq .MangadexStatus "no_results" -}}
+  <span class="md-badge md-badge-muted" title="no encontrado en mangadex; no vamos a poder seguir capítulos">sin source</span>
+{{- else -}}
+  <span class="md-badge md-badge-muted" title="todavía no buscamos en mangadex; el worker lo intentará luego">buscando…</span>
+{{- end -}}
+{{end}}
+
 {{define "content"}}
 <header class="lib-header">
   <h1>tu biblioteca</h1>
@@ -27,6 +44,7 @@
         {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
         <strong>{{.Manga.Title}}</strong>
         {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
+        {{template "mangadex-badge" .}}
       </summary>
       <form method="POST" action="/library/{{.ID}}/update" class="entry-form">
         {{ csrfInput $.Session }}
@@ -74,8 +92,6 @@
 {{end}}
 
 <p class="user-links">
-  <a href="/settings">configuración</a>
-  <span class="sep">·</span>
   <a href="/u/{{.Session.UserID}}">tu vista pública</a>
 </p>
 <form method="POST" action="/auth/logout" class="logout-form">

@@ -272,6 +272,23 @@ button.danger:hover { background: #800; }
 .app-nav nav { display: flex; gap: 1rem; font-size: 0.875rem; }
 .app-nav nav a { color: var(--text-muted); text-decoration: none; }
 .app-nav nav a:hover { color: var(--text); }
+.md-badge {
+  display: inline-block;
+  padding: 0.0625rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.md-badge-new { background: var(--status-reading-bg); color: var(--status-reading-fg); }
+.md-badge-new:hover { filter: brightness(0.95); }
+.md-badge-ok { background: var(--status-completed-bg); color: var(--status-completed-fg); }
+.md-badge-warn { background: #fff3cd; color: #6b4f00; }
+.md-badge-muted { background: var(--border-soft); color: var(--text-muted); }
+@media (prefers-color-scheme: dark) {
+  .md-badge-warn { background: #4a3c0a; color: #ffe082; }
+}
 </style>
 </head>
 <body>

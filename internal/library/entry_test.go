@@ -141,6 +141,77 @@ func TestEntryDetailListsChaptersDescByDefault(t *testing.T) {
 	}
 }
 
+// Multi-source: cuando hay varias filas chapter con el mismo número
+// (típico de Comick con múltiples scanlators), entry detail debe
+// mostrar UNA fila por número con TODAS las opciones de lectura como
+// botones "leer en X".
+func TestEntryDetailGroupsByNumberAndShowsAllOptions(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+
+	// Tres filas del MISMO cap (número "70") desde tres scanlators distintos.
+	// Las fechas distintas verifican que el orden interno de ReadOptions es
+	// "más reciente primero" (la URL del row más nuevo es la primaria).
+	now := time.Now()
+	mangakak := insertChapterWithSource(t, db, mangaID, "comick", "ch-cm-70", "70", "Mangakakalot", "en", "https://comick.art/x/70-mangakak", now.Add(-1*time.Hour))
+	insertChapterWithSource(t, db, mangaID, "comick", "ch-cm-70-asu", "70", "Asura", "en", "https://comick.art/x/70-asura", now.Add(-24*time.Hour))
+	insertChapterWithSource(t, db, mangaID, "asura", "ch-asu-70", "70", "Asura Scans", "en", "https://asurascans.com/c/x/chapter/70", now.Add(-2*time.Hour))
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10), "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+
+	// Debe haber UNA mención de "cap. 70" (no tres como sin dedup).
+	if got := strings.Count(body, ">cap. 70<"); got != 1 {
+		t.Errorf("debería renderear un solo header 'cap. 70', obtuvo %d", got)
+	}
+
+	// Cada ReadOption renderea un form POST /read con su chapter_id —
+	// el handler hace el redirect al external_url, así que la URL no
+	// aparece directo en el HTML. Verificamos que estén los 3 botones.
+	if got := strings.Count(body, "/library/entry/"+strconv.FormatInt(entryID, 10)+"/read"); got != 3 {
+		t.Errorf("debería haber 3 forms de /read (uno por scanlator), obtuvo %d", got)
+	}
+
+	// Botones de leer deberían tener labels distintos (de los chapter.title).
+	for _, label := range []string{"leer en Mangakakalot", "leer en Asura Scans"} {
+		if !strings.Contains(body, label) {
+			t.Errorf("falta botón %q", label)
+		}
+	}
+
+	// El cap_id del más reciente (mangakak) debe ser la opción primaria —
+	// significa que cuando user clickea "marcar leído", apunta a ese row.
+	wantPrimary := `name="chapter_id" value="` + strconv.FormatInt(mangakak, 10) + `"`
+	if !strings.Contains(body, wantPrimary) {
+		t.Errorf("primary chapter_id (mangakak=%d) no aparece en mark-read form", mangakak)
+	}
+}
+
+// insertChapterWithSource es una variante de insertChapter que permite
+// especificar source + title (útil para los tests multi-source de
+// agrupamiento). Sin él los tests existentes seguirían usando 'mangadex'.
+func insertChapterWithSource(t *testing.T, db *sql.DB, mangaID int64, source, sourceID, number, title, lang, externalURL string, publishedAt time.Time) int64 {
+	t.Helper()
+	res, err := db.Exec(`
+		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, mangaID, source, sourceID, number, title, lang, publishedAt.Unix(), externalURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 func TestEntryDetailSortAsc(t *testing.T) {
 	db := setupDB(t)
 	h := newFullHandler(t, db, nil)

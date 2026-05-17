@@ -80,7 +80,6 @@
   <li class="chapter-row{{if .Read}} chapter-read{{end}}">
     <div class="chapter-info">
       <strong>{{if .Number}}cap. {{.Number}}{{else}}cap. ?{{end}}</strong>
-      {{if .Title}}<span class="muted">{{.Title}}</span>{{end}}
       <span class="chapter-meta muted">
         {{if not .PublishedAt.IsZero}}{{.PublishedAt.Format "2006-01-02"}}{{end}}
         {{if .Language}}· {{.Language}}{{end}}
@@ -88,11 +87,13 @@
       </span>
     </div>
     <div class="chapter-actions">
+      {{range .ReadOptions}}
       <form method="POST" action="/library/entry/{{$.Entry.ID}}/read" target="_blank" class="inline-form">
         {{ csrfInput $.Session }}
         <input type="hidden" name="chapter_id" value="{{.ID}}">
-        <button type="submit" title="abre el lector en una pestaña nueva y marca leído acá">leer →</button>
+        <button type="submit" title="abre el lector en una pestaña nueva y marca leído acá">leer en {{.Label}} →</button>
       </form>
+      {{end}}
       {{if not .Read}}
       <form method="POST" action="/library/entry/{{$.Entry.ID}}/mark-read" class="inline-form">
         {{ csrfInput $.Session }}

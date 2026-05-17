@@ -21,15 +21,31 @@ import (
 // Autorización: el endpoint scope estricto por user_id. Si el library_entry
 // no existe para el user, 404 (sin revelar existencia del manga).
 
-// Chapter es una fila de la lista de caps en la vista detail.
+// Chapter es una fila de la lista de caps en la vista detail. Con
+// multi-source, un cap (mismo número + idioma) puede estar disponible
+// en N sources/scanlators distintos — esa lista vive en ReadOptions.
+// Los campos "primarios" (ID, ExternalURL) corresponden a la primera
+// opción, que es la más recientemente publicada en alguna source.
 type Chapter struct {
 	ID          int64
 	Number      string
 	Title       string
 	Language    string
+	ExternalURL string         // URL de la opción primaria (= ReadOptions[0].URL)
+	PublishedAt time.Time      // published_at de la opción primaria
+	Read        bool           // true si este cap está en o antes del cursor
+	ReadOptions []ChapterOption // todas las opciones de lectura para este (manga, number, language)
+}
+
+// ChapterOption es una de las opciones disponibles para leer un cap —
+// un row específico de la tabla chapter, ya con la URL del lector y
+// metadata útil para mostrar al user (scanlator, source).
+type ChapterOption struct {
+	ID          int64     // chapter.id; permite "marcar leído" apuntando a un row concreto
+	Source      string    // 'mangadex' | 'asura' | 'comick'
+	Label       string    // nombre del scanlator (de chapter.title si lo trae el cliente)
 	ExternalURL string
 	PublishedAt time.Time
-	Read        bool // true si este cap está en o antes del cursor
 }
 
 type entryData struct {
@@ -255,24 +271,24 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 }
 
 // loadChaptersForEntry trae los caps del manga en el idioma preferido
-// del user, con dedup por número: si varias sources tienen el mismo cap
-// (típico en Comick con N scanlators), elegimos solo el row con
-// published_at máximo. El flag Read se calcula contra
-// last_read_chapter_number — semántica monotónica por número.
+// del user. La consulta NO dedupa — devuelve una fila por (cap, source);
+// el agrupamiento por número sucede en Go, donde armamos un slice de
+// ChapterOption por cada grupo. El user ve un row por número con la
+// lista de "leer en X" disponibles.
+//
+// ORDER BY por número (no published_at) porque agregadores como Comick
+// suben archivos históricos completos cuando se agrega un scanlator
+// nuevo: el published_at refleja "cuándo apareció en la plataforma",
+// no la cronología. Ordenar por número da la progresión esperada para
+// ponerse al día.
 func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int64, sort string, includeRead bool) ([]Chapter, error) {
 	order := "DESC"
 	if sort == "asc" {
 		order = "ASC"
 	}
 
-	// El subquery "c.id = (...)" hace el dedup: por cada
-	// (manga, number, language) elegimos la fila con MAX(published_at).
-	// MAX(id) en caso de empate de published_at — determinístico.
-	//
-	// El read_flag compara el número del cap contra el cursor numérico.
-	// Cursor NULL = nunca leyó = todos unread.
 	q := fmt.Sprintf(`
-		SELECT c.id, c.number, c.title, c.language, c.source_id, c.external_url, c.published_at,
+		SELECT c.id, c.number, c.title, c.language, c.source, c.source_id, c.external_url, c.published_at,
 		       CASE
 		         WHEN le.last_read_chapter_number IS NULL THEN 0
 		         WHEN CAST(c.number AS REAL) <= le.last_read_chapter_number THEN 1
@@ -284,16 +300,8 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 		JOIN library_entries le ON le.user_id = u.id AND le.manga_id = m.id
 		WHERE m.id = ?
 		  AND c.language = u.preferred_language
-		  AND c.id = (
-		    SELECT c2.id FROM chapter c2
-		    WHERE c2.manga_id = c.manga_id
-		      AND c2.number = c.number
-		      AND c2.language = c.language
-		    ORDER BY c2.published_at DESC, c2.id DESC
-		    LIMIT 1
-		  )
 		  %s
-		ORDER BY c.published_at %s
+		ORDER BY CAST(c.number AS REAL) %s, c.published_at DESC, c.id DESC
 	`, includeReadFilter(includeRead), order)
 
 	rows, err := h.db.QueryContext(ctx, q, userID, mangaID)
@@ -302,34 +310,78 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 	}
 	defer rows.Close()
 
+	// Agrupamos por (number, language). El orden del SQL garantiza que
+	// la primera fila de cada grupo sea la opción primaria (más reciente
+	// por published_at). Las siguientes son alternativas.
+	type groupKey struct{ num, lang string }
+	groups := map[groupKey]int{} // → index en out
 	var out []Chapter
+
 	for rows.Next() {
 		var (
-			c           Chapter
+			rowID       int64
 			number      sql.NullString
 			title       sql.NullString
 			language    sql.NullString
+			source      string
 			sourceID    string
 			externalURL sql.NullString
 			publishedAt sql.NullInt64
 			readFlag    int
 		)
-		if err := rows.Scan(&c.ID, &number, &title, &language, &sourceID, &externalURL, &publishedAt, &readFlag); err != nil {
+		if err := rows.Scan(&rowID, &number, &title, &language, &source, &sourceID, &externalURL, &publishedAt, &readFlag); err != nil {
 			return nil, err
 		}
-		c.Number = number.String
-		c.Title = title.String
-		c.Language = language.String
-		if externalURL.Valid && externalURL.String != "" {
-			c.ExternalURL = externalURL.String
-		} else {
-			c.ExternalURL = "https://mangadex.org/chapter/" + sourceID
-		}
+		var pub time.Time
 		if publishedAt.Valid {
-			c.PublishedAt = time.Unix(publishedAt.Int64, 0).UTC()
+			pub = time.Unix(publishedAt.Int64, 0).UTC()
 		}
-		c.Read = readFlag == 1
-		out = append(out, c)
+		// Construir la URL del lector con fallback a mangadex.org si la
+		// source no nos pasó external_url (caso histórico de mangadex
+		// donde guardábamos solo el UUID).
+		url := externalURL.String
+		if url == "" {
+			url = "https://mangadex.org/chapter/" + sourceID
+		}
+		// Label: el chapter.title cuando lo trae (Comick lo llena con el
+		// nombre del scanlator); fallback al source name para que el
+		// botón diga "leer en mangadex" o similar.
+		label := title.String
+		if label == "" {
+			label = source
+		}
+
+		key := groupKey{num: number.String, lang: language.String}
+		idx, exists := groups[key]
+		if !exists {
+			// Primer row del grupo: éste define los campos primarios.
+			out = append(out, Chapter{
+				ID:          rowID,
+				Number:      number.String,
+				Title:       title.String,
+				Language:    language.String,
+				ExternalURL: url,
+				PublishedAt: pub,
+				Read:        readFlag == 1,
+				ReadOptions: []ChapterOption{{
+					ID:          rowID,
+					Source:      source,
+					Label:       label,
+					ExternalURL: url,
+					PublishedAt: pub,
+				}},
+			})
+			groups[key] = len(out) - 1
+			continue
+		}
+		// Row adicional del mismo grupo: solo agregamos a ReadOptions.
+		out[idx].ReadOptions = append(out[idx].ReadOptions, ChapterOption{
+			ID:          rowID,
+			Source:      source,
+			Label:       label,
+			ExternalURL: url,
+			PublishedAt: pub,
+		})
 	}
 	return out, rows.Err()
 }

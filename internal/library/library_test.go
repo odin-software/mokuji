@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -543,8 +544,13 @@ func TestTryMatchMangaIsNoOpWhenMatcherNotConfigured(t *testing.T) {
 }
 
 // fakePoller registra cada llamada para que los tests verifiquen el trigger.
+// PollOne corre en goroutine fire-and-forget desde el handler, así que el
+// poller usa un canal + WaitGroup para que los tests puedan esperar el
+// resultado deterministicamente (sin sleep).
 type fakePoller struct {
+	mu    sync.Mutex
 	calls []fakePollerCall
+	done  chan struct{} // cerrado tras cada PollOne; tests recibe para esperar
 	err   error
 }
 
@@ -554,9 +560,49 @@ type fakePollerCall struct {
 	sourceID string
 }
 
+func newFakePoller() *fakePoller {
+	return &fakePoller{done: make(chan struct{}, 4)}
+}
+
 func (f *fakePoller) PollOne(_ context.Context, mangaID int64, source, sourceID string) error {
+	f.mu.Lock()
 	f.calls = append(f.calls, fakePollerCall{mangaID: mangaID, source: source, sourceID: sourceID})
+	f.mu.Unlock()
+	select {
+	case f.done <- struct{}{}:
+	default:
+	}
 	return f.err
+}
+
+// waitForCall espera hasta que el poller registre al menos N calls, o
+// timeout. Los tests sincronizan así contra la goroutine que dispara
+// PollOne.
+func (f *fakePoller) waitForCall(t *testing.T, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		got := len(f.calls)
+		f.mu.Unlock()
+		if got >= want {
+			return
+		}
+		select {
+		case <-f.done:
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	f.mu.Lock()
+	got := len(f.calls)
+	f.mu.Unlock()
+	t.Fatalf("timeout esperando %d calls al poller; tras %v hay %d", want, timeout, got)
+}
+
+func (f *fakePoller) callsSnapshot() []fakePollerCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakePollerCall(nil), f.calls...)
 }
 
 func TestTryMatchMangaTriggersPollerOnMatched(t *testing.T) {
@@ -568,16 +614,18 @@ func TestTryMatchMangaTriggersPollerOnMatched(t *testing.T) {
 		Status:   matcher.StatusMatched,
 		SourceID: "mdx-chainsaw",
 	}})
-	poller := &fakePoller{}
+	poller := newFakePoller()
 	h.poller = poller
 
 	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Chainsaw Man", "")
 	h.tryMatchSources(ctx, mangaID, "Chainsaw Man")
 
-	if len(poller.calls) != 1 {
-		t.Fatalf("PollOne calls: %d", len(poller.calls))
+	poller.waitForCall(t, 1, time.Second)
+	calls := poller.callsSnapshot()
+	if len(calls) != 1 {
+		t.Fatalf("PollOne calls: %d", len(calls))
 	}
-	call := poller.calls[0]
+	call := calls[0]
 	if call.mangaID != mangaID || call.source != "mangadex" || call.sourceID != "mdx-chainsaw" {
 		t.Errorf("call inesperada: %+v", call)
 	}
@@ -589,14 +637,17 @@ func TestTryMatchMangaDoesNotPollOnNeedsReview(t *testing.T) {
 	ctx := context.Background()
 
 	withMatcher(h, &fakeMatcher{result: matcher.Result{Status: matcher.StatusNeedsReview}})
-	poller := &fakePoller{}
+	poller := newFakePoller()
 	h.poller = poller
 
 	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Ambiguous", "")
 	h.tryMatchSources(ctx, mangaID, "Ambiguous")
 
-	if len(poller.calls) != 0 {
-		t.Errorf("PollOne fue llamado para needs_review: %d veces", len(poller.calls))
+	// Dar ventana corta para que cualquier goroutine errónea aparezca.
+	// PollOne corre fire-and-forget; needs_review no debería dispararla.
+	time.Sleep(50 * time.Millisecond)
+	if calls := poller.callsSnapshot(); len(calls) != 0 {
+		t.Errorf("PollOne fue llamado para needs_review: %d veces", len(calls))
 	}
 }
 
@@ -630,12 +681,16 @@ func TestTryMatchMangaSwallowsPollerError(t *testing.T) {
 		Status:   matcher.StatusMatched,
 		SourceID: "mdx-x",
 	}})
-	h.poller = &fakePoller{err: errors.New("mangadex caído")}
+	poller := newFakePoller()
+	poller.err = errors.New("mangadex caído")
+	h.poller = poller
 
 	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "X", "")
 	// No debe panicar ni propagar — el match persiste y el worker
 	// retoma el manga en el próximo tick (next_check_at sigue NULL).
 	h.tryMatchSources(ctx, mangaID, "X")
+	// Esperar a que la goroutine de PollOne corra y absorba el error.
+	poller.waitForCall(t, 1, time.Second)
 
 	status, _ := sourceStatusForManga(t, db, mangaID)
 	if status != "matched" {

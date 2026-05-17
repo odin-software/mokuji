@@ -232,10 +232,12 @@ func main() {
 		DB:             db,
 		MangaSource:    anilist.New(),
 		SourceMatchers: sourceMatchers,
-		// Poller sincrónico: cuando library.add matchea una source, dispara
-		// un FetchChapters inmediato para esa source sin esperar al próximo
-		// tick del worker periódico (~1h).
+		// Poller fire-and-forget: library.add lanza PollOne en goroutine
+		// con BackgroundCtx (no el del request) — mangas grandes como
+		// One Piece tardan minutos en paginar todos los caps; sin async,
+		// el user vería la request colgada hasta que termine el poll.
 		Poller:        releasesWorker,
+		BackgroundCtx: rootCtx,
 		Signer:        unsubSigner,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,

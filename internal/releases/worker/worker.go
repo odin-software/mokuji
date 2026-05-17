@@ -366,21 +366,27 @@ func (w *Worker) latestPublishedAt(ctx context.Context, mangaID int64, source st
 }
 
 // insertChapter hace upsert idempotente. Devuelve true si fue una fila
-// nueva. ON CONFLICT cubre el caso del segundo tick con caps que ya
-// persistimos. source viene del Client.Name() — la columna chapter.source
-// guarda el origen para que el cursor de lectura distinga sources distintas.
+// nueva. ON CONFLICT solo actualiza group_name si la fila existente lo
+// tiene NULL — eso permite backfillear caps insertados antes de la
+// migration 0009 sin inflar el contador "inserted" en re-polls
+// idempotentes.
+//
+// source viene del Client.Name() — la columna chapter.source guarda el
+// origen para que el cursor de lectura distinga sources distintas.
 func (w *Worker) insertChapter(ctx context.Context, mangaID int64, source string, ch releasesource.Chapter) (bool, error) {
 	now := time.Now().UTC().Unix()
 	publishedAt := ch.PublishedAt.UTC().Unix()
 	res, err := w.db.ExecContext(ctx, `
-		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (source, source_id) DO NOTHING
+		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, group_name, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (source, source_id) DO UPDATE
+		SET group_name = excluded.group_name
+		WHERE chapter.group_name IS NULL
 	`,
 		mangaID, source, ch.ID,
 		nullIfEmpty(ch.Number), nullIfEmpty(ch.Title),
 		nullIfEmpty(ch.Language), publishedAt,
-		nullIfEmpty(ch.ExternalURL), now,
+		nullIfEmpty(ch.ExternalURL), nullIfEmpty(ch.Group), now,
 	)
 	if err != nil {
 		return false, err

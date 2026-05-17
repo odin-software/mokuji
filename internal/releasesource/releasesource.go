@@ -76,6 +76,11 @@ type MangaResult struct {
 // Number es string porque las sources aceptan valores no-numéricos
 // ("125.5", "Special", vacío para extras). ExternalURL se llena cuando
 // la source apunta a un lector externo (típicamente releases oficiales).
+//
+// Group es el nombre del scanlator/grupo que subió este cap. Comick
+// expone scanlators distintos por cap (lo importante para el UI: el
+// user elige dónde leer). Sources con un solo grupo (Asura, MangaDex)
+// lo dejan vacío — el renderer cae al nombre de la source.
 type Chapter struct {
 	ID          string
 	Number      string
@@ -83,4 +88,5 @@ type Chapter struct {
 	Language    string
 	PublishedAt time.Time
 	ExternalURL string
+	Group       string
 }

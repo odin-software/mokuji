@@ -154,10 +154,13 @@ func TestEntryDetailGroupsByNumberAndShowsAllOptions(t *testing.T) {
 	// Tres filas del MISMO cap (número "70") desde tres scanlators distintos.
 	// Las fechas distintas verifican que el orden interno de ReadOptions es
 	// "más reciente primero" (la URL del row más nuevo es la primaria).
+	// group_name lleva el nombre real del scanlator — el chapter.title
+	// queda vacío (Comick usa title para el título narrativo del cap, no
+	// el scanlator).
 	now := time.Now()
-	mangakak := insertChapterWithSource(t, db, mangaID, "comick", "ch-cm-70", "70", "Mangakakalot", "en", "https://comick.art/x/70-mangakak", now.Add(-1*time.Hour))
-	insertChapterWithSource(t, db, mangaID, "comick", "ch-cm-70-asu", "70", "Asura", "en", "https://comick.art/x/70-asura", now.Add(-24*time.Hour))
-	insertChapterWithSource(t, db, mangaID, "asura", "ch-asu-70", "70", "Asura Scans", "en", "https://asurascans.com/c/x/chapter/70", now.Add(-2*time.Hour))
+	mangakak := insertChapterWithGroup(t, db, mangaID, "comick", "ch-cm-70", "70", "Zaza", "Mangakakalot", "en", "https://comick.art/x/70-mangakak", now.Add(-1*time.Hour))
+	insertChapterWithGroup(t, db, mangaID, "comick", "ch-cm-70-zaza", "70", "Zaza", "Zaza Scans", "en", "https://comick.art/x/70-zaza", now.Add(-24*time.Hour))
+	insertChapterWithGroup(t, db, mangaID, "asura", "ch-asu-70", "70", "", "", "en", "https://asurascans.com/c/x/chapter/70", now.Add(-2*time.Hour))
 
 	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10), "", uid)
 	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
@@ -181,11 +184,16 @@ func TestEntryDetailGroupsByNumberAndShowsAllOptions(t *testing.T) {
 		t.Errorf("debería haber 3 forms de /read (uno por scanlator), obtuvo %d", got)
 	}
 
-	// Botones de leer deberían tener labels distintos (de los chapter.title).
-	for _, label := range []string{"leer en Mangakakalot", "leer en Asura Scans"} {
+	// Botones de leer toman el label de group_name (real scanlator), no
+	// del chapter.title. Asura no llena group_name → fallback al source name.
+	for _, label := range []string{"leer en Mangakakalot", "leer en Zaza Scans", "leer en asura"} {
 		if !strings.Contains(body, label) {
 			t.Errorf("falta botón %q", label)
 		}
+	}
+	// El chapter.title ("Zaza") aparece en el HEADER, no en los botones.
+	if !strings.Contains(body, "chapter-title\">Zaza<") {
+		t.Errorf("chapter title 'Zaza' debería estar en el header del grupo")
 	}
 
 	// El cap_id del más reciente (mangakak) debe ser la opción primaria —
@@ -196,15 +204,23 @@ func TestEntryDetailGroupsByNumberAndShowsAllOptions(t *testing.T) {
 	}
 }
 
-// insertChapterWithSource es una variante de insertChapter que permite
-// especificar source + title (útil para los tests multi-source de
-// agrupamiento). Sin él los tests existentes seguirían usando 'mangadex'.
-func insertChapterWithSource(t *testing.T, db *sql.DB, mangaID int64, source, sourceID, number, title, lang, externalURL string, publishedAt time.Time) int64 {
+// insertChapterWithGroup es una variante de insertChapter que permite
+// especificar source + title + group_name (útil para los tests
+// multi-source de agrupamiento, donde necesitamos distinguir el
+// scanlator del título de la historia).
+func insertChapterWithGroup(t *testing.T, db *sql.DB, mangaID int64, source, sourceID, number, title, group, lang, externalURL string, publishedAt time.Time) int64 {
 	t.Helper()
+	var titleArg, groupArg any
+	if title != "" {
+		titleArg = title
+	}
+	if group != "" {
+		groupArg = group
+	}
 	res, err := db.Exec(`
-		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-	`, mangaID, source, sourceID, number, title, lang, publishedAt.Unix(), externalURL)
+		INSERT INTO chapter (manga_id, source, source_id, number, title, language, published_at, external_url, group_name, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, mangaID, source, sourceID, number, titleArg, lang, publishedAt.Unix(), externalURL, groupArg)
 	if err != nil {
 		t.Fatal(err)
 	}

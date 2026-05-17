@@ -288,7 +288,7 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 	}
 
 	q := fmt.Sprintf(`
-		SELECT c.id, c.number, c.title, c.language, c.source, c.source_id, c.external_url, c.published_at,
+		SELECT c.id, c.number, c.title, c.language, c.source, c.source_id, c.external_url, c.published_at, c.group_name,
 		       CASE
 		         WHEN le.last_read_chapter_number IS NULL THEN 0
 		         WHEN CAST(c.number AS REAL) <= le.last_read_chapter_number THEN 1
@@ -327,9 +327,10 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 			sourceID    string
 			externalURL sql.NullString
 			publishedAt sql.NullInt64
+			groupName   sql.NullString
 			readFlag    int
 		)
-		if err := rows.Scan(&rowID, &number, &title, &language, &source, &sourceID, &externalURL, &publishedAt, &readFlag); err != nil {
+		if err := rows.Scan(&rowID, &number, &title, &language, &source, &sourceID, &externalURL, &publishedAt, &groupName, &readFlag); err != nil {
 			return nil, err
 		}
 		var pub time.Time
@@ -343,10 +344,11 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 		if url == "" {
 			url = "https://mangadex.org/chapter/" + sourceID
 		}
-		// Label: el chapter.title cuando lo trae (Comick lo llena con el
-		// nombre del scanlator); fallback al source name para que el
-		// botón diga "leer en mangadex" o similar.
-		label := title.String
+		// Label del botón: nombre del scanlator/grupo cuando la source
+		// lo trae (Comick lo separa de title). Sources con un solo
+		// grupo (Asura, MangaDex) lo dejan vacío — cae al source name
+		// para que el botón diga "leer en asura" / "leer en mangadex".
+		label := groupName.String
 		if label == "" {
 			label = source
 		}
@@ -375,6 +377,11 @@ func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int6
 			continue
 		}
 		// Row adicional del mismo grupo: solo agregamos a ReadOptions.
+		// El Title del grupo se pobla con el primer row que lo traiga
+		// no-vacío (típicamente uno con título de la historia tipo "Zaza").
+		if out[idx].Title == "" && title.Valid {
+			out[idx].Title = title.String
+		}
 		out[idx].ReadOptions = append(out[idx].ReadOptions, ChapterOption{
 			ID:          rowID,
 			Source:      source,

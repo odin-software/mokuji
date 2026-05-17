@@ -141,9 +141,13 @@ func TestFetchChaptersParsesFixture(t *testing.T) {
 	if ch.Number != "110" {
 		t.Errorf("Number: %q", ch.Number)
 	}
-	// Title viene "" en el fixture → fallback al primer group_name.
-	if ch.Title != "Mangakakalot" {
-		t.Errorf("Title fallback al group_name: %q", ch.Title)
+	// Title del fixture viene "" — Comick deja vacío el título narrativo
+	// para muchos caps. El scanlator vive en Group, separado.
+	if ch.Title != "" {
+		t.Errorf("Title del fixture debería ser vacío, obtenido %q", ch.Title)
+	}
+	if ch.Group != "Mangakakalot" {
+		t.Errorf("Group debería ser 'Mangakakalot' (de group_name del fixture), obtenido %q", ch.Group)
 	}
 	wantURL := "https://comick.test/comic/the-knight-only-lives-today/JW5mkJX-chapter-110-en"
 	if ch.ExternalURL != wantURL {

@@ -424,6 +424,9 @@ type chapterEntity struct {
 //
 // ID del chapter: el hid. Único en Comick.
 // ExternalURL: reconstruido con el patrón del lector.
+// Group: nombre del scanlator (first de group_name). Separado del Title
+// — el chapter title es la "Zaza" / "God and Devil" de la historia, el
+// group es "Mangakakalot" / "Zaza Scans". El UI los renderea distinto.
 func (e chapterEntity) toChapter(frontendBase, slug, language string) (releasesource.Chapter, bool) {
 	if e.HID == "" || e.CreatedAt == "" {
 		return releasesource.Chapter{}, false
@@ -436,20 +439,18 @@ func (e chapterEntity) toChapter(frontendBase, slug, language string) (releaseso
 	if num == "" {
 		return releasesource.Chapter{}, false
 	}
-	title := e.Title
-	if title == "" && len(e.GroupName) > 0 {
-		// Comick deja chapter.title vacío. El group_name le da contexto
-		// al user para distinguir filas del mismo número de distinto
-		// scanlator hasta que el UI agrupe por número.
-		title = e.GroupName[0]
+	var group string
+	if len(e.GroupName) > 0 {
+		group = e.GroupName[0]
 	}
 	return releasesource.Chapter{
 		ID:          e.HID,
 		Number:      num,
-		Title:       title,
+		Title:       e.Title,
 		Language:    language,
 		PublishedAt: t,
 		ExternalURL: frontendBase + "/comic/" + slug + "/" + e.HID + "-chapter-" + num + "-" + language,
+		Group:       group,
 	}, true
 }
 

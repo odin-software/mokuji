@@ -80,19 +80,29 @@ func newTestHandlerWithReleases(t *testing.T, db *sql.DB, rp ReleasesProvider) *
 	return h
 }
 
-func TestHomeRedirectsAnonymous(t *testing.T) {
+func TestHome_UnauthShowsLanding(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	h.home(rec, req)
+	w := httptest.NewRecorder()
 
-	if rec.Code != http.StatusSeeOther {
-		t.Errorf("status: esperado 303, obtenido %d", rec.Code)
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, esperado 200 (landing). Body: %s", w.Code, w.Body.String())
 	}
-	if loc := rec.Header().Get("Location"); loc != "/auth" {
-		t.Errorf("location: esperado /auth, obtenido %q", loc)
+	body := w.Body.String()
+	if !strings.Contains(body, "Una biblioteca") {
+		t.Errorf("body no contiene el hero copy 'Una biblioteca'. Body:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/auth"`) {
+		t.Errorf("body no contiene CTA con href=/auth")
+	}
+	if w.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, esperado text/html; charset=utf-8", w.Header().Get("Content-Type"))
 	}
 }
 

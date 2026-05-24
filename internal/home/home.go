@@ -1,7 +1,7 @@
 // Package home sirve la página raíz de la app.
 //
 // Si el usuario tiene sesión válida, muestra su email y un botón de logout.
-// Si no, redirige a /auth.
+// Si no, sirve la landing pública.
 package home
 
 import (
@@ -33,18 +33,18 @@ type ReleasesProvider interface {
 // Config agrupa las dependencias del handler.
 type Config struct {
 	DB            *sql.DB
-	HTMLTemplates fs.FS // contiene layout.html y home.html
+	HTMLTemplates fs.FS // contiene layout.html, home.html y landing.html
 	Releases      ReleasesProvider
 	Logger        *slog.Logger
 }
 
 // Handler sirve GET /.
 type Handler struct {
-	db          *sql.DB
-	tmpl        *template.Template
-	tmplLanding *template.Template
-	releases    ReleasesProvider
-	logger      *slog.Logger
+	db            *sql.DB
+	tmplDashboard *template.Template
+	tmplLanding   *template.Template
+	releases      ReleasesProvider
+	logger        *slog.Logger
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -74,11 +74,11 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:          cfg.DB,
-		tmpl:        tmplDashboard,
-		tmplLanding: tmplLanding,
-		releases:    cfg.Releases,
-		logger:      cfg.Logger,
+		db:            cfg.DB,
+		tmplDashboard: tmplDashboard,
+		tmplLanding:   tmplLanding,
+		releases:      cfg.Releases,
+		logger:        cfg.Logger,
 	}, nil
 }
 
@@ -101,7 +101,10 @@ type homeData struct {
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	s, ok := session.FromContext(r.Context())
 	if !ok {
-		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := h.tmplLanding.ExecuteTemplate(w, "layout", landingData{}); err != nil {
+			h.logger.Error("renderizar landing", "err", err)
+		}
 		return
 	}
 
@@ -117,7 +120,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Widget de releases: best-effort. Si falla la query, logueamos y
-	// renderizamos la home sin el widget — no rompe la landing por algo
+	// renderizamos la home sin el widget — no rompe la página por algo
 	// secundario. Si el provider es nil (caso edge: tests viejos), salta.
 	var releases []releaseshandler.Release
 	if h.releases != nil {
@@ -129,7 +132,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "layout", homeData{
+	if err := h.tmplDashboard.ExecuteTemplate(w, "layout", homeData{
 		Email:       emailAddr,
 		Username:    slug.String,
 		Session:     s,
@@ -138,4 +141,12 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		h.logger.Error("renderizar home", "err", err)
 	}
+}
+
+// landingData es el payload del template landing.html para visitantes
+// sin sesión. Session es nil — layout.html lo usa con {{if .Session}} para
+// mostrar/ocultar la nav autenticada; el campo tiene que existir para que
+// html/template no falle con "can't evaluate field Session".
+type landingData struct {
+	Session *session.Session
 }

@@ -59,8 +59,116 @@
   letter-spacing: 0.04em;
 }
 
+.landing-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 2px solid var(--text);
+  padding: 2rem 0 0.75rem;
+  margin: 2rem 0 1.5rem;
+  gap: 1rem;
+}
+.landing-section-header h2 {
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  margin: 0;
+  font-weight: 900;
+}
+.landing-section-header h2 .accent { color: var(--accent); }
+.landing-section-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+}
+.landing-section-tagline {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1.5;
+}
+
+.landing-features {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+.landing-feature {
+  padding: 1.25rem 0 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.landing-feature-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.75rem;
+}
+.landing-feature-num {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.landing-feature-kanji {
+  font-family: var(--font-jp);
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--accent);
+  opacity: 0.9;
+  line-height: 1;
+}
+.landing-feature h3 {
+  font-family: var(--font-sans);
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  margin: 0 0 0.5rem;
+}
+.landing-feature p {
+  font-size: 0.9375rem;
+  color: var(--text-soft);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.landing-anti {
+  background: var(--bg-2);
+  padding: 1rem 1.125rem;
+  margin: 1.5rem 0;
+}
+.landing-anti-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+}
+.landing-anti-body {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--text-soft);
+  line-height: 1.45;
+  margin: 0;
+}
+
 @media (min-width: 1024px) {
   .landing-hero h1 { font-size: 8.25rem; }
+  .landing-features { grid-template-columns: repeat(3, 1fr); border-top: 0; }
+  .landing-feature { border-bottom: 0; border-right: 1px solid var(--rule); padding: 1.5rem 1.5rem 1.5rem 0; }
+  .landing-feature:last-child { border-right: 0; }
+  .landing-feature-kanji { font-size: 3.5rem; }
 }
 </style>
 <div class="landing">
@@ -77,5 +185,45 @@
       <span class="landing-cta-note">gratis · sin trackers</span>
     </div>
   </section>
+
+  <header class="landing-section-header">
+    <div>
+      <p class="landing-section-eyebrow">№ 002 — cómo funciona</p>
+      <h2>Tres cosas.<br><span class="accent">Nada más.</span></h2>
+    </div>
+    <p class="landing-section-tagline">mokuji = índice<br>nada de feed, nada de timeline</p>
+  </header>
+
+  <section class="landing-features">
+    <article class="landing-feature">
+      <div class="landing-feature-head">
+        <span class="landing-feature-num">01 / cataloga</span>
+        <span class="landing-feature-kanji" aria-hidden="true">登</span>
+      </div>
+      <h3>Tu lista,<br>indexada como capítulos.</h3>
+      <p>Cada manga es una entrada con número, estado y favorito. Buscás por título o por kanji. Filtrás por leyendo, por leer, o completado.</p>
+    </article>
+    <article class="landing-feature">
+      <div class="landing-feature-head">
+        <span class="landing-feature-num">02 / releases</span>
+        <span class="landing-feature-kanji" aria-hidden="true">新</span>
+      </div>
+      <h3>Capítulos nuevos,<br>cuando salen.</h3>
+      <p>Seguimos MangaDex y Asura automáticamente. Email digest semanal — opcional, opt-in, cancelable.</p>
+    </article>
+    <article class="landing-feature">
+      <div class="landing-feature-head">
+        <span class="landing-feature-num">03 / self-host</span>
+        <span class="landing-feature-kanji" aria-hidden="true">蔵</span>
+      </div>
+      <h3>Tu binario,<br>tu base de datos.</h3>
+      <p>Un binario Go + SQLite. Levantás tu propia instancia en minutos. AGPL-3.0. Tu lista es un archivo — es tuya, no la perdés si nos vamos.</p>
+    </article>
+  </section>
+
+  <aside class="landing-anti">
+    <p class="landing-anti-label">+ 00 / lo que no hace</p>
+    <p class="landing-anti-body">sin recomendaciones · sin algoritmo · sin "para vos" · sin push molestos · sin social feed · sin métricas vanidosas.</p>
+  </aside>
 </div>
 {{end}}

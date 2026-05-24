@@ -736,16 +736,16 @@ button.danger:hover { background: #8a2818; }
 </style>
 </head>
 <body>
+{{if .Session}}
 <header class="app-nav">
   <a href="/" class="app-nav-logo">mokuji</a>
-  {{if .Session}}
   <nav>
     <a href="/library">biblioteca</a>
     <a href="/releases">releases</a>
     <a href="/settings">settings</a>
   </nav>
-  {{end}}
 </header>
+{{end}}
 {{block "content" .}}<p>contenido vacío</p>{{end}}
 <footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · 目次</footer>
 </body>

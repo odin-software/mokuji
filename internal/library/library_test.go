@@ -231,6 +231,50 @@ func TestListEntriesSearchInLibrary(t *testing.T) {
 	}
 }
 
+func TestListEntriesOrderByStatus(t *testing.T) {
+	// El orden default es: reading > planned > completed (con favorito
+	// como tie-break dentro del bucket). Insertamos uno de cada estado en
+	// orden cronológico inverso para probar que el sort no cae al
+	// updated_at solo.
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+
+	userID := insertUser(t, db, "alice@example.com")
+	now := time.Now().Unix()
+
+	cases := []struct {
+		title  string
+		status string
+	}{
+		{"C-completed", "completed"},
+		{"B-planned", "planned"},
+		{"A-reading", "reading"},
+	}
+	for i, c := range cases {
+		mid, _ := h.upsertManga(ctx, "anilist", strconv.Itoa(i+1), c.title, "")
+		_, err := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			userID, mid, c.status, now, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := h.listEntries(ctx, userID, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("esperaba 3 entries, obtuve %d", len(entries))
+	}
+	want := []string{"A-reading", "B-planned", "C-completed"}
+	for i, w := range want {
+		if entries[i].Manga.Title != w {
+			t.Errorf("posición %d: esperaba %q, obtuve %q", i, w, entries[i].Manga.Title)
+		}
+	}
+}
+
 func TestListEntriesFavoriteFirst(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db, nil)

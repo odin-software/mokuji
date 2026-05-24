@@ -557,7 +557,14 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		JOIN manga m ON m.id = le.manga_id
 		JOIN users u ON u.id = le.user_id
 		WHERE %s
-		ORDER BY le.is_favorite DESC, le.updated_at DESC
+		ORDER BY CASE le.status
+		             WHEN 'reading'   THEN 0
+		             WHEN 'planned'   THEN 1
+		             WHEN 'completed' THEN 2
+		             ELSE 3
+		         END ASC,
+		         le.is_favorite DESC,
+		         le.updated_at DESC
 	`, sourceStatusSummarySQL, where)
 
 	rows, err := h.db.QueryContext(ctx, q, args...)

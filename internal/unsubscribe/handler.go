@@ -7,10 +7,13 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -20,7 +23,15 @@ type Config struct {
 	DB            *sql.DB
 	Signer        *Signer
 	HTMLTemplates fs.FS
-	Logger        *slog.Logger
+	// IPLimiter aplica a ambos GET y POST /unsubscribe. Cada hit valida un
+	// HMAC, así que un fuzzer puede enumerar tokens si lo dejamos abierto.
+	// nil = sin rate limiting (útil en tests).
+	IPLimiter *ratelimit.Limiter
+	// TrustProxy: leer IP del cliente desde X-Forwarded-For. Solo seguro
+	// si nginx (u otro proxy de confianza) está delante y limpia el
+	// header. Sin proxy de confianza, false → usar RemoteAddr.
+	TrustProxy bool
+	Logger     *slog.Logger
 }
 
 // Handler sirve /unsubscribe (GET confirmación + POST one-click).
@@ -30,10 +41,12 @@ type Config struct {
 // no usamos la sesión para autorizar. Esto cumple con RFC 8058 (One-Click),
 // donde el cliente de email (Gmail, Apple) hace el POST sin cookies.
 type Handler struct {
-	db     *sql.DB
-	signer *Signer
-	tmpl   *template.Template
-	logger *slog.Logger
+	db         *sql.DB
+	signer     *Signer
+	tmpl       *template.Template
+	ipLimiter  *ratelimit.Limiter
+	trustProxy bool
+	logger     *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean o si signer es nil.
@@ -65,11 +78,44 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:     cfg.DB,
-		signer: cfg.Signer,
-		tmpl:   page,
-		logger: cfg.Logger,
+		db:         cfg.DB,
+		signer:     cfg.Signer,
+		tmpl:       page,
+		ipLimiter:  cfg.IPLimiter,
+		trustProxy: cfg.TrustProxy,
+		logger:     cfg.Logger,
 	}, nil
+}
+
+// clientIP devuelve el IP real del cliente. Mismo helper que auth.Handler —
+// si trustProxy está activo, lee el primer IP de X-Forwarded-For (asumiendo
+// un solo proxy delante). Sin proxy de confianza, usa RemoteAddr stripping
+// el puerto.
+func (h *Handler) clientIP(r *http.Request) string {
+	if h.trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.Index(xff, ","); i != -1 {
+				xff = xff[:i]
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+
+// allowOrReject chequea el rate limiter y, si está rate-limited, responde
+// 429 al cliente. Devuelve true si la request puede continuar, false si
+// ya se respondió. Llamar al inicio de cada handler protegido.
+func (h *Handler) allowOrReject(w http.ResponseWriter, r *http.Request) bool {
+	if h.ipLimiter.Allow(h.clientIP(r)) {
+		return true
+	}
+	http.Error(w, "demasiados intentos, espera unos minutos", http.StatusTooManyRequests)
+	return false
 }
 
 // Mount registra los endpoints.
@@ -98,6 +144,9 @@ type pageData struct {
 // dar feedback temprano si el link está roto/expirado; un user con token
 // válido ve "confirmar" en lugar de "click ciego".
 func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
+	if !h.allowOrReject(w, r) {
+		return
+	}
 	s, _ := session.FromContext(r.Context())
 	token := r.URL.Query().Get("token")
 
@@ -129,6 +178,9 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 // Idempotente: un token válido cuyo user ya tiene digest=0 retorna stateDone
 // sin error. Nunca revelamos si el user existe o si ya estaba desuscrito.
 func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
+	if !h.allowOrReject(w, r) {
+		return
+	}
 	s, _ := session.FromContext(r.Context())
 
 	if err := r.ParseForm(); err != nil {

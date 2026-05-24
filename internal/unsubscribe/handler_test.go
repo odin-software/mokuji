@@ -10,10 +10,13 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
+	"golang.org/x/time/rate"
 
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -230,5 +233,100 @@ func TestPostDeletedUserNoOp(t *testing.T) {
 	// El digest sigue como estaba (no se updateó porque deleted_at IS NULL falla).
 	if got := digestEnabled(t, db, uid); got != 1 {
 		t.Errorf("user borrado fue tocado: %d", got)
+	}
+}
+
+func TestRateLimitReturns429(t *testing.T) {
+	// Limiter con burst=2 y rate ~imposible (1/hora). Las primeras 2
+	// requests pasan, la 3era recibe 429. Aplica a GET y POST porque
+	// ambos paths consumen tokens (ambos hacen Verify HMAC).
+	db := setupDB(t)
+	signer, err := NewSigner(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(Config{
+		DB:            db,
+		Signer:        signer,
+		HTMLTemplates: os.DirFS("../../web/templates"),
+		IPLimiter:     ratelimit.New(rate.Every(time.Hour), 2),
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("crear handler: %v", err)
+	}
+
+	// 3 requests desde el mismo RemoteAddr.
+	for i := 1; i <= 3; i++ {
+		r := httptest.NewRequest("GET", "/unsubscribe?token=x", nil)
+		r.RemoteAddr = "203.0.113.5:12345"
+		w := httptest.NewRecorder()
+		h.page(w, r)
+
+		switch {
+		case i <= 2 && w.Code == http.StatusTooManyRequests:
+			t.Errorf("req %d: bloqueada antes del burst (status %d)", i, w.Code)
+		case i == 3 && w.Code != http.StatusTooManyRequests:
+			t.Errorf("req %d: esperaba 429, obtuve %d", i, w.Code)
+		}
+	}
+
+	// Otro IP no comparte bucket: pasa.
+	r := httptest.NewRequest("GET", "/unsubscribe?token=x", nil)
+	r.RemoteAddr = "198.51.100.7:12345"
+	w := httptest.NewRecorder()
+	h.page(w, r)
+	if w.Code == http.StatusTooManyRequests {
+		t.Errorf("IP distinto fue rate-limited: status %d", w.Code)
+	}
+}
+
+func TestRateLimitNilDisablesCheck(t *testing.T) {
+	// IPLimiter nil = sin rate limiting (útil en tests existentes y para
+	// self-hosters paranoicos del rendimiento). Aceptamos 100 GETs sin 429.
+	db := setupDB(t)
+	h, _ := newTestHandler(t, db) // no setea IPLimiter
+
+	for i := range 100 {
+		r := httptest.NewRequest("GET", "/unsubscribe?token=x", nil)
+		r.RemoteAddr = "203.0.113.5:12345"
+		w := httptest.NewRecorder()
+		h.page(w, r)
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("nil limiter rate-limiteó en iter %d", i)
+		}
+	}
+}
+
+func TestRateLimitHonorsTrustProxy(t *testing.T) {
+	// TrustProxy=true → buckets por X-Forwarded-For, no por RemoteAddr.
+	// Tres requests desde el mismo XFF pero distinto RemoteAddr deben
+	// compartir bucket; al 3ero pega el rate limit.
+	db := setupDB(t)
+	signer, err := NewSigner(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(Config{
+		DB:            db,
+		Signer:        signer,
+		HTMLTemplates: os.DirFS("../../web/templates"),
+		IPLimiter:     ratelimit.New(rate.Every(time.Hour), 2),
+		TrustProxy:    true,
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 1; i <= 3; i++ {
+		r := httptest.NewRequest("GET", "/unsubscribe?token=x", nil)
+		r.RemoteAddr = "127.0.0.1:0" // simula proxy local
+		r.Header.Set("X-Forwarded-For", "203.0.113.5")
+		w := httptest.NewRecorder()
+		h.page(w, r)
+		if i == 3 && w.Code != http.StatusTooManyRequests {
+			t.Errorf("req %d con XFF: esperaba 429, obtuve %d", i, w.Code)
+		}
 	}
 }

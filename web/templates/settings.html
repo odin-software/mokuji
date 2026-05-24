@@ -3,7 +3,33 @@
 <h1>configuración</h1>
 <p class="muted">cuenta: {{.Email}}</p>
 
-{{if .Saved}}<p class="success">cambios guardados.</p>{{end}}
+{{if .Flash}}<p class="{{if eq .Flash.Kind "error"}}error{{else}}success{{end}}">{{.Flash.Message}}</p>{{end}}
+
+<form method="POST" action="/settings/username" class="settings-form">
+  {{ csrfInput .Session }}
+  <fieldset class="settings-section">
+    <legend>username</legend>
+    {{if .Username}}
+      <p class="muted">tu perfil público vive en <code>/u/{{.Username}}</code>.</p>
+    {{else}}
+      <p class="muted">elige un username para tener una URL pública linda. mientras tanto se accede por <code>/u/{{.Session.UserID}}</code>.</p>
+    {{end}}
+    <label>
+      {{if .Username}}cambiar a{{else}}elegir{{end}}
+      <input type="text" name="username"
+             value="{{if .UsernameDraft}}{{.UsernameDraft}}{{else}}{{.Username}}{{end}}"
+             minlength="3" maxlength="20" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]"
+             placeholder="ej: alice, tu-nombre, otaku_42"
+             autocomplete="off" autocapitalize="off" spellcheck="false">
+      <span class="muted">3-20 caracteres. minúsculas, números, guión y guión bajo.</span>
+    </label>
+    {{if .UsernameError}}<p class="error">{{.UsernameError}}</p>{{end}}
+    {{if .CooldownUntilFmt}}
+      <p class="muted">puedes volver a cambiarlo a partir del {{.CooldownUntilFmt}}.</p>
+    {{end}}
+    <button type="submit">guardar username</button>
+  </fieldset>
+</form>
 
 <form method="POST" action="/settings">
   {{ csrfInput .Session }}
@@ -13,14 +39,14 @@
       <input type="radio" name="list_visibility" value="public"{{if eq .Visibility "public"}} checked{{end}}>
       <span>
         <strong>pública</strong>
-        <span class="muted">cualquiera puede ver tu lista en <code>/u/{{.Session.UserID}}</code></span>
+        <span class="muted">cualquiera puede ver tu lista en <code>/u/{{if .Username}}{{.Username}}{{else}}{{.Session.UserID}}{{end}}</code></span>
       </span>
     </label>
     <label class="radio">
       <input type="radio" name="list_visibility" value="private"{{if eq .Visibility "private"}} checked{{end}}>
       <span>
         <strong>privada</strong>
-        <span class="muted">solo vos podés ver tu lista</span>
+        <span class="muted">solo tú puedes ver tu lista</span>
       </span>
     </label>
   </fieldset>
@@ -30,7 +56,7 @@
       <input type="checkbox" name="email_digest_enabled"{{if .DigestEnabled}} checked{{end}}>
       <span>
         <strong>resumen semanal</strong>
-        <span class="muted">recibí un email los domingos con los capítulos nuevos de tu biblioteca</span>
+        <span class="muted">recibe un email los domingos con los capítulos nuevos de tu biblioteca</span>
       </span>
     </label>
   </fieldset>
@@ -40,7 +66,7 @@
 <p class="user-links">
   <a href="/library">← tu biblioteca</a>
   <span class="sep">·</span>
-  <a href="/u/{{.Session.UserID}}">ver mi perfil público</a>
+  <a href="/u/{{if .Username}}{{.Username}}{{else}}{{.Session.UserID}}{{end}}">ver mi perfil público</a>
   <span class="sep">·</span>
   <a href="/settings/export">exportar mis datos</a>
   <span class="sep">·</span>

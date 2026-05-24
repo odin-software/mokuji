@@ -202,7 +202,7 @@ func TestPublicProfileVisibleWhenPublic(t *testing.T) {
 	addEntry(t, db, userID, "Berserk")
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(userID, 10), nil)
-	req.SetPathValue("id", strconv.FormatInt(userID, 10))
+	req.SetPathValue("handle", strconv.FormatInt(userID, 10))
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 
@@ -222,7 +222,7 @@ func TestPublicProfile404WhenPrivateAndAnonymous(t *testing.T) {
 	addEntry(t, db, userID, "Secret Berserk")
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(userID, 10), nil)
-	req.SetPathValue("id", strconv.FormatInt(userID, 10))
+	req.SetPathValue("handle", strconv.FormatInt(userID, 10))
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 
@@ -243,7 +243,7 @@ func TestPublicProfileVisibleToOwnerWhenPrivate(t *testing.T) {
 	addEntry(t, db, userID, "Berserk")
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(userID, 10), nil)
-	req.SetPathValue("id", strconv.FormatInt(userID, 10))
+	req.SetPathValue("handle", strconv.FormatInt(userID, 10))
 	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
@@ -265,7 +265,7 @@ func TestPublicProfile404WhenPrivateAndOtherUser(t *testing.T) {
 	addEntry(t, db, alice, "Berserk")
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(alice, 10), nil)
-	req.SetPathValue("id", strconv.FormatInt(alice, 10))
+	req.SetPathValue("handle", strconv.FormatInt(alice, 10))
 	req = session.WithUserID(req, bob)
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
@@ -280,7 +280,7 @@ func TestPublicProfile404ForUnknownUser(t *testing.T) {
 	h := newTestHandler(t, db)
 
 	req := httptest.NewRequest(http.MethodGet, "/u/9999", nil)
-	req.SetPathValue("id", "9999")
+	req.SetPathValue("handle", "9999")
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 
@@ -306,7 +306,7 @@ func TestPublicProfileHidesSourceURLAndNotes(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/u/"+strconv.FormatInt(userID, 10), nil)
-	req.SetPathValue("id", strconv.FormatInt(userID, 10))
+	req.SetPathValue("handle", strconv.FormatInt(userID, 10))
 	rec := httptest.NewRecorder()
 	h.publicProfile(rec, req)
 

@@ -32,6 +32,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
 	"git.odin.do/kengru/mokuji/internal/mangadex"
+	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/mangasource/anilist"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/profile"
@@ -117,16 +118,22 @@ func main() {
 	rootCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Rate limiters para auth.
+	// Rate limiters para auth + unsubscribe.
 	//   /auth/start por IP:    ~5/min sostenido, burst 5
 	//   /auth/start por email: ~3/hora sostenido, burst 3
 	//   /auth/verify por IP:   ~10/min sostenido, burst 10
+	//   /unsubscribe por IP:   ~60/min sostenido, burst 20 (más permisivo
+	//                          porque users legítimos pueden refrescar y
+	//                          re-clickear; un fuzzer enumerando tokens
+	//                          HMAC se topa con el cap igual).
 	startIPLim := ratelimit.New(rate.Every(12*time.Second), 5)
 	startEmailLim := ratelimit.New(rate.Every(20*time.Minute), 3)
 	verifyIPLim := ratelimit.New(rate.Every(6*time.Second), 10)
+	unsubIPLim := ratelimit.New(rate.Every(time.Second), 20)
 	go startIPLim.Cleanup(rootCtx, 1*time.Hour)
 	go startEmailLim.Cleanup(rootCtx, 2*time.Hour)
 	go verifyIPLim.Cleanup(rootCtx, 30*time.Minute)
+	go unsubIPLim.Cleanup(rootCtx, 30*time.Minute)
 
 	authHandler, err := auth.New(auth.Config{
 		DB:                db,
@@ -143,15 +150,6 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)
-	}
-
-	homeHandler, err := home.New(home.Config{
-		DB:            db,
-		HTMLTemplates: htmlFS,
-		Logger:        logger,
-	})
-	if err != nil {
-		log.Fatalf("configurar home: %v", err)
 	}
 
 	// Multi-source release tracking (ADR 0014). Cada source es un
@@ -246,12 +244,18 @@ func main() {
 		log.Fatalf("configurar library: %v", err)
 	}
 
+	// Flasher: cookie one-shot para feedback post-redirect. Stateless.
+	// Comparte el flag SECURE_COOKIES con sessions — en prod (HTTPS)
+	// las cookies viajan con Secure, en dev local sin TLS no.
+	flasher := flash.New(envBool("SECURE_COOKIES", false))
+
 	profileHandler, err := profile.New(profile.Config{
 		DB:             db,
 		HTMLTemplates:  htmlFS,
 		EmailTemplates: emailFS,
 		Email:          emailClient,
 		BaseURL:        envOr("BASE_URL", "http://localhost:8080"),
+		Flasher:        flasher,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -287,10 +291,25 @@ func main() {
 		log.Fatalf("configurar releases: %v", err)
 	}
 
+	// home se construye después de releasesHandler porque el widget de
+	// "últimos releases" en / reusa el método UnreadReleases. El orden
+	// importa solo para wiring; no hay ciclo de import (home → releases).
+	homeHandler, err := home.New(home.Config{
+		DB:            db,
+		HTMLTemplates: htmlFS,
+		Releases:      releasesHandler,
+		Logger:        logger,
+	})
+	if err != nil {
+		log.Fatalf("configurar home: %v", err)
+	}
+
 	unsubHandler, err := unsubscribe.New(unsubscribe.Config{
 		DB:            db,
 		Signer:        unsubSigner,
 		HTMLTemplates: htmlFS,
+		IPLimiter:     unsubIPLim,
+		TrustProxy:    envBool("TRUST_PROXY", false),
 		Logger:        logger,
 	})
 	if err != nil {
@@ -299,13 +318,18 @@ func main() {
 
 	// Digest semanal: Sender (compartido entre worker y endpoint admin) +
 	// worker goroutine que dispara domingos 9am UTC (ADR 0013 §6).
+	// SMTP_FROM_PRODUCT separa product emails (digest) del From de auth
+	// (OTP). Mantenerlos distintos protege deliverability cruzada: un user
+	// que silencia el digest no pierde OTPs, y un report de spam contra
+	// uno no degrada al otro. Vacío = usa SMTP_FROM (comportamiento previo).
 	digestSender, err := digest.New(digest.Config{
-		DB:      db,
-		Email:   emailClient,
-		Signer:  unsubSigner,
-		Emails:  emailFS,
-		BaseURL: envOr("BASE_URL", "http://localhost:8080"),
-		Logger:  logger,
+		DB:          db,
+		Email:       emailClient,
+		Signer:      unsubSigner,
+		Emails:      emailFS,
+		BaseURL:     envOr("BASE_URL", "http://localhost:8080"),
+		FromAddress: os.Getenv("SMTP_FROM_PRODUCT"),
+		Logger:      logger,
 	})
 	if err != nil {
 		log.Fatalf("configurar digest sender: %v", err)

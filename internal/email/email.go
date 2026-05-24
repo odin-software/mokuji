@@ -112,10 +112,14 @@ func (c *Client) Send(to, subject, body string) error {
 //
 // PlainBody es obligatorio (fallback para clientes que no rendean HTML);
 // HTMLBody es opcional — si está vacío, se manda como text/plain simple.
-// ExtraHeaders se mergean al final; las claves duplicadas con headers fijos
-// (From, To, Subject, Date, Message-ID, MIME-Version, Content-Type) se
-// ignoran silenciosamente para no romper el formato MIME.
+// From es opcional — si está vacío, se usa el From default del Client (auth).
+// Setearlo permite separar product emails (digest) de auth emails (OTP) por
+// dirección, manteniendo deliverability independiente. ExtraHeaders se
+// mergean al final; las claves duplicadas con headers fijos (From, To,
+// Subject, Date, Message-ID, MIME-Version, Content-Type) se ignoran
+// silenciosamente para no romper el formato MIME.
 type Message struct {
+	From         string // opcional; vacío = default del Client
 	To           string
 	Subject      string
 	PlainBody    string
@@ -132,12 +136,31 @@ func (c *Client) SendMessage(m Message) error {
 	if m.PlainBody == "" {
 		return errors.New("PlainBody vacío")
 	}
-	msg := c.buildRichMessage(m)
-	if err := c.sendMail(c.addr, c.auth, c.fromAddr, []string{m.To}, msg); err != nil {
+	fromHeader, envelopeSender, err := c.resolveFrom(m.From)
+	if err != nil {
+		return err
+	}
+	msg := c.buildRichMessage(fromHeader, m)
+	if err := c.sendMail(c.addr, c.auth, envelopeSender, []string{m.To}, msg); err != nil {
 		return fmt.Errorf("smtp.SendMail: %w", err)
 	}
-	c.logger.Info("email enviado", "to", m.To, "subject", m.Subject, "multipart", m.HTMLBody != "")
+	c.logger.Info("email enviado", "to", m.To, "subject", m.Subject, "from", fromHeader, "multipart", m.HTMLBody != "")
 	return nil
+}
+
+// resolveFrom decide qué From visible y qué envelope sender usar para un
+// Message: si Message.From está seteado, parsea y usa ése; sino, fallback al
+// default del Client. Devuelve error si Message.From es un valor inválido —
+// preferimos fallar rápido a mandar un email con header roto.
+func (c *Client) resolveFrom(override string) (header, envelope string, err error) {
+	if override == "" {
+		return c.from, c.fromAddr, nil
+	}
+	parsed, err := mail.ParseAddress(override)
+	if err != nil {
+		return "", "", fmt.Errorf("From inválido %q: %w", override, err)
+	}
+	return override, parsed.Address, nil
 }
 
 // reservedHeaders son los headers que SendMessage controla directamente;
@@ -154,12 +177,12 @@ var reservedHeaders = map[string]struct{}{
 }
 
 func (c *Client) buildMessage(to, subject, body string) []byte {
-	return c.buildRichMessage(Message{To: to, Subject: subject, PlainBody: body})
+	return c.buildRichMessage(c.from, Message{To: to, Subject: subject, PlainBody: body})
 }
 
-func (c *Client) buildRichMessage(m Message) []byte {
+func (c *Client) buildRichMessage(fromHeader string, m Message) []byte {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "From: %s\r\n", c.from)
+	fmt.Fprintf(&buf, "From: %s\r\n", fromHeader)
 	fmt.Fprintf(&buf, "To: %s\r\n", m.To)
 	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", m.Subject))
 	fmt.Fprintf(&buf, "Date: %s\r\n", time.Now().UTC().Format(time.RFC1123Z))

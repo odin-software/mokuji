@@ -105,7 +105,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	releases, err := h.unreadReleases(r.Context(), s.UserID, MaxReleases)
+	releases, err := h.UnreadReleases(r.Context(), s.UserID, MaxReleases)
 	if err != nil {
 		h.logger.Error("listar releases", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -167,15 +167,15 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/releases", http.StatusSeeOther)
 }
 
-// unreadReleases devuelve los caps no leídos del usuario, ordenados por
+// UnreadReleases devuelve los caps no leídos del usuario, ordenados por
 // publishAt descendente. Filtros:
 //   - solo entries del user con status='reading'
 //   - solo caps en el idioma preferido del usuario
 //   - solo caps publicados después del cursor (o todos si cursor NULL)
 //
-// Exportado para que el widget en home (en un commit posterior) reuse
-// el mismo query con un limit más chico.
-func (h *Handler) unreadReleases(ctx context.Context, userID int64, limit int) ([]Release, error) {
+// Exportado para que el widget en home reuse el mismo query con un
+// limit más chico, sin duplicar la query.
+func (h *Handler) UnreadReleases(ctx context.Context, userID int64, limit int) ([]Release, error) {
 	// Dedup por (manga, number, language): elegimos el row con MAX
 	// published_at por grupo (tie-break por id desc). Sin esto, un cap
 	// publicado por dos scanlators en Comick aparecería dos veces en

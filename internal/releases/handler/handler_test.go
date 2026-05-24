@@ -126,7 +126,7 @@ func TestUnreadReleasesReturnsAllWhenNoCursor(t *testing.T) {
 	insertChapter(t, db, mangaID, "ch-1", "1", "en", t1)
 	insertChapter(t, db, mangaID, "ch-2", "2", "en", t2)
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestUnreadReleasesRespectsCursor(t *testing.T) {
 	// Cursor en cap 1: solo 2 y 3 deberían aparecer.
 	insertEntry(t, db, userID, mangaID, "reading", &ch1)
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestUnreadReleasesSkipsNonReadingStatus(t *testing.T) {
 
 	insertChapter(t, db, mangaID, "ch-1", "1", "en", time.Now())
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestUnreadReleasesFiltersByPreferredLanguage(t *testing.T) {
 	insertChapter(t, db, mangaID, "ch-es", "1", "es", now)
 	insertChapter(t, db, mangaID, "ch-pt", "1", "pt-br", now)
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestUnreadReleasesUsesExternalURLWhenPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestUnreadReleasesBuildsMangadexURLByDefault(t *testing.T) {
 	insertEntry(t, db, userID, mangaID, "reading", nil)
 	insertChapter(t, db, mangaID, "ch-uuid-123", "1", "en", time.Now())
 
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestMarkReadHidesChapterFromSubsequentList(t *testing.T) {
 	insertChapter(t, db, mangaID, "ch-2", "2", "en", time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC))
 
 	// Antes: ambos caps aparecen.
-	releases, err := h.unreadReleases(context.Background(), userID, 10)
+	releases, err := h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +467,7 @@ func TestMarkReadHidesChapterFromSubsequentList(t *testing.T) {
 	}
 
 	// Después: solo cap 2 debería aparecer.
-	releases, err = h.unreadReleases(context.Background(), userID, 10)
+	releases, err = h.UnreadReleases(context.Background(), userID, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

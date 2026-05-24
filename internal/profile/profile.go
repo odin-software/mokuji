@@ -18,9 +18,11 @@ import (
 	"net/http"
 	"strconv"
 	texttmpl "text/template"
+	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -53,17 +55,19 @@ type Config struct {
 	EmailTemplates fs.FS         // contiene account-deletion.txt; opcional si Email es nil
 	Email          *email.Client // opcional; sin él, los endpoints de borrado responden 503
 	BaseURL        string        // usado en el email de borrado
+	Flasher        *flash.Flasher
 	Logger         *slog.Logger
 }
 
-// Handler sirve /settings, /u/{id}, /settings/delete-account/* y /restore-account.
+// Handler sirve /settings, /u/{handle}, /settings/delete-account/* y /restore-account.
 type Handler struct {
-	db         *sql.DB
-	pages      map[string]*template.Template
-	email      *email.Client
-	deleteT    *texttmpl.Template // template del email de borrado
-	baseURL    string
-	logger     *slog.Logger
+	db      *sql.DB
+	pages   map[string]*template.Template
+	email   *email.Client
+	deleteT *texttmpl.Template // template del email de borrado
+	baseURL string
+	flasher *flash.Flasher
+	logger  *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -113,6 +117,7 @@ func New(cfg Config) (*Handler, error) {
 		email:   cfg.Email,
 		deleteT: deleteT,
 		baseURL: cfg.BaseURL,
+		flasher: cfg.Flasher,
 		logger:  cfg.Logger,
 	}, nil
 }
@@ -121,6 +126,7 @@ func New(cfg Config) (*Handler, error) {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings", h.settings)
 	mux.HandleFunc("POST /settings", h.updateSettings)
+	mux.HandleFunc("POST /settings/username", h.updateUsername)
 	mux.HandleFunc("GET /settings/export", h.exportData)
 	mux.HandleFunc("GET /settings/delete-account", h.deleteAccountPage)
 	mux.HandleFunc("POST /settings/delete-account/request", h.deleteAccountRequest)
@@ -128,7 +134,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /restore-account", h.restoreAccountPage)
 	mux.HandleFunc("POST /restore-account/cancel", h.restoreAccountCancel)
 	mux.HandleFunc("POST /restore-account/delete-now", h.restoreAccountDeleteNow)
-	mux.HandleFunc("GET /u/{id}", h.publicProfile)
+	mux.HandleFunc("GET /u/{handle}", h.publicProfile)
 }
 
 // ---- /settings ----
@@ -138,10 +144,34 @@ type settingsData struct {
 	Visibility    string
 	Email         string
 	DigestEnabled bool
-	Saved         bool
+
+	// Flash es el mensaje one-shot post-redirect (cookie efímera).
+	// nil si no hay nada que mostrar.
+	Flash *flash.Flash
+
+	// Username UI: el slug actual (vacío si nunca lo eligió), el draft
+	// pre-poblado del form en caso de validation error, el error a
+	// mostrar inline, y la fecha desde la cual puede cambiarlo de nuevo
+	// (si está dentro del cooldown).
+	Username         string
+	UsernameDraft    string
+	UsernameError    string
+	CooldownUntilFmt string // vacío si está fuera del cooldown
 }
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
+	h.renderSettings(w, r, "", "")
+}
+
+// renderSettings centraliza la carga del estado del user y el render de
+// /settings. Lo reusan tanto el GET inicial como el POST /settings/username
+// cuando hay validation error y queremos preservar el draft + mostrar el
+// mensaje sin perder los otros campos visibles.
+//
+// Importante: el GET hace flash.Pop (one-shot) — el flash desaparece
+// tras el primer render. El validation-error path NO consume flash
+// (porque viene del mismo request, no de un redirect).
+func (h *Handler) renderSettings(w http.ResponseWriter, r *http.Request, draft, errMsg string) {
 	s, ok := h.requireSession(w, r)
 	if !ok {
 		return
@@ -151,21 +181,52 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 		visibility, emailAddr string
 		digestEnabled         int
 	)
-	err := h.db.QueryRowContext(r.Context(),
+	if err := h.db.QueryRowContext(r.Context(),
 		`SELECT list_visibility, email, email_digest_enabled FROM users WHERE id = ?`, s.UserID,
-	).Scan(&visibility, &emailAddr, &digestEnabled)
-	if err != nil {
+	).Scan(&visibility, &emailAddr, &digestEnabled); err != nil {
 		h.logger.Error("cargar settings", "err", err, "user_id", s.UserID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
+	slug, changedAt, err := h.loadUserSlug(r.Context(), s.UserID)
+	if err != nil {
+		h.logger.Error("cargar slug", "err", err, "user_id", s.UserID)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Si está dentro del cooldown, formateamos la fecha futura desde la
+	// cual podrá cambiar. Sin cooldown activo el campo queda vacío y la
+	// UI muestra el form normal.
+	var cooldownFmt string
+	if changedAt.Valid {
+		nextAllowed := time.Unix(changedAt.Int64, 0).Add(UsernameCooldown)
+		if time.Now().Before(nextAllowed) {
+			cooldownFmt = nextAllowed.Format("2006-01-02")
+		}
+	}
+
+	// Flash one-shot: solo lo consumimos cuando NO estamos re-renderizando
+	// por validation error (draft/errMsg). El error inline es feedback del
+	// mismo request; el flash es del request anterior (post-redirect).
+	var fl *flash.Flash
+	if draft == "" && errMsg == "" && h.flasher != nil {
+		if kind, msg, ok := h.flasher.Pop(w, r); ok {
+			fl = &flash.Flash{Kind: kind, Message: msg}
+		}
+	}
+
 	h.render(w, "settings.html", settingsData{
-		Session:       s,
-		Visibility:    visibility,
-		Email:         emailAddr,
-		DigestEnabled: digestEnabled == 1,
-		Saved:         r.URL.Query().Get("saved") == "1",
+		Session:          s,
+		Visibility:       visibility,
+		Email:            emailAddr,
+		DigestEnabled:    digestEnabled == 1,
+		Flash:            fl,
+		Username:         slug.String,
+		UsernameDraft:    draft,
+		UsernameError:    errMsg,
+		CooldownUntilFmt: cooldownFmt,
 	})
 }
 
@@ -198,7 +259,10 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+	if h.flasher != nil {
+		h.flasher.Set(w, flash.KindSuccess, "cambios guardados.")
+	}
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 
 func boolToInt(b bool) int {
@@ -208,47 +272,150 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// updateUsername procesa el POST del form de username. En éxito redirige a
+// /settings?saved=username; en error de validación o conflicto, re-renderea
+// /settings con el draft + el mensaje, sin perder los otros campos visibles.
+//
+// Los errores se mapean a mensajes en español acá (presentación), mientras
+// que ValidateUsername/upsertUsername solo manejan errores de dominio. Eso
+// permite reusar el dominio sin atar la traducción.
+func (h *Handler) updateUsername(w http.ResponseWriter, r *http.Request) {
+	s, ok := h.requireSession(w, r)
+	if !ok {
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	raw := r.PostFormValue("username")
+
+	slug, err := ValidateUsername(raw)
+	if err != nil {
+		h.renderSettings(w, r, raw, usernameErrorMessage(err))
+		return
+	}
+
+	switch err := h.upsertUsername(r.Context(), s.UserID, slug, time.Now()); {
+	case err == nil:
+		if h.flasher != nil {
+			h.flasher.Set(w, flash.KindSuccess, "username actualizado.")
+		}
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	case errors.Is(err, ErrUsernameTaken),
+		errors.Is(err, ErrUsernameCooldown):
+		h.renderSettings(w, r, raw, usernameErrorMessage(err))
+	default:
+		h.logger.Error("actualizar username", "err", err, "user_id", s.UserID)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}
+}
+
+// usernameErrorMessage traduce los errores tipados del dominio a mensajes
+// listos para mostrar en la UI. Si el error no matchea ninguno conocido,
+// devolvemos un genérico — no leakeamos detalles internos.
+func usernameErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, ErrUsernameTooShort):
+		return "muy corto. mínimo 3 caracteres."
+	case errors.Is(err, ErrUsernameTooLong):
+		return "muy largo. máximo 20 caracteres."
+	case errors.Is(err, ErrUsernameInvalid):
+		return "solo letras minúsculas, números, guión y guión bajo. no puede empezar ni terminar con separador."
+	case errors.Is(err, ErrUsernameDigitsOnly):
+		return "no puede ser solo números (chocaría con URLs viejas /u/{id})."
+	case errors.Is(err, ErrUsernameReserved):
+		return "ese nombre está reservado por la app. prueba otro."
+	case errors.Is(err, ErrUsernameTaken):
+		return "ya está tomado por otro usuario."
+	case errors.Is(err, ErrUsernameCooldown):
+		return "lo cambiaste hace poco. puedes volver a cambiarlo después del cooldown de 30 días."
+	default:
+		return "no se pudo guardar el username."
+	}
+}
+
 // ---- /u/{id} ----
 
 type profileData struct {
 	Session    *session.Session
 	UserID     int64
+	Slug       string // vacío si el user no tiene slug todavía
 	IsOwner    bool
 	Visibility string
 	Entries    []ProfileEntry
 }
 
+// publicProfile resuelve dos formatos para {handle}:
+//
+//   - Numérico (legacy /u/{id}): si el user tiene slug, 301 a /u/{slug}
+//     para canonicalizar; si no tiene slug, sirve el perfil con el id.
+//   - String (nuevo /u/{slug}): lookup por slug actual. previous_slug NO
+//     resuelve — esos están reservados pero inaccesibles, para no leakear
+//     identidad post-rename. Match → sirve; sin match → 404.
+//
+// Validamos digits-only en slug en POST /settings/username así que la
+// rama numérica es seguro asumirla como id legacy.
 func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
+	handle := r.PathValue("handle")
+
+	var (
+		userID int64
+		slug   sql.NullString
+	)
+	if id, err := strconv.ParseInt(handle, 10, 64); err == nil {
+		// Rama numérica: cargamos id + slug; si tiene slug, 301.
+		userID = id
+		if err := h.db.QueryRowContext(r.Context(),
+			`SELECT slug FROM users WHERE id = ? AND deleted_at IS NULL`,
+			id,
+		).Scan(&slug); errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		} else if err != nil {
+			h.logger.Error("cargar usuario por id", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if slug.Valid {
+			http.Redirect(w, r, "/u/"+slug.String, http.StatusMovedPermanently)
+			return
+		}
+	} else {
+		// Rama slug: lookupUserBySlug filtra deleted_at IS NULL.
+		id, err := h.lookupUserBySlug(r.Context(), handle)
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			h.logger.Error("cargar usuario por slug", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		userID = id
+		slug = sql.NullString{String: handle, Valid: true}
 	}
 
 	var visibility string
-	err = h.db.QueryRowContext(r.Context(),
-		`SELECT list_visibility FROM users WHERE id = ?`, id,
-	).Scan(&visibility)
-	if errors.Is(err, sql.ErrNoRows) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
-		h.logger.Error("cargar usuario", "err", err)
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT list_visibility FROM users WHERE id = ?`, userID,
+	).Scan(&visibility); err != nil {
+		h.logger.Error("cargar visibility", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	s, _ := session.FromContext(r.Context())
-	isOwner := s != nil && s.UserID == id
+	isOwner := s != nil && s.UserID == userID
 
-	// Si es privada y no sos el dueño, 404 (no confirmamos que existe).
 	if visibility != VisibilityPublic && !isOwner {
 		http.NotFound(w, r)
 		return
 	}
 
-	entries, err := h.loadEntries(r.Context(), id)
+	entries, err := h.loadEntries(r.Context(), userID)
 	if err != nil {
 		h.logger.Error("cargar entries de perfil", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -257,7 +424,8 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 
 	h.render(w, "profile.html", profileData{
 		Session:    s,
-		UserID:     id,
+		UserID:     userID,
+		Slug:       slug.String,
 		IsOwner:    isOwner,
 		Visibility: visibility,
 		Entries:    entries,

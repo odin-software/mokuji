@@ -1,16 +1,16 @@
 pediste borrar tu cuenta de mokuji.
 
-para confirmar, ingresá este código:
+para confirmar, ingresa este código:
 
   {{.Code}}
 
-el código vence en 15 minutos. si no fuiste vos, ignorá este email —
-nadie puede iniciar el borrado sin haber sido vos primero (requiere sesión
+el código vence en 15 minutos. si no fuiste tú, ignora este email —
+nadie puede iniciar el borrado sin haber sido tú primero (requiere sesión
 activa con tu cuenta).
 
 después de confirmar:
   · tu cuenta queda marcada para borrar
-  · tenés 7 días para cancelarlo
+  · tienes 7 días para cancelarlo
   · pasados los 7 días, todos tus datos se borran de forma permanente
 
 —

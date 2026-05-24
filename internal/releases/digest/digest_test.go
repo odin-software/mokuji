@@ -27,11 +27,22 @@ type captureSMTP struct {
 	messages [][]byte
 	to       []string
 	err      error
+	errs     []error // FIFO de errores planeados; nil en una posición = ese call sucede normal
 }
 
 func (c *captureSMTP) fn(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// errs (FIFO) tiene prioridad: cada call consume el siguiente. Permite
+	// simular "1er intento falla, 2do anda" sin tocar c.err (que es
+	// "todos los calls fallan").
+	if len(c.errs) > 0 {
+		e := c.errs[0]
+		c.errs = c.errs[1:]
+		if e != nil {
+			return e
+		}
+	}
 	if c.err != nil {
 		return c.err
 	}
@@ -102,6 +113,10 @@ func newTestSender(t *testing.T, db *sql.DB) (*Sender, *captureSMTP) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Sin backoff en tests: no queremos sleep de 5s cuando el SMTP fake
+	// devuelve error. Los tests del retry validan el comportamiento
+	// independiente del tiempo.
+	s.sendRetryBackoff = 0
 	return s, cap
 }
 
@@ -412,6 +427,61 @@ func TestSendToUserSecondCallSkipsAlreadySent(t *testing.T) {
 	}
 	if cap.count() != 1 {
 		t.Errorf("segundo call mandó email: %d total", cap.count())
+	}
+}
+
+func TestSendToUserRetriesOnSMTPFailure(t *testing.T) {
+	// Primer SendMessage falla con SMTP transient; el retry debe enviar OK
+	// sin propagar error al caller. Mensaje final llega exactamente una
+	// vez (sin contar el intento fallido que no llegó a registrar).
+	db := setupDB(t)
+	s, cap := newTestSender(t, db)
+	cap.errs = []error{errors.New("smtp timeout")} // 1 fail, después OK
+
+	uid := insertUser(t, db, "alice@example.com", 1)
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uid, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	if err := s.SendToUser(context.Background(), uid); err != nil {
+		t.Fatalf("esperaba éxito tras retry, obtuve: %v", err)
+	}
+	if cap.count() != 1 {
+		t.Errorf("esperaba 1 mensaje entregado tras retry, conté %d", cap.count())
+	}
+	if len(cap.errs) != 0 {
+		t.Errorf("esperaba que el retry consumiera el error planeado, queda(n) %d", len(cap.errs))
+	}
+}
+
+func TestSendToUserPropagatesAfterRetry(t *testing.T) {
+	// Dos fallos consecutivos: el retry no rescata. SendToUser debe
+	// propagar el error envuelto en "enviar digest:".
+	db := setupDB(t)
+	s, cap := newTestSender(t, db)
+	cap.errs = []error{errors.New("smtp boom 1"), errors.New("smtp boom 2")}
+
+	uid := insertUser(t, db, "alice@example.com", 1)
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uid, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	err := s.SendToUser(context.Background(), uid)
+	if err == nil {
+		t.Fatal("esperaba error tras 2 fallos consecutivos")
+	}
+	if !strings.Contains(err.Error(), "smtp boom 2") {
+		t.Errorf("error debería propagar el segundo timeout: %v", err)
+	}
+	// El cursor NO debe avanzar cuando falla el envío — eso es lo que
+	// permite que el retry diferido del worker capture al user en el
+	// próximo tick.
+	var lastSent sql.NullInt64
+	if err := db.QueryRow(`SELECT last_digest_sent_at FROM users WHERE id = ?`, uid).Scan(&lastSent); err != nil {
+		t.Fatal(err)
+	}
+	if lastSent.Valid {
+		t.Errorf("last_digest_sent_at avanzó pese al fallo: %v", lastSent.Int64)
 	}
 }
 

@@ -218,6 +218,10 @@ type listData struct {
 	Entries []Entry
 	Filter  string
 	Query   string
+	// UserSlug es el slug del user logueado. Vacío si no eligió. Sirve
+	// para construir el link "tu vista pública" sin tirar al 301 cuando
+	// ya tiene username (cosmético: /u/alice se ve mejor que /u/12).
+	UserSlug string
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -246,11 +250,21 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Slug del user para el link "tu vista pública". Best-effort: si
+	// falla, dejamos vacío y el template cae al id (con 301 post-load).
+	var slug sql.NullString
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT slug FROM users WHERE id = ?`, s.UserID,
+	).Scan(&slug); err != nil {
+		h.logger.Warn("cargar slug para list", "user_id", s.UserID, "err", err)
+	}
+
 	h.render(w, "library/list.html", listData{
-		Session: s,
-		Entries: entries,
-		Filter:  filter,
-		Query:   query,
+		Session:  s,
+		Entries:  entries,
+		Filter:   filter,
+		Query:    query,
+		UserSlug: slug.String,
 	})
 }
 
@@ -283,7 +297,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		results, err := h.src.Search(r.Context(), query)
 		if err != nil {
 			h.logger.Error("buscar en fuente externa", "err", err, "query", query)
-			data.Error = "no pudimos buscar en este momento. probá de nuevo."
+			data.Error = "no pudimos buscar en este momento. prueba de nuevo."
 		}
 		data.Results = results
 	}

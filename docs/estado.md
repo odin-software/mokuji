@@ -41,14 +41,15 @@ internal/
 ├── mangadex/      # cliente releasesource.Client contra api.mangadex.org
 ├── mangasource/   # interfaz Source (búsqueda externa: anilist) — distinto de releasesource
 ├── migrations/    # runner up-only
-├── profile/       # /settings + /settings/export + /settings/delete-account/* + /restore-account + /u/{id}
+├── profile/       # /settings + /settings/username + /settings/export + /settings/delete-account/* + /restore-account
+│                  # + /u/{handle} (id legacy → 301 a slug; slug case-insensitive, previous_slug reservado 30d)
 │                  # + CleanupWorker (hard delete a los 7 días)
 ├── ratelimit/     # buckets por clave con golang.org/x/time/rate
 ├── releases/
 │   ├── handler/   # /releases (caps no leídos) + /releases/mark-read (cursor)
 │   ├── matcher/   # exact-match normalizado, una instancia por source
 │   ├── worker/    # poll periódico, dispatch por source via Clients map + SourceHealth in-memory
-│   └── digest/    # render multipart + Sender compartido + Worker semanal (dom 9am UTC)
+│   └── digest/    # render multipart + Sender compartido + Worker (dom 9-22 UTC, retry diferido vía digest_runs)
 ├── releasesource/ # interfaz Client (search+fetchChapters) + tipos compartidos
 ├── server/        # http.Server, routing, middleware, security headers, pendingDeletionRedirect
 ├── session/       # manager + middleware + cookies HttpOnly/Secure/SameSite=Lax
@@ -78,6 +79,7 @@ SMTP_PORT=2587
 SMTP_USERNAME=resend
 SMTP_PASSWORD=re_<api_key_de_resend>
 SMTP_FROM=mokuji <auth@mokuji.org>
+SMTP_FROM_PRODUCT=mokuji <releases@mokuji.org>   # opcional; vacío = usa SMTP_FROM. Separa product emails (digest) de auth (OTP) para deliverability independiente.
 
 # Fase 2 — required en prod (SECURE_COOKIES=true hace fail-fast si faltan)
 UNSUBSCRIBE_SECRET=<openssl rand -base64 32>
@@ -131,9 +133,10 @@ ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
 - Dark mode automático via `prefers-color-scheme`.
 - Versión inyectada en build, visible en footer y `/version` (ver sección Versionado arriba).
 - CD automático: push a `main` deploya solo (Forgejo runner en mimir).
-- **Workers en-proceso (Fase 2)**: poll mangadex (1h), digest semanal (dom 9am UTC), hard delete diario. Todos goroutines en el mismo binario; sin systemd units adicionales.
+- **Workers en-proceso (Fase 2)**: poll mangadex (1h), digest semanal (domingo 9-22 UTC con retry diferido hasta 3 corridas/día vía tabla `digest_runs`), hard delete diario. Todos goroutines en el mismo binario; sin systemd units adicionales.
 - **Rate-limited HTTP client** para MangaDex (`golang.org/x/time/rate`, 2 req/s + retry on 429/5xx respetando Retry-After).
-- **Email outbound multipart** (plain+HTML básico) para product emails, plain-text para auth (ADR 0007 — nota Fase 2). Headers `List-Unsubscribe` + `List-Unsubscribe-Post` RFC 8058 one-click en cada digest.
+- **Email outbound multipart** (plain+HTML básico) para product emails, plain-text para auth (ADR 0007 — nota Fase 2). Headers `List-Unsubscribe` + `List-Unsubscribe-Post` RFC 8058 one-click en cada digest. From separable vía `SMTP_FROM_PRODUCT` (default: comparte `SMTP_FROM` con auth).
+- **Resiliencia del digest**: el sender hace 1 retry inmediato con backoff 5s en SMTP transient. El worker tickea cada 1h durante toda la ventana del domingo, usa `digest_runs` para no re-dispatchear si el último run terminó limpio, y reintenta hasta `MaxRunsPerDay=3` si quedaron failures. Los users con `last_digest_sent_at >= startOfDay` se filtran en SQL, evitando duplicados en retries diferidos. Log se sube a `ERROR` cuando `failed > 0`.
 - **GDPR compliance**: export JSON al vuelo + soft delete 7d con cancelación self-service + hash one-way audit log.
 
 ## Gotchas operativos que aprendimos

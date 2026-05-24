@@ -167,7 +167,7 @@ func TestSendPropagatesSMTPError(t *testing.T) {
 
 func TestSendMessagePlainOnly(t *testing.T) {
 	c := newTestClient(t)
-	msg := string(c.buildRichMessage(Message{
+	msg := string(c.buildRichMessage(c.from, Message{
 		To:        "user@example.com",
 		Subject:   "Hola",
 		PlainBody: "Cuerpo plain",
@@ -185,7 +185,7 @@ func TestSendMessagePlainOnly(t *testing.T) {
 
 func TestSendMessageMultipart(t *testing.T) {
 	c := newTestClient(t)
-	msg := string(c.buildRichMessage(Message{
+	msg := string(c.buildRichMessage(c.from, Message{
 		To:        "user@example.com",
 		Subject:   "Resumen",
 		PlainBody: "version plain",
@@ -207,7 +207,7 @@ func TestSendMessageMultipart(t *testing.T) {
 
 func TestSendMessageExtraHeaders(t *testing.T) {
 	c := newTestClient(t)
-	msg := string(c.buildRichMessage(Message{
+	msg := string(c.buildRichMessage(c.from, Message{
 		To:        "user@example.com",
 		Subject:   "S",
 		PlainBody: "B",
@@ -226,7 +226,7 @@ func TestSendMessageExtraHeaders(t *testing.T) {
 
 func TestSendMessageIgnoresReservedHeaders(t *testing.T) {
 	c := newTestClient(t)
-	msg := string(c.buildRichMessage(Message{
+	msg := string(c.buildRichMessage(c.from, Message{
 		To:        "user@example.com",
 		Subject:   "Original",
 		PlainBody: "B",
@@ -244,6 +244,70 @@ func TestSendMessageIgnoresReservedHeaders(t *testing.T) {
 	}
 	if strings.Contains(msg, "text/evil") {
 		t.Error("Content-Type fue sobreescrito")
+	}
+}
+
+func TestSendMessageFromOverride(t *testing.T) {
+	// SendMessage con Message.From debe usar ese valor en el header From
+	// visible y como envelope sender pasado a smtp.SendMail, sin tocar el
+	// default del Client (que sigue siendo el auth@).
+	c := newTestClient(t)
+	var gotEnvelope string
+	var gotMsg []byte
+	c.SetSendMailForTesting(func(_ string, _ smtp.Auth, from string, _ []string, msg []byte) error {
+		gotEnvelope = from
+		gotMsg = msg
+		return nil
+	})
+
+	if err := c.SendMessage(Message{
+		From:      "mokuji <releases@mokuji.local>",
+		To:        "user@example.com",
+		Subject:   "Resumen",
+		PlainBody: "cuerpo",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if gotEnvelope != "releases@mokuji.local" {
+		t.Errorf("envelope sender: esperado releases@mokuji.local, obtenido %q", gotEnvelope)
+	}
+	if !strings.Contains(string(gotMsg), "From: mokuji <releases@mokuji.local>\r\n") {
+		t.Errorf("header From override ausente:\n%s", string(gotMsg))
+	}
+}
+
+func TestSendMessageFromOverrideInvalid(t *testing.T) {
+	c := newTestClient(t)
+	c.SetSendMailForTesting(func(string, smtp.Auth, string, []string, []byte) error {
+		t.Fatal("sendMail no debería invocarse con From inválido")
+		return nil
+	})
+	if err := c.SendMessage(Message{
+		From:      "no-es-email",
+		To:        "user@example.com",
+		Subject:   "S",
+		PlainBody: "B",
+	}); err == nil {
+		t.Error("se esperaba error por From override inválido")
+	}
+}
+
+func TestSendMessageFromEmptyUsesClientDefault(t *testing.T) {
+	c := newTestClient(t)
+	var gotEnvelope string
+	c.SetSendMailForTesting(func(_ string, _ smtp.Auth, from string, _ []string, _ []byte) error {
+		gotEnvelope = from
+		return nil
+	})
+	if err := c.SendMessage(Message{
+		To:        "user@example.com",
+		Subject:   "S",
+		PlainBody: "B",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if gotEnvelope != "auth@mokuji.local" {
+		t.Errorf("envelope sender: esperado auth@mokuji.local (default Client), obtenido %q", gotEnvelope)
 	}
 }
 

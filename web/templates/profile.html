@@ -1,9 +1,9 @@
-{{define "title"}}biblioteca de usuario #{{.UserID}} — mokuji{{end}}
+{{define "title"}}biblioteca de {{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} — mokuji{{end}}
 {{define "content"}}
-<h1>biblioteca de usuario #{{.UserID}}</h1>
+<h1>biblioteca de {{if .Slug}}@{{.Slug}}{{else}}<span class="muted">usuario #{{.UserID}}</span>{{end}}</h1>
 
 {{if .IsOwner}}
-<p class="muted">esto es lo que el resto ve de tu biblioteca{{if eq .Visibility "private"}} (actualmente privada — solo vos podés verla){{end}}.</p>
+<p class="muted">esto es lo que el resto ve de tu biblioteca{{if eq .Visibility "private"}} (actualmente privada — solo tú puedes verla){{end}}.</p>
 {{end}}
 
 {{if .Entries}}

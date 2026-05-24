@@ -52,24 +52,33 @@ const firstRunLookback = 7 * 24 * time.Hour
 
 // Config agrupa las dependencias del Sender.
 type Config struct {
-	DB       *sql.DB
-	Email    *email.Client
-	Signer   *unsubscribe.Signer
-	Emails   fs.FS // contiene digest.txt y digest.html
-	BaseURL  string
-	Logger   *slog.Logger
+	DB      *sql.DB
+	Email   *email.Client
+	Signer  *unsubscribe.Signer
+	Emails  fs.FS // contiene digest.txt y digest.html
+	BaseURL string
+	// FromAddress opcional: si está seteado, los digests se envían con este
+	// From en vez del default del Client (auth@). Permite separar product
+	// emails de auth emails — un user puede silenciar el digest sin perder
+	// OTPs, y deliverability del digest no contamina la del auth.
+	FromAddress string
+	Logger      *slog.Logger
 }
 
 // Sender arma + envía digests. Construir con New.
 type Sender struct {
-	db       *sql.DB
-	email    *email.Client
-	signer   *unsubscribe.Signer
-	baseURL  string
-	logger   *slog.Logger
-	textTmpl *texttmpl.Template
-	htmlTmpl *template.Template
-	now      func() time.Time // inyectable para tests
+	db          *sql.DB
+	email       *email.Client
+	signer      *unsubscribe.Signer
+	baseURL     string
+	fromAddress string
+	logger      *slog.Logger
+	textTmpl    *texttmpl.Template
+	htmlTmpl    *template.Template
+	now         func() time.Time // inyectable para tests
+	// sendRetryBackoff es la espera antes del 1 reintento de SMTP.
+	// Default: 5s. Tests pueden bajarlo a 0 para no demorar la suite.
+	sendRetryBackoff time.Duration
 }
 
 // New construye un Sender. Parsea las dos plantillas eagerly para fallar al
@@ -101,14 +110,16 @@ func New(cfg Config) (*Sender, error) {
 	}
 
 	return &Sender{
-		db:       cfg.DB,
-		email:    cfg.Email,
-		signer:   cfg.Signer,
-		baseURL:  cfg.BaseURL,
-		logger:   cfg.Logger,
-		textTmpl: textTmpl,
-		htmlTmpl: htmlTmpl,
-		now:      time.Now,
+		db:               cfg.DB,
+		email:            cfg.Email,
+		signer:           cfg.Signer,
+		baseURL:          cfg.BaseURL,
+		fromAddress:      cfg.FromAddress,
+		logger:           cfg.Logger,
+		textTmpl:         textTmpl,
+		htmlTmpl:         htmlTmpl,
+		now:              time.Now,
+		sendRetryBackoff: 5 * time.Second,
 	}, nil
 }
 
@@ -172,7 +183,8 @@ func (s *Sender) SendToUser(ctx context.Context, userID int64) error {
 	}
 
 	now := s.now().UTC()
-	if err := s.email.SendMessage(email.Message{
+	msg := email.Message{
+		From:      s.fromAddress,
 		To:        emailAddr,
 		Subject:   s.subject(items),
 		PlainBody: plainBody,
@@ -181,7 +193,8 @@ func (s *Sender) SendToUser(ctx context.Context, userID int64) error {
 			"List-Unsubscribe":      "<" + s.unsubscribeURL(userID) + ">",
 			"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 		},
-	}); err != nil {
+	}
+	if err := s.sendWithRetry(ctx, userID, msg); err != nil {
 		return fmt.Errorf("enviar digest: %w", err)
 	}
 
@@ -196,6 +209,32 @@ func (s *Sender) SendToUser(ctx context.Context, userID int64) error {
 
 	s.logger.Info("digest enviado", "user_id", userID, "items", len(items))
 	return nil
+}
+
+// sendWithRetry envía el mensaje y, si falla, reintenta UNA vez tras
+// sendRetryBackoff. Razón: SMTP transient (Resend hiccup, red caída
+// momentánea) son la causa más común de failures aislados. Un retry
+// barato evita perder digests de la semana entera por un timeout.
+//
+// Riesgo conocido: si el primer envío llegó pero el ACK se perdió post-DATA,
+// el reintento produce un email duplicado. Es raro (>99% de timeouts son
+// pre-DATA) y un duplicado es preferible a no llegar. Limitado a 1 retry
+// para acotar el daño en el peor caso. El cap de digest_runs en el worker
+// evita amplificar más allá de eso.
+func (s *Sender) sendWithRetry(ctx context.Context, userID int64, msg email.Message) error {
+	err := s.email.SendMessage(msg)
+	if err == nil {
+		return nil
+	}
+	s.logger.Warn("SMTP fallo, reintentando", "user_id", userID, "err", err, "backoff", s.sendRetryBackoff)
+	if s.sendRetryBackoff > 0 {
+		select {
+		case <-time.After(s.sendRetryBackoff):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return s.email.SendMessage(msg)
 }
 
 func (s *Sender) loadUser(ctx context.Context, userID int64) (emailAddr string, digestEnabled bool, lastSentAt sql.NullInt64, err error) {

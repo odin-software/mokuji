@@ -4,14 +4,13 @@ Lista de decisiones arquitectónicas aún abiertas, en orden tentativo de discus
 
 ## Rate limiting
 
-Crítico antes de exponer el dominio público. Mínimo:
+✅ Cubierto al cierre de Fase 2/3:
 
-- `/auth/start` rate limit por IP (spam de OTPs a inboxes ajenos)
-- `/auth/start` rate limit por email (evita que alguien enumere)
-- `/auth/verify` rate limit por IP (intentos de brute force)
-- `/unsubscribe` rate limit por IP (evita fuzzing de tokens HMAC — cada POST hace un Verify + UPDATE, cheap pero acumula)
+- `/auth/start` por IP y por email
+- `/auth/verify` por IP
+- `/unsubscribe` por IP (GET y POST, ambos hacen Verify HMAC)
 
-Implementación candidata: counter en memoria con `golang.org/x/time/rate` por IP, complementada con tabla SQLite para tracking por email si lo necesitamos. Decisión propia, no requiere lib externa.
+Implementación: `golang.org/x/time/rate` con buckets por clave + cleanup goroutine, en `internal/ratelimit`. Buckets in-memory — aceptable para single-process. Si en el futuro escalamos horizontalmente, pasar a Redis o tabla SQLite (no urgente, mokuji es single-binary por diseño).
 
 ## Marca / identidad visual
 
@@ -39,6 +38,25 @@ Hoy el unit usa `Type=simple` — systemd asume "arrancó" cuando el proceso exi
 
 Prioridad: baja hasta que tengamos zero-downtime restart o dependencias systemd.
 
+## Username flow (cerrado)
+
+✅ `/u/{numeric_id}` ahora se llama `/u/{handle}` y acepta dos formatos:
+
+- handle numérico = id legacy; si el user tiene slug, 301 a `/u/{slug}` (canonicaliza).
+- handle no-numérico = slug; lookup case-insensitive contra `users.slug`.
+
+Reglas del slug: 3-20 chars, `[a-z0-9_-]`, no empieza/termina con separador, no puede ser solo dígitos (chocaría con id legacy), no reservado. Cambio permitido con cooldown de 30 días; el slug viejo queda reservado el mismo lapso (anti-impersonation). UI: banner en home + form en `/settings`.
+
+Pendiente futuro: incluir el slug en `internal/library` y otros templates donde hoy se muestra `userID`. Ahora muchos links a perfil propio usan `Session.UserID` — caen al redirect 301 pero no se ven feos como `/u/12`. Cosmético, no urgente.
+
+## Observabilidad del digest worker
+
+Hoy `digest_runs` registra cada corrida (started_at, finished_at, counters). Para diagnosticar sin SSH conviene un endpoint admin:
+
+- `GET /admin/digest-status` (bearer auth, mismo `ADMIN_TOKEN`) que devuelva JSON con las últimas N corridas + cómputo de "próxima ventana esperada" en función de hoy.
+
+Prioridad: media. Mientras tanto, queries directas: `sqlite3 ... 'SELECT * FROM digest_runs ORDER BY id DESC LIMIT 10'`. Estimado: ~30 LOC.
+
 ## Soporte SMTP `:465` (TLS implícito)
 
 Hoy `internal/email` usa stdlib `net/smtp.SendMail`, que solo soporta STARTTLS. Si un self-hoster quiere usar `:465` (TLS implícito desde el primer byte), no funciona — cuelga.
@@ -47,18 +65,9 @@ Para soportarlo: detectar puerto 465 (o un flag `SMTP_TLS_MODE=implicit`) y hace
 
 Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525` muchos providers) cubren todos los casos comunes.
 
-## CI: correr tests en el workflow antes de deployar
+## CI: tests en el workflow antes de deployar
 
-Hoy `.forgejo/workflows/deploy.yml` solo hace `make build-linux-amd64` y llama a `mokuji-deploy`. No corre el suite de tests. Eso significa que un push a `main` con tests rotos igual deploya — el binario buildea pero la lógica puede estar quebrada.
-
-Cambio mínimo: agregar un step antes del build:
-
-```yaml
-- name: Run tests
-  run: go test ./...
-```
-
-Si `go test` no está disponible en el host del runner, instalar Go o usar un container action. Prioridad: media — bajo riesgo hoy porque los pushes a main pasan revisión local, pero antes de que más gente contribuya conviene cerrarlo.
+✅ Cerrado. `.forgejo/workflows/deploy.yml` ahora corre `go test ./...` antes del build. Push con suite roja aborta el deploy.
 
 ## Sources adicionales para multi-source
 

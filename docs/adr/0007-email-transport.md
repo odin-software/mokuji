@@ -76,3 +76,14 @@ Decisión derivada, sin abrir un ADR nuevo porque cumple la regla de evolución 
 - **Auth emails (OTP) siguen siendo plain-text via `Client.Send`**. Sin cambios. El auto-fill de iOS/Android y la distinción contra phishing pesan más que la estética acá.
 - **Product emails (digest, eventualmente notificaciones) usan `Client.SendMessage`**, que arma `multipart/alternative` con plain + HTML básico y permite `ExtraHeaders`. El HTML no tiene branding aún — es solo formato mínimo (lista, links).
 - Ambos métodos comparten el mismo cliente SMTP y la misma config; lo único que cambia es el formato del mensaje.
+
+## Nota — 2026-05: From separado para product emails
+
+Se agrega `SMTP_FROM_PRODUCT` (opcional). Si está seteado, los product emails (digest semanal) usan ese From en vez del `SMTP_FROM` de auth. Implementación: `email.Message` ahora tiene un campo `From` opcional que sobreescribe el default del Client por mensaje; el digest lo setea cuando `digest.Config.FromAddress` está configurado.
+
+Motivación:
+- **Deliverability independiente**: un user que marca el digest como spam o lo silencia con filtros no degrada la entrega de OTPs.
+- **Convención común**: `auth@` para transactional crítico que el user acaba de pedir, `releases@` (o `notifications@`) para emails programados que el user no solicitó en ese momento.
+- **Sin costo extra**: Resend verifica el dominio entero, no cada dirección. `*@mokuji.org` funciona out of the box.
+
+Default vacío preserva el comportamiento anterior — self-hosters que no quieran separar siguen con un único From.

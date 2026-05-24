@@ -5,7 +5,7 @@
   <a href="/library/search" class="action-link">+ agregar manga</a>
 </header>
 
-<form method="GET" action="/library" class="lib-filters">
+<form method="GET" action="/library" class="lib-filters" data-auto-submit>
   <input type="search" name="q" placeholder="buscar en tu lista" value="{{.Query}}">
   <select name="filter">
     <option value="all"{{if eq .Filter "all"}} selected{{end}}>todos</option>
@@ -13,7 +13,7 @@
     <option value="planned"{{if eq .Filter "planned"}} selected{{end}}>por leer</option>
     <option value="completed"{{if eq .Filter "completed"}} selected{{end}}>completado</option>
   </select>
-  <button type="submit">filtrar</button>
+  <noscript><button type="submit">filtrar</button></noscript>
 </form>
 
 {{if .Entries}}
@@ -71,11 +71,11 @@
 {{else if or (ne .Filter "all") .Query}}
 <p class="muted">no hay entries que coincidan con el filtro.</p>
 {{else}}
-<p class="muted">tu biblioteca está vacía. <a href="/library/search">agregá tu primer manga</a>.</p>
+<p class="muted">tu biblioteca está vacía. <a href="/library/search">agrega tu primer manga</a>.</p>
 {{end}}
 
 <p class="user-links">
-  <a href="/u/{{.Session.UserID}}">tu vista pública</a>
+  <a href="/u/{{if .UserSlug}}{{.UserSlug}}{{else}}{{.Session.UserID}}{{end}}">tu vista pública</a>
 </p>
 <form method="POST" action="/auth/logout" class="logout-form">
   {{ csrfInput .Session }}

@@ -536,10 +536,6 @@ button.danger:hover { background: #8a2818; }
 .source-disabled { opacity: 0.6; }
 .source-actions { display: flex; gap: 0.5rem; }
 
-/* Phase 2 additions — append at the END of the <style> block in layout.html,
-   right before </style>. Brand new selectors; nothing in the existing CSS
-   is touched, so it's safe to drop in. */
-
 /* ── page heading helper (used by lib, releases, settings, etc.) ── */
 .page-head { margin-bottom: 1.5rem; }
 .page-head .eyebrow { margin: 0 0 0.4rem; }
@@ -598,9 +594,6 @@ button.danger:hover { background: #8a2818; }
 }
 .empty-state h2 { margin: 0.5rem 0; font-size: 1.25rem; }
 .empty-state p { margin: 0.5rem auto; max-width: 24rem; color: var(--text-soft); font-family: var(--font-sans); font-size: 0.9375rem; }
-
-/* Phase 3 additions — append AFTER the Phase 2 additions in layout.html,
-   just before </style>. All new selectors; existing CSS untouched. */
 
 /* ── public profile header ─────────────────────────────────────────── */
 .profile-header {
@@ -678,9 +671,7 @@ button.danger:hover { background: #8a2818; }
 .block p { margin: 0.25rem 0; }
 .block form { margin-top: 0.75rem; }
 
-/* Phase 4 additions — append AFTER Phase 3 additions, before </style>.
-   Brand new selectors for error pages. */
-
+/* ── error pages (404, 500) ─────────────────────────────────────────── */
 .error-page {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

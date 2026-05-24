@@ -40,10 +40,11 @@ type Config struct {
 
 // Handler sirve GET /.
 type Handler struct {
-	db       *sql.DB
-	tmpl     *template.Template
-	releases ReleasesProvider
-	logger   *slog.Logger
+	db          *sql.DB
+	tmpl        *template.Template
+	tmplLanding *template.Template
+	releases    ReleasesProvider
+	logger      *slog.Logger
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -59,14 +60,26 @@ func New(cfg Config) (*Handler, error) {
 		"csrfInput":  csrf.Input,
 		"appVersion": func() string { return version.Value },
 	}
-	tmpl, err := template.New("base").Funcs(funcs).ParseFS(
-		cfg.HTMLTemplates, "layout.html", "home.html", "landing.html",
+	tmplDashboard, err := template.New("base").Funcs(funcs).ParseFS(
+		cfg.HTMLTemplates, "layout.html", "home.html",
 	)
 	if err != nil {
-		return nil, fmt.Errorf("parsear templates: %w", err)
+		return nil, fmt.Errorf("parsear templates dashboard: %w", err)
+	}
+	tmplLanding, err := template.New("base").Funcs(funcs).ParseFS(
+		cfg.HTMLTemplates, "layout.html", "landing.html",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsear templates landing: %w", err)
 	}
 
-	return &Handler{db: cfg.DB, tmpl: tmpl, releases: cfg.Releases, logger: cfg.Logger}, nil
+	return &Handler{
+		db:          cfg.DB,
+		tmpl:        tmplDashboard,
+		tmplLanding: tmplLanding,
+		releases:    cfg.Releases,
+		logger:      cfg.Logger,
+	}, nil
 }
 
 // Mount registra el endpoint en el mux. Usa `{$}` para matchear solo el path

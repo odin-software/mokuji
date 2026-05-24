@@ -65,7 +65,7 @@
   justify-content: space-between;
   align-items: flex-end;
   border-bottom: 2px solid var(--text);
-  padding: 2rem 0 0.75rem;
+  padding: 0 0 0.75rem;
   margin: 2rem 0 1.5rem;
   gap: 1rem;
 }
@@ -77,14 +77,6 @@
   font-weight: 900;
 }
 .landing-section-header h2 .accent { color: var(--accent); }
-.landing-section-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin: 0 0 0.75rem;
-}
 .landing-section-tagline {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
@@ -186,44 +178,44 @@
     </div>
   </section>
 
-  <header class="landing-section-header">
-    <div>
-      <p class="landing-section-eyebrow">№ 002 — cómo funciona</p>
-      <h2>Tres cosas.<br><span class="accent">Nada más.</span></h2>
+  <section aria-labelledby="features-heading">
+    <div class="landing-section-header">
+      <div>
+        <p class="landing-eyebrow">№ 002 — cómo funciona</p>
+        <h2 id="features-heading">Tres cosas.<br><span class="accent">Nada más.</span></h2>
+      </div>
+      <p class="landing-section-tagline">mokuji = índice<br>nada de feed, nada de timeline</p>
     </div>
-    <p class="landing-section-tagline">mokuji = índice<br>nada de feed, nada de timeline</p>
-  </header>
-
-  <section class="landing-features">
-    <article class="landing-feature">
-      <div class="landing-feature-head">
-        <span class="landing-feature-num">01 / cataloga</span>
-        <span class="landing-feature-kanji" aria-hidden="true">登</span>
-      </div>
-      <h3>Tu lista,<br>indexada como capítulos.</h3>
-      <p>Cada manga es una entrada con número, estado y favorito. Buscás por título o por kanji. Filtrás por leyendo, por leer, o completado.</p>
-    </article>
-    <article class="landing-feature">
-      <div class="landing-feature-head">
-        <span class="landing-feature-num">02 / releases</span>
-        <span class="landing-feature-kanji" aria-hidden="true">新</span>
-      </div>
-      <h3>Capítulos nuevos,<br>cuando salen.</h3>
-      <p>Seguimos MangaDex y Asura automáticamente. Email digest semanal — opcional, opt-in, cancelable.</p>
-    </article>
-    <article class="landing-feature">
-      <div class="landing-feature-head">
-        <span class="landing-feature-num">03 / self-host</span>
-        <span class="landing-feature-kanji" aria-hidden="true">蔵</span>
-      </div>
-      <h3>Tu binario,<br>tu base de datos.</h3>
-      <p>Un binario Go + SQLite. Levantás tu propia instancia en minutos. AGPL-3.0. Tu lista es un archivo — es tuya, no la perdés si nos vamos.</p>
-    </article>
+    <div class="landing-features">
+      <article class="landing-feature">
+        <div class="landing-feature-head">
+          <span class="landing-feature-num">01 / cataloga</span>
+          <span class="landing-feature-kanji" aria-hidden="true">登</span>
+        </div>
+        <h3>Tu lista,<br>indexada como capítulos.</h3>
+        <p>Cada manga es una entrada con número, estado y favorito. Buscás por título o por kanji. Filtrás por leyendo, por leer, o completado.</p>
+      </article>
+      <article class="landing-feature">
+        <div class="landing-feature-head">
+          <span class="landing-feature-num">02 / releases</span>
+          <span class="landing-feature-kanji" aria-hidden="true">新</span>
+        </div>
+        <h3>Capítulos nuevos,<br>cuando salen.</h3>
+        <p>Seguimos MangaDex y Asura automáticamente. Email digest semanal — opcional, opt-in, cancelable.</p>
+      </article>
+      <article class="landing-feature">
+        <div class="landing-feature-head">
+          <span class="landing-feature-num">03 / self-host</span>
+          <span class="landing-feature-kanji" aria-hidden="true">蔵</span>
+        </div>
+        <h3>Tu binario,<br>tu base de datos.</h3>
+        <p>Un binario Go + SQLite. Levantás tu propia instancia en minutos. AGPL-3.0. Tu lista es un archivo — es tuya, no la perdés si nos vamos.</p>
+      </article>
+    </div>
+    <aside class="landing-anti">
+      <p class="landing-anti-label">+ 00 / lo que no hace</p>
+      <p class="landing-anti-body">sin recomendaciones · sin algoritmo · sin "para vos" · sin push molestos · sin social feed · sin métricas vanidosas.</p>
+    </aside>
   </section>
-
-  <aside class="landing-anti">
-    <p class="landing-anti-label">+ 00 / lo que no hace</p>
-    <p class="landing-anti-body">sin recomendaciones · sin algoritmo · sin "para vos" · sin push molestos · sin social feed · sin métricas vanidosas.</p>
-  </aside>
 </div>
 {{end}}

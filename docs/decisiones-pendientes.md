@@ -14,15 +14,15 @@ Implementación: `golang.org/x/time/rate` con buckets por clave + cleanup gorout
 
 ## Marca / identidad visual
 
-Pendiente. Una vez decidida condiciona:
+✅ Cerrado en `branding` (mayo 2026). Identidad **"01 × 02-type"** (editorial library: vermillón + cream + sumi-black, Albert Sans + Noto Serif JP + IBM Plex Mono, kanji 目次 como base del wordmark). Fases 1–4 aplicadas: tokens + fuentes + icono + manifest, plantillas auth/library/releases/profile/settings/entry/search/404/500, emails HTML opt-in (OTP, account-deletion, digest).
 
-- HTML email templates (alternative al plain-text actual — ver [ADR 0007](adr/0007-email-transport.md))
-- CSS / theming de la app
-- Favicon, OG images, iconos de PWA, manifest
+Ver [`diseno-identidad.md`](diseno-identidad.md) para resumen + cambios de backend que la implementación requirió (`homeData.Username`, `profileData.Counters`, `errorRenderer`, multipart emails).
+
+Pendiente de polish (no urgente): layout desktop con sidebar a 1440px, OG meta tags + cards 1200×630, onboarding swipeable.
 
 ## CSS
 
-Plano + variables custom vs framework (Tailwind, etc.). Probablemente plano para empezar, evaluar cuando duela. Depende parcialmente de marca.
+Plano + variables custom decidido al implementar el branding. Todos los tokens viven como CSS custom properties en `:root` de `layout.html`, con override en `@media (prefers-color-scheme: dark)`. Sin framework. Si en algún momento duele (CSS-in-JS, design system de N componentes), revisitamos.
 
 ## Flash messages
 

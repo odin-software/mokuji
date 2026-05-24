@@ -61,13 +61,14 @@ type Config struct {
 
 // Handler sirve /settings, /u/{handle}, /settings/delete-account/* y /restore-account.
 type Handler struct {
-	db      *sql.DB
-	pages   map[string]*template.Template
-	email   *email.Client
-	deleteT *texttmpl.Template // template del email de borrado
-	baseURL string
-	flasher *flash.Flasher
-	logger  *slog.Logger
+	db          *sql.DB
+	pages       map[string]*template.Template
+	email       *email.Client
+	deleteT     *texttmpl.Template // template del email de borrado (texto)
+	deleteHTMLT *template.Template // versión HTML del mismo email; nil = solo texto
+	baseURL     string
+	flasher     *flash.Flasher
+	logger      *slog.Logger
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -104,21 +105,31 @@ func New(cfg Config) (*Handler, error) {
 	// El template de email es opcional para que tests que no necesitan
 	// borrado puedan construir el Handler sin EmailTemplates.
 	var deleteT *texttmpl.Template
+	var deleteHTMLT *template.Template
 	if cfg.EmailTemplates != nil {
 		deleteT, err = texttmpl.ParseFS(cfg.EmailTemplates, "account-deletion.txt")
 		if err != nil {
 			return nil, fmt.Errorf("parsear account-deletion.txt: %w", err)
 		}
+		// account-deletion.html es opcional (mismos vars que el .txt). Si no
+		// existe, sendDeletionEmail manda solo texto.
+		if _, statErr := fs.Stat(cfg.EmailTemplates, "account-deletion.html"); statErr == nil {
+			deleteHTMLT, err = template.ParseFS(cfg.EmailTemplates, "account-deletion.html")
+			if err != nil {
+				return nil, fmt.Errorf("parsear account-deletion.html: %w", err)
+			}
+		}
 	}
 
 	return &Handler{
-		db:      cfg.DB,
-		pages:   pages,
-		email:   cfg.Email,
-		deleteT: deleteT,
-		baseURL: cfg.BaseURL,
-		flasher: cfg.Flasher,
-		logger:  cfg.Logger,
+		db:          cfg.DB,
+		pages:       pages,
+		email:       cfg.Email,
+		deleteT:     deleteT,
+		deleteHTMLT: deleteHTMLT,
+		baseURL:     cfg.BaseURL,
+		flasher:     cfg.Flasher,
+		logger:      cfg.Logger,
 	}, nil
 }
 
@@ -439,7 +450,30 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		IsOwner:    isOwner,
 		Visibility: visibility,
 		Entries:    entries,
+		Counters:   countByStatus(entries),
 	})
+}
+
+// countByStatus calcula los contadores del strip de perfil a partir de las
+// entries ya cargadas. Evitamos una segunda query — el N esperado por user
+// es chico (≤ low hundreds). Devuelve nil si no hay entries para que el
+// guard {{if .Counters}} de profile.html no muestre un strip vacío.
+func countByStatus(entries []ProfileEntry) *profileCounters {
+	if len(entries) == 0 {
+		return nil
+	}
+	c := &profileCounters{}
+	for _, e := range entries {
+		switch e.Status {
+		case "reading":
+			c.Reading++
+		case "planned":
+			c.Planned++
+		case "completed":
+			c.Completed++
+		}
+	}
+	return c
 }
 
 // ---- helpers ----

@@ -42,12 +42,18 @@ type Config struct {
 	// manifest.webmanifest, sw.js). Si es nil, los endpoints PWA no se
 	// montan.
 	StaticAssets fs.FS
+	// HTMLTemplates es el FS de web/templates/. Si es nil, las páginas 404
+	// y 500 caen al fallback plano de net/http. En prod siempre se pasa.
+	HTMLTemplates fs.FS
 }
 
 // Server envuelve un *http.Server con su composición de routing y middleware.
 type Server struct {
 	cfg  Config
 	http *http.Server
+	// errs renderiza 404 y 500. Es nil si HTTPTemplates no fue provisto
+	// (tests sin assets); en ese caso se cae al fallback plano.
+	errs *errorRenderer
 }
 
 // New construye un servidor listo para Start.
@@ -60,6 +66,18 @@ func New(cfg Config) *Server {
 	}
 
 	s := &Server{cfg: cfg}
+
+	if cfg.HTMLTemplates != nil {
+		errs, err := newErrorRenderer(cfg.HTMLTemplates, cfg.Logger)
+		if err != nil {
+			cfg.Logger.Error("inicializar error renderer", "err", err)
+			// Seguimos arrancando sin páginas estilizadas: mejor que tumbar
+			// el servidor entero por un template roto.
+		} else {
+			s.errs = errs
+		}
+	}
+
 	s.http = &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           s.routes(),

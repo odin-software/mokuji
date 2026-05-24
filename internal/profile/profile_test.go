@@ -318,3 +318,37 @@ func TestPublicProfileHidesSourceURLAndNotes(t *testing.T) {
 		t.Error("body expone notes")
 	}
 }
+
+func TestCountByStatus(t *testing.T) {
+	cases := []struct {
+		name    string
+		entries []ProfileEntry
+		want    *profileCounters
+	}{
+		{"vacío", nil, nil},
+		{
+			"mezcla",
+			[]ProfileEntry{
+				{Status: "reading"},
+				{Status: "reading"},
+				{Status: "planned"},
+				{Status: "completed"},
+				{Status: "completed"},
+				{Status: "completed"},
+				{Status: "weird"}, // estados desconocidos se ignoran sin romper
+			},
+			&profileCounters{Reading: 2, Planned: 1, Completed: 3},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := countByStatus(tc.entries)
+			if (got == nil) != (tc.want == nil) {
+				t.Fatalf("nilness: esperado %v, obtenido %v", tc.want, got)
+			}
+			if got != nil && *got != *tc.want {
+				t.Errorf("counters: esperado %+v, obtenido %+v", *tc.want, *got)
+			}
+		})
+	}
+}

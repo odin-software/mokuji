@@ -47,6 +47,12 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.StaticAssets != nil {
 		s.mountPWA(mux)
 	}
+	// Catch-all: cualquier path no registrado cae al 404 estilizado. Los
+	// patterns con verbo (`GET /...`) y los exactos siguen ganando por
+	// longest-match, así que esto solo dispara en paths desconocidos.
+	if s.errs != nil {
+		mux.HandleFunc("/", s.errs.NotFound)
+	}
 
 	var h http.Handler = mux
 	if s.cfg.Sessions != nil {

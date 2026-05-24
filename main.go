@@ -378,18 +378,19 @@ func main() {
 	go releasesWorker.Run(rootCtx)
 
 	srv := server.New(server.Config{
-		Addr:         envOr("HTTP_ADDR", ":8080"),
-		DB:           db,
-		Logger:       logger,
-		Sessions:     sessions,
-		Auth:         authHandler,
-		Home:         homeHandler,
-		Library:      libraryHandler,
-		Profile:      profileHandler,
-		Releases:     releasesHandler,
-		Unsubscribe:  unsubHandler,
-		Admin:        adminHandler,
-		StaticAssets: webFS,
+		Addr:          envOr("HTTP_ADDR", ":8080"),
+		DB:            db,
+		Logger:        logger,
+		Sessions:      sessions,
+		Auth:          authHandler,
+		Home:          homeHandler,
+		Library:       libraryHandler,
+		Profile:       profileHandler,
+		Releases:      releasesHandler,
+		Unsubscribe:   unsubHandler,
+		Admin:         adminHandler,
+		StaticAssets:  webFS,
+		HTMLTemplates: htmlFS,
 	})
 
 	errCh := make(chan error, 1)

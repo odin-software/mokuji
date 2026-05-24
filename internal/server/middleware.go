@@ -36,12 +36,17 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
+				reqID := RequestIDFromContext(r.Context())
 				s.cfg.Logger.Error("panic recuperado",
 					"panic", rec,
 					"path", r.URL.Path,
 					"method", r.Method,
-					"request_id", RequestIDFromContext(r.Context()),
+					"request_id", reqID,
 				)
+				if s.errs != nil {
+					s.errs.ServerError(w, r, reqID)
+					return
+				}
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()

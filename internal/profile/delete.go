@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/code"
+	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/session"
 )
 
@@ -290,14 +291,28 @@ func (h *Handler) consumeDeletionCode(ctx context.Context, userID int64, otp str
 }
 
 func (h *Handler) sendDeletionEmail(to, otp string) error {
-	var buf bytes.Buffer
-	if err := h.deleteT.Execute(&buf, map[string]any{
+	data := map[string]any{
 		"Code":    otp,
 		"BaseURL": h.baseURL,
-	}); err != nil {
+	}
+	var txtBuf bytes.Buffer
+	if err := h.deleteT.Execute(&txtBuf, data); err != nil {
 		return err
 	}
-	return h.email.Send(to, "confirmá el borrado de tu cuenta mokuji", buf.String())
+	var htmlBody string
+	if h.deleteHTMLT != nil {
+		var htmlBuf bytes.Buffer
+		if err := h.deleteHTMLT.Execute(&htmlBuf, data); err != nil {
+			return err
+		}
+		htmlBody = htmlBuf.String()
+	}
+	return h.email.SendMessage(email.Message{
+		To:        to,
+		Subject:   "confirmá el borrado de tu cuenta mokuji",
+		PlainBody: txtBuf.String(),
+		HTMLBody:  htmlBody,
+	})
 }
 
 // ---- humanDuration ----

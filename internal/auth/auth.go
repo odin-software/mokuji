@@ -59,6 +59,10 @@ type Handler struct {
 	email         *email.Client
 	pages         map[string]*htmltmpl.Template
 	emailT        *texttmpl.Template
+	// emailHTMLT es el render HTML de otp.html para multipart/alternative.
+	// nil si la plantilla no existe (deploys más viejos / tests sin assets);
+	// en ese caso se manda solo texto.
+	emailHTMLT    *htmltmpl.Template
 	baseURL       string
 	logger        *slog.Logger
 	trustProxy    bool
@@ -109,12 +113,25 @@ func New(cfg Config) (*Handler, error) {
 		return nil, fmt.Errorf("parsear otp.txt: %w", err)
 	}
 
+	// otp.html es opcional: si existe, vamos a mandar multipart con HTML +
+	// texto. Si no existe (assets viejos / FS sintético en tests), seguimos
+	// con solo texto. fs.Stat es el chequeo barato; un error genérico también
+	// cae al fallback sin romper.
+	var emailHTMLT *htmltmpl.Template
+	if _, statErr := fs.Stat(cfg.EmailTemplates, "otp.html"); statErr == nil {
+		emailHTMLT, err = htmltmpl.ParseFS(cfg.EmailTemplates, "otp.html")
+		if err != nil {
+			return nil, fmt.Errorf("parsear otp.html: %w", err)
+		}
+	}
+
 	return &Handler{
 		db:            cfg.DB,
 		sessions:      cfg.Sessions,
 		email:         cfg.Email,
 		pages:         pages,
 		emailT:        emailT,
+		emailHTMLT:    emailHTMLT,
 		baseURL:       cfg.BaseURL,
 		logger:        cfg.Logger,
 		trustProxy:    cfg.TrustProxy,
@@ -213,14 +230,19 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := h.renderOTPEmail(code, emailAddr, ip, ua)
+	plainBody, htmlBody, err := h.renderOTPEmail(code, emailAddr, ip, ua)
 	if err != nil {
 		h.logger.Error("renderizar email otp", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.email.Send(emailAddr, "tu código de mokuji", body); err != nil {
+	if err := h.email.SendMessage(email.Message{
+		To:        emailAddr,
+		Subject:   "tu código de mokuji",
+		PlainBody: plainBody,
+		HTMLBody:  htmlBody,
+	}); err != nil {
 		h.logger.Error("enviar email", "err", err, "to", emailAddr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -323,7 +345,10 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 	}
 }
 
-func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (string, error) {
+// renderOTPEmail produce las dos versiones del email: texto plano (siempre)
+// y HTML (solo si otp.html está cargada). El caller manda multipart cuando
+// htmlBody no es vacío.
+func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (plainBody, htmlBody string, err error) {
 	data := otpEmailData{
 		Code:        code.Format(otp),
 		To:          to,
@@ -332,11 +357,18 @@ func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (string, error) {
 		RequestedAt: time.Now().UTC().Format("2006-01-02 15:04 UTC"),
 		BaseURL:     h.baseURL,
 	}
-	var buf bytes.Buffer
-	if err := h.emailT.ExecuteTemplate(&buf, "otp.txt", data); err != nil {
-		return "", err
+	var txtBuf bytes.Buffer
+	if err := h.emailT.ExecuteTemplate(&txtBuf, "otp.txt", data); err != nil {
+		return "", "", err
 	}
-	return buf.String(), nil
+	if h.emailHTMLT == nil {
+		return txtBuf.String(), "", nil
+	}
+	var htmlBuf bytes.Buffer
+	if err := h.emailHTMLT.ExecuteTemplate(&htmlBuf, "otp.html", data); err != nil {
+		return "", "", err
+	}
+	return txtBuf.String(), htmlBuf.String(), nil
 }
 
 func (h *Handler) storeCode(ctx context.Context, email, otp, ip, ua string) error {

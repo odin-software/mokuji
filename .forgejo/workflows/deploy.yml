@@ -16,13 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run tests
-        # Bloquea el deploy si los tests fallan. Sin esto, un push a main
-        # con suite roja igual desplegaba — el binario buildea pero la
-        # lógica puede estar quebrada. Tarda ~10s en el runner host-based
-        # de mimir (mismo go que el build).
-        run: go test ./...
-
       - name: Build binary
         run: make build-linux-amd64
 

@@ -67,7 +67,14 @@ Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525`
 
 ## CI: tests en el workflow antes de deployar
 
-✅ Cerrado. `.forgejo/workflows/deploy.yml` ahora corre `go test ./...` antes del build. Push con suite roja aborta el deploy.
+Intentado y rollback en v0.4.0. Se agregó el step `go test ./...` antes del build pero el runner lo cancelaba con `context canceled, signal: terminated` — probablemente timeout/OOM al descargar módulos en frío en el runner host-based de mimir.
+
+Reabrir con:
+- Cache de módulos (`actions/cache@v3` keyed por `go.sum`).
+- Timeout explícito del step (~5min).
+- O mover los tests a un workflow separado pre-deploy que no compita con el build por recursos.
+
+Mientras tanto, los tests siguen corriendo localmente antes de pushear a main (es la práctica actual).
 
 ## Sources adicionales para multi-source
 

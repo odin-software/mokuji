@@ -1,0 +1,69 @@
+{{define "title"}}mokuji · una biblioteca para tu manga{{end}}
+{{define "content"}}
+<style>
+/* ── landing-only styles ───────────────────────────────────────────── */
+.landing { max-width: none; }
+.landing-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1rem;
+}
+.landing-hero h1 {
+  font-size: clamp(3rem, 9vw, 8rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+  margin: 0 0 1rem;
+  font-weight: 900;
+}
+.landing-hero h1 .accent { color: var(--accent); }
+.landing-lead {
+  font-size: clamp(1rem, 1.5vw, 1.25rem);
+  color: var(--text-soft);
+  line-height: 1.55;
+  max-width: 34rem;
+  margin: 0 0 1.5rem;
+}
+.landing-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+.landing-cta-primary {
+  background: var(--button-bg);
+  color: var(--button-fg);
+  padding: 0.875rem 1.25rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+.landing-cta-primary:hover { background: var(--button-bg-hover); }
+.landing-cta-secondary {
+  border: 1.5px solid var(--text);
+  color: var(--text);
+  padding: 0.75rem 1.125rem;
+  font-weight: 700;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+.landing-cta-secondary:hover { background: var(--text); color: var(--bg); }
+.landing-cta-note {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 1024px) {
+  .landing-hero h1 { font-size: 8.25rem; }
+}
+</style>
+<div class="landing">
+  <!-- sections injected in tasks 3-6 -->
+</div>
+{{end}}

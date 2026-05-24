@@ -60,7 +60,7 @@ func New(cfg Config) (*Handler, error) {
 		"appVersion": func() string { return version.Value },
 	}
 	tmpl, err := template.New("base").Funcs(funcs).ParseFS(
-		cfg.HTMLTemplates, "layout.html", "home.html",
+		cfg.HTMLTemplates, "layout.html", "home.html", "landing.html",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parsear templates: %w", err)

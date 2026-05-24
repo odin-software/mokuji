@@ -122,7 +122,7 @@ func (h *Handler) renderEmailReadError(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusGone)
 	msg := "este link de email expiró o ya no es válido."
 	if errors.Is(err, unsubscribe.ErrExpiredToken) {
-		msg = "este link de email expiró (los links del digest duran 30 días). abrí la app para leer el cap directo."
+		msg = "este link de email expiró (los links del digest duran 30 días). abre la app para leer el cap directo."
 	}
 	_, _ = w.Write([]byte(`<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><title>link expirado — mokuji</title></head>

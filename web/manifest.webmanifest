@@ -1,20 +1,26 @@
 {
   "name": "mokuji",
   "short_name": "mokuji",
-  "description": "Tracker de manga público y self-hostable.",
+  "description": "目次 — una biblioteca para tu manga. tracker público y self-hostable.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "lang": "es",
-  "background_color": "#ffffff",
-  "theme_color": "#222222",
+  "background_color": "#f3ede0",
+  "theme_color": "#1a1815",
   "icons": [
     {
       "src": "/static/icon.svg",
       "type": "image/svg+xml",
       "sizes": "any",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
     }
   ]
 }

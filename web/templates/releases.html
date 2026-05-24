@@ -1,11 +1,14 @@
 {{define "title"}}releases — mokuji{{end}}
 {{define "content"}}
 <header class="lib-header">
-  <h1>releases</h1>
+  <div class="lib-heading">
+    <p class="eyebrow">{{if .Releases}}{{len .Releases}} capítulo{{if ne (len .Releases) 1}}s{{end}} nuevo{{if ne (len .Releases) 1}}s{{end}}{{else}}al día{{end}}</p>
+    <h1>nuevos <span class="accent">capítulos</span></h1>
+  </div>
   <a href="/library" class="action-link">← biblioteca</a>
 </header>
 
-<p class="muted">capítulos nuevos de tu biblioteca, lo más reciente arriba.</p>
+<p class="muted" style="margin-top:0.75rem;">capítulos nuevos de tu biblioteca, lo más reciente arriba.</p>
 
 {{if .Releases}}
 <ul class="release-list">
@@ -32,7 +35,11 @@
 {{end}}
 </ul>
 {{else}}
-<p class="muted">no hay capítulos nuevos. al día con todo.</p>
+<div class="empty-state">
+  <span class="kanji">了</span>
+  <h2>al día con todo</h2>
+  <p>no hay capítulos nuevos por ahora. te avisamos por el digest semanal cuando publiquen algo.</p>
+</div>
 {{end}}
 
 <p class="user-links">

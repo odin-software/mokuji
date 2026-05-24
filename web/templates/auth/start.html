@@ -1,20 +1,23 @@
 {{define "title"}}entrar — mokuji{{end}}
 {{define "content"}}
-<h1>entrar a mokuji</h1>
-<p class="muted">te enviamos un código de 6 dígitos por email. expira en 10 minutos.</p>
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="POST" action="/auth/start">
-  <label>
-    email
-    <input
-      type="email"
-      name="email"
-      autocomplete="email"
-      inputmode="email"
-      required
-      autofocus
-      value="{{.Email}}">
-  </label>
-  <button type="submit">enviarme un código</button>
-</form>
+<div class="auth-page">
+  <p class="eyebrow">paso 1 · email</p>
+  <h1>entrar a <span class="accent">mokuji</span></h1>
+  <p class="auth-lead">te enviamos un código de 6 dígitos por email. expira en 10 minutos.</p>
+  {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+  <form method="POST" action="/auth/start">
+    <label>
+      email
+      <input
+        type="email"
+        name="email"
+        autocomplete="email"
+        inputmode="email"
+        required
+        autofocus
+        value="{{.Email}}">
+    </label>
+    <button type="submit">enviarme un código →</button>
+  </form>
+</div>
 {{end}}

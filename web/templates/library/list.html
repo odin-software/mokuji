@@ -1,7 +1,10 @@
 {{define "title"}}biblioteca — mokuji{{end}}
 {{define "content"}}
 <header class="lib-header">
-  <h1>tu biblioteca</h1>
+  <div class="lib-heading">
+    <p class="eyebrow">Index · {{len .Entries}} {{if eq (len .Entries) 1}}entry{{else}}entries{{end}}</p>
+    <h1>tu <span class="accent">biblioteca</span></h1>
+  </div>
   <a href="/library/search" class="action-link">+ agregar manga</a>
 </header>
 
@@ -24,7 +27,7 @@
       <summary>
         {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
         <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
-        {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
+        {{if .IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
         <a href="/library/entry/{{.ID}}" class="manga-title-link"><strong>{{.Manga.Title}}</strong></a>
         {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
         {{template "mangadex-badge" .}}
@@ -49,7 +52,7 @@
         </label>
         <label class="checkbox">
           <input type="checkbox" name="is_favorite"{{if .IsFavorite}} checked{{end}}>
-          favorito
+          <span><strong>favorito</strong></span>
         </label>
         <label>
           notas
@@ -69,9 +72,18 @@
 {{end}}
 </ul>
 {{else if or (ne .Filter "all") .Query}}
-<p class="muted">no hay entries que coincidan con el filtro.</p>
+<div class="empty-state">
+  <span class="kanji">無</span>
+  <h2>sin coincidencias</h2>
+  <p>no hay entries que coincidan con el filtro. probá <a href="/library">limpiarlo</a>.</p>
+</div>
 {{else}}
-<p class="muted">tu biblioteca está vacía. <a href="/library/search">agrega tu primer manga</a>.</p>
+<div class="empty-state">
+  <span class="kanji">白</span>
+  <h2>tu índice está en blanco</h2>
+  <p>buscá el primer título y agregalo. mokuji empieza a seguir los capítulos nuevos en el próximo ciclo.</p>
+  <p style="margin-top:1.25rem;"><a href="/library/search" class="action-link">buscar manga →</a></p>
+</div>
 {{end}}
 
 <p class="user-links">

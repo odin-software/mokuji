@@ -5,7 +5,9 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. Fase 3 (multi-source release tracking: MangaDex + Asura Scans, scaffolding para más) en branch `fase-3-multi-source`, lista para merge a `main`. Producción `mokuji.org` corre v0.2.0; el bump a v0.3.0 va con el merge. Flow end-to-end: signup con OTP → biblioteca con search de AniList → matching automático contra cada source configurada → caps nuevos en `/releases` + email digest semanal → privacy/digest toggle → export JSON → soft delete con gracia 7 días + fieldset de sources por manga con reintentar/desvincular.
+Tracker de manga público en Go + SQLite. **Producción corre v0.5.0** con identidad visual completa ("01 × 02-type"). Trabajo activo en branch `version-0-6` apuntando a **v1.0** ("listo para promoción pública").
+
+Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
 ## Stack cerrado
 
@@ -24,8 +26,10 @@ Tracker de manga público en Go + SQLite. Fase 3 (multi-source release tracking:
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
 | CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
-| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ mergeada en v0.2.0) |
-| Fase 3 — Multi-source | Tabla `manga_sources` + `releasesource.Client` + cliente Asura + backfill | [0014](adr/0014-fase-3-multi-source.md) (✅ implementado, pre-merge) |
+| Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ v0.2.0) |
+| Fase 3 — Multi-source | Tabla `manga_sources` + `releasesource.Client` + Asura + Comick + backfill | [0014](adr/0014-fase-3-multi-source.md) (✅ v0.3.0) |
+| Fase 4 — Resiliencia / cuentas | Usernames `/u/{slug}`, flash messages, resiliencia digest (retry + recovery), separación `SMTP_FROM_PRODUCT`, rate limit `/unsubscribe` | — (✅ v0.4.0) |
+| Fase 5 — Identidad visual | Rebrand "01 × 02-type" (paleta vermillón + cream + sumi-black, Albert Sans + Noto Serif JP + IBM Plex Mono, kanji 目次 wordmark), emails HTML multipart, 404/500 estilizados | [diseno-identidad](diseno-identidad.md) (✅ v0.5.0) |
 
 ## Mapa de paquetes
 
@@ -150,18 +154,32 @@ Vale dejarlos visibles para que no se rompa de nuevo en futuros deploys:
 
 ## Backlog priorizado
 
-Detalle en [decisiones-pendientes.md](decisiones-pendientes.md). Orden actual:
+Detalle en [decisiones-pendientes.md](decisiones-pendientes.md).
 
-1. **Merge `fase-3-multi-source` → `main`** — feature completa, suite verde. Pre-merge: bump VERSION ya está en `v0.3.0`. `ASURA_ENABLED=true` queda implícito (default); el operador puede setear `ASURA_API_BASE_URL` si Asura rota dominio. La migration 0007 corre automática al startup; el backfill recoge mangas existentes en biblioteca.
-2. **Widget "últimos releases" en home** — postergado de Fase 2 (la página `/releases` cubre el caso 80%).
-3. **Rate limit en `/unsubscribe`** — anotado en `decisiones-pendientes.md` (cheap por request pero acumula sin tope).
-4. **Tests en el deploy workflow** — anotado, no corre `go test` antes de deployar.
-5. **Usernames** — hoy `/u/{numeric_id}`, bloqueador para launch público real.
-6. **Marca / identidad visual** — habilita HTML emails enriquecidos (más allá del HTML básico de fase 2) y CSS de verdad.
-7. **`Type=notify` con `sd_notify`** — readiness real para systemd.
-8. **Soporte SMTP `:465`** — TLS implícito en lugar de STARTTLS. Bajo.
-9. **Activity feed público** — nice-to-have.
-10. **Rating** — explícitamente fuera de MVP.
+### v0.6 — en progreso (branch `version-0-6`)
+
+Branch abierta como puente entre v0.5 (producción) y v1.0 (objetivo "shareable / promoción pública"). Trabajo cerrado hasta ahora:
+
+- **Orden biblioteca por estado** (`internal/library/library.go`): leyendo > por leer > completados, con favorito como tie-break dentro del bucket y `updated_at DESC` como último. Test `TestListEntriesOrderByStatus`.
+
+Pendiente activo en v0.6:
+
+- **Landing page pública**: espera export del diseño desde Claude Design (Anthropic Labs). No improvisar — esperar handoff.
+- **Brainstorming v1.0**: programado con skill `brainstorming` del plugin `superpowers` (obra/superpowers). Output va a `docs/superpowers/specs/2026-05-24-mokuji-v1.0-design.md`, después transición a `writing-plans` para plan ejecutable.
+
+### Backlog post-v0.6 / v1.0 (sin priorizar — pendiente del brainstorming)
+
+- Onboarding flow nuevo para users (no hay flow más allá del OTP).
+- Activity feed / capa social sobre `/u/{slug}`.
+- Bato.to como 4ta source (scaffolding listo).
+- Admin tool `POST /admin/link-source` (vincular sources manualmente, no user-facing).
+- `GET /admin/digest-status` (observabilidad del worker).
+- Layout desktop con sidebar (hoy `max-width: 42rem` centrado).
+- OpenGraph meta tags + cards 1200×630.
+- Passkeys / WebAuthn (research, no implementación).
+- Performance: CSS inline grande, 3 familias de fonts de Google.
+- Apertura comunidad: README más rico, contribution guide.
+- `Type=notify` con `sd_notify`. SMTP `:465`. Activity feed. Rating (este último explícitamente fuera de MVP).
 
 ## Cómo retomar
 

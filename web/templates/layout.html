@@ -4,6 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{block "title" .}}mokuji{{end}}</title>
+{{block "meta" .}}
+<meta name="description" content="Una biblioteca pública y self-hostable para tu manga. Cataloga, seguí capítulos nuevos, enlazá a la fuente. Sin algoritmos.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mokuji">
+<meta property="og:title" content="mokuji · una biblioteca para tu manga">
+<meta property="og:description" content="Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin recomendaciones — solo un índice prolijo de lo que importa.">
+<meta property="og:image" content="/static/og/og-default.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="es_AR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="mokuji · una biblioteca para tu manga">
+<meta name="twitter:description" content="Una biblioteca pública y self-hostable para tu manga.">
+<meta name="twitter:image" content="/static/og/og-default.png">
+{{end}}
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">

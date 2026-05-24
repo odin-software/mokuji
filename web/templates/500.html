@@ -1,0 +1,18 @@
+{{define "title"}}error · mokuji{{end}}
+{{define "content"}}
+<div class="error-page">
+  <div class="error-glyph">×</div>
+  <div class="error-body">
+    <p class="eyebrow">№ 500 · algo se rompió</p>
+    <h1>algo se rompió<br><span class="accent">de nuestro lado.</span></h1>
+    <p class="auth-lead" style="max-width:30rem;">ya lo loggeamos. probá refrescar la página o volvé en un rato. si seguís viendo esto, abrí un issue en github con el ID de error de abajo.</p>
+    {{if .ErrorID}}
+    <p class="error-id"><code>req · {{.RequestedAt}} · <strong>{{.ErrorID}}</strong></code></p>
+    {{end}}
+    <div class="error-ctas">
+      <a href="" onclick="event.preventDefault(); location.reload();" class="action-link">↻ reintentar</a>
+      <a href="/library" class="error-cta-secondary">← tu biblioteca</a>
+    </div>
+  </div>
+</div>
+{{end}}

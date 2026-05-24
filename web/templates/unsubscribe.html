@@ -1,26 +1,35 @@
 {{define "title"}}darse de baja — mokuji{{end}}
 {{define "content"}}
-<h1>darse de baja</h1>
+<div class="auth-page">
+  <p class="eyebrow">resumen semanal</p>
+  <h1>darse de <span class="accent">baja</span></h1>
 
-{{if eq .State "valid"}}
-  <p>confirma que quieres dejar de recibir el resumen semanal de releases.</p>
-  <form method="POST" action="/unsubscribe">
-    {{ csrfInput .Session }}
-    <input type="hidden" name="token" value="{{.Token}}">
-    <button type="submit">darme de baja</button>
-  </form>
-  <p class="muted">también puedes gestionar esto desde <a href="/settings">/settings</a> si tienes sesión.</p>
+  {{if eq .State "valid"}}
+    <p class="auth-lead">confirma que quieres dejar de recibir el resumen semanal de releases.</p>
+    <form method="POST" action="/unsubscribe">
+      {{ csrfInput .Session }}
+      <input type="hidden" name="token" value="{{.Token}}">
+      <button type="submit">darme de baja</button>
+    </form>
+    <p class="resend">también puedes gestionar esto desde <a href="/settings">/settings</a> si tienes sesión.</p>
 
-{{else if eq .State "done"}}
-  <p class="success">listo, no vas a recibir más resúmenes semanales.</p>
-  <p class="muted">si cambias de opinión, lo puedes re-activar desde <a href="/settings">/settings</a>.</p>
+  {{else if eq .State "done"}}
+    <p class="success">listo, no vas a recibir más resúmenes semanales.</p>
+    <p class="muted">si cambias de opinión, lo puedes re-activar desde <a href="/settings">/settings</a>.</p>
 
-{{else if eq .State "expired"}}
-  <p class="error">este link expiró.</p>
-  <p>los links de baja duran 90 días desde que se envía el email. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
+  {{else if eq .State "expired"}}
+    <div class="empty-state">
+      <span class="kanji">期</span>
+      <h2>link expirado</h2>
+      <p>los links de baja duran 90 días desde que se envía el email. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
+    </div>
 
-{{else}}
-  <p class="error">link inválido.</p>
-  <p>el link puede estar incompleto o haberse copiado mal. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
-{{end}}
+  {{else}}
+    <div class="empty-state">
+      <span class="kanji">無</span>
+      <h2>link inválido</h2>
+      <p>el link puede estar incompleto o haberse copiado mal. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
+    </div>
+  {{end}}
+</div>
 {{end}}

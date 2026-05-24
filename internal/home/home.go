@@ -77,6 +77,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 
 type homeData struct {
 	Email    string
+	Username string
 	Session  *session.Session
 	Releases []releaseshandler.Release
 	// HasUsername=false dispara el banner que invita a setear slug. Una vez
@@ -117,6 +118,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, "layout", homeData{
 		Email:       emailAddr,
+		Username:    slug.String,
 		Session:     s,
 		Releases:    releases,
 		HasUsername: slug.Valid,

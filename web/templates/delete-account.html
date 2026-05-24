@@ -1,15 +1,19 @@
 {{define "title"}}borrar cuenta — mokuji{{end}}
 {{define "content"}}
-<h1>borrar cuenta</h1>
-<p class="muted">cuenta: {{.Email}}</p>
+<header class="page-head">
+  <p class="eyebrow">cuenta · {{.Email}}</p>
+  <h1>borrar <span class="accent">cuenta</span></h1>
+</header>
 
-<p>borrar tu cuenta:</p>
-<ul>
-  <li>borra tu perfil, biblioteca, sesiones y códigos de acceso</li>
-  <li>no borra los manga ni capítulos compartidos con otros usuarios</li>
-  <li>deja un hash one-way en un audit log (sin info personal recuperable)</li>
-</ul>
-<p>tienes 7 días después de confirmar para cancelar el borrado. después de eso es permanente.</p>
+<div class="danger-callout">
+  <h2>esto borra</h2>
+  <p>tu perfil, biblioteca, sesiones y códigos de acceso.</p>
+  <h2 style="margin-top:0.75rem;">esto NO borra</h2>
+  <p>los manga ni capítulos compartidos con otros usuarios.</p>
+  <p>deja un hash one-way en un audit log (sin info personal recuperable).</p>
+  <h2 style="margin-top:0.75rem;">ventana de gracia</h2>
+  <p>tienes <strong>7 días</strong> después de confirmar para cancelar el borrado. después de eso es permanente.</p>
+</div>
 
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
@@ -19,7 +23,7 @@
     {{ csrfInput .Session }}
     <label>
       código
-      <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+      <input type="text" name="code" class="otp-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" required autofocus>
     </label>
     <button type="submit" class="danger">confirmar borrado</button>
   </form>

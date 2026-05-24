@@ -1,8 +1,12 @@
 {{define "title"}}agregar manga — mokuji{{end}}
 {{define "content"}}
-<h1>agregar manga</h1>
+<header class="page-head">
+  <p class="eyebrow">buscar · {{if .Source}}{{.Source}}{{else}}anilist{{end}}</p>
+  <h1>agregar <span class="accent">manga</span></h1>
+</header>
+
 <form method="GET" action="/library/search" class="search-form">
-  <input type="search" name="q" placeholder="buscar en anilist" value="{{.Query}}" autofocus required>
+  <input type="search" name="q" placeholder="buscar por título" value="{{.Query}}" autofocus required>
   <button type="submit">buscar</button>
 </form>
 
@@ -29,8 +33,12 @@
 {{end}}
 </ul>
 {{else if .Query}}
-<p class="muted">sin resultados para "{{.Query}}".</p>
+<div class="empty-state">
+  <span class="kanji">無</span>
+  <h2>sin resultados</h2>
+  <p>no encontramos nada para "<strong>{{.Query}}</strong>". probá con otro término o revisá la ortografía.</p>
+</div>
 {{end}}
 
-<p><a href="/library">← volver a tu biblioteca</a></p>
+<p class="user-links"><a href="/library">← volver a tu biblioteca</a></p>
 {{end}}

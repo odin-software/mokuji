@@ -345,6 +345,16 @@ type profileData struct {
 	IsOwner    bool
 	Visibility string
 	Entries    []ProfileEntry
+	// Counters opcional: si está nil, profile.html no renderiza el strip
+	// de contadores. Lo dejamos como hook para una iteración futura sin
+	// gastar SQL por ahora.
+	Counters *profileCounters
+}
+
+type profileCounters struct {
+	Reading   int
+	Planned   int
+	Completed int
 }
 
 // publicProfile resuelve dos formatos para {handle}:

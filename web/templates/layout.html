@@ -598,6 +598,135 @@ button.danger:hover { background: #8a2818; }
 }
 .empty-state h2 { margin: 0.5rem 0; font-size: 1.25rem; }
 .empty-state p { margin: 0.5rem auto; max-width: 24rem; color: var(--text-soft); font-family: var(--font-sans); font-size: 0.9375rem; }
+
+/* Phase 3 additions — append AFTER the Phase 2 additions in layout.html,
+   just before </style>. All new selectors; existing CSS untouched. */
+
+/* ── public profile header ─────────────────────────────────────────── */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.profile-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-sans);
+  font-weight: 900;
+  font-size: 1.625rem;
+  letter-spacing: -0.04em;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.profile-meta { min-width: 0; }
+.profile-meta h1 { margin: 0; font-size: 1.875rem; letter-spacing: -0.04em; }
+.profile-meta .profile-sub { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.04em; color: var(--text-muted); margin: 0.25rem 0 0; }
+
+.profile-counters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid var(--text);
+  margin: 1rem 0 1.5rem;
+}
+.profile-counter { padding: 0.75rem 0.875rem; border-left: 1px solid var(--text); }
+.profile-counter:first-child { border-left: 0; }
+.profile-counter .num { font-family: var(--font-sans); font-weight: 900; font-size: 1.75rem; letter-spacing: -0.03em; line-height: 1; }
+.profile-counter .label { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-top: 0.375rem; display: block; }
+.profile-counter--reading .num { color: var(--accent); }
+.profile-counter--planned .num { color: var(--text); }
+.profile-counter--completed .num { color: var(--text-muted); }
+
+/* ── danger callout (delete-account, restore-account) ──────────────── */
+.danger-callout {
+  border: 1.5px solid #a83422;
+  border-left-width: 4px;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0;
+  background: rgba(168, 52, 34, 0.08);
+}
+.danger-callout h2 { margin: 0 0 0.5rem; font-size: 1rem; color: #a83422; }
+.danger-callout p { margin: 0.25rem 0; font-size: 0.9375rem; }
+@media (prefers-color-scheme: dark) {
+  .danger-callout { border-color: var(--accent); background: rgba(214, 90, 64, 0.10); }
+  .danger-callout h2 { color: var(--accent); }
+}
+
+/* ── section block (settings, restore-account, etc.) ──────────────── */
+.block {
+  border: 1px solid var(--rule);
+  padding: 1rem;
+  margin: 0 0 1rem;
+  background: var(--bg);
+}
+.block .block-legend {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.block h2 { margin: 0 0 0.5rem; font-size: 1.125rem; }
+.block p { margin: 0.25rem 0; }
+.block form { margin-top: 0.75rem; }
+
+/* Phase 4 additions — append AFTER Phase 3 additions, before </style>.
+   Brand new selectors for error pages. */
+
+.error-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1.5rem 0 2.5rem;
+}
+@media (min-width: 36rem) {
+  .error-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 2.5rem; }
+}
+
+.error-glyph {
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: clamp(8rem, 24vw, 14rem);
+  color: var(--text);
+  line-height: 0.9;
+  text-align: center;
+}
+.error-glyph--accent { color: var(--accent); }
+
+.error-body h1 { font-size: clamp(2rem, 5vw, 3.25rem); line-height: 0.95; margin: 0.5rem 0 1rem; }
+.error-body .auth-lead { margin-top: 0; }
+.error-body .error-id {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--bg-2);
+  padding: 0.5rem 0.75rem;
+  letter-spacing: 0.02em;
+  margin: 0 0 1.25rem;
+}
+.error-body .error-id code { background: transparent; padding: 0; }
+
+.error-ctas { display: flex; flex-wrap: wrap; gap: 0.625rem; align-items: center; margin-top: 0.5rem; }
+.error-cta-secondary {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border: 1.5px solid var(--text);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.error-cta-secondary:hover { background: var(--text); color: var(--bg); }
 </style>
 </head>
 <body>

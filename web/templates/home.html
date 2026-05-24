@@ -1,6 +1,9 @@
 {{define "title"}}mokuji{{end}}
 {{define "content"}}
-<h1>hola, {{.Email}}</h1>
+<header class="page-head">
+  <p class="eyebrow">tu dashboard</p>
+  <h1>hola, <span class="accent">{{if .Username}}@{{.Username}}{{else}}{{.Email}}{{end}}</span></h1>
+</header>
 
 {{if not .HasUsername}}
 <p class="username-nudge">

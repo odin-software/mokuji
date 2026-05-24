@@ -1,6 +1,8 @@
 {{define "title"}}{{.Entry.Manga.Title}} — mokuji{{end}}
 
 {{define "content"}}
+<p class="muted" style="margin-bottom: 0.75rem;"><a href="/library">← biblioteca</a></p>
+
 <header class="entry-detail-header">
   {{if .Entry.Manga.CoverURL}}
     <img src="{{.Entry.Manga.CoverURL}}" alt="" class="cover entry-detail-cover" width="120" loading="lazy" referrerpolicy="no-referrer">
@@ -9,7 +11,7 @@
     <h1>{{.Entry.Manga.Title}}</h1>
     <p class="entry-detail-tags">
       <span class="status status-{{.Entry.Status}}">{{statusLabel .Entry.Status}}</span>
-      {{if .Entry.IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
+      {{if .Entry.IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
       {{template "mangadex-badge" .Entry}}
     </p>
     <p class="muted">
@@ -111,16 +113,36 @@
 {{else}}
   {{if eq .Entry.SourceStatus "matched"}}
     {{if .IncludeRead}}
-      <p class="muted">no hay capítulos publicados aún.</p>
+      <div class="empty-state">
+        <span class="kanji">未</span>
+        <h2>sin capítulos todavía</h2>
+        <p>la fuente está matched, pero no hay capítulos publicados aún.</p>
+      </div>
     {{else}}
-      <p class="muted">no hay capítulos nuevos. <a href="?include_read=1&sort={{.Sort}}">ver leídos</a>.</p>
+      <div class="empty-state">
+        <span class="kanji">了</span>
+        <h2>al día</h2>
+        <p>no hay capítulos nuevos. <a href="?include_read=1&sort={{.Sort}}">ver leídos</a>.</p>
+      </div>
     {{end}}
   {{else if eq .Entry.SourceStatus "needs_review"}}
-    <p class="muted">matching ambiguo en las sources — todavía no podemos seguir capítulos. usá los botones de arriba para reintentar.</p>
+    <div class="empty-state">
+      <span class="kanji">疑</span>
+      <h2>matching ambiguo</h2>
+      <p>las fuentes encontraron múltiples coincidencias. usá los botones de arriba para reintentar.</p>
+    </div>
   {{else if eq .Entry.SourceStatus "no_results"}}
-    <p class="muted">no encontramos este manga en ninguna source habilitada. no vamos a poder seguir capítulos automáticamente.</p>
+    <div class="empty-state">
+      <span class="kanji">無</span>
+      <h2>sin source</h2>
+      <p>no encontramos este manga en ninguna source habilitada. no vamos a poder seguir capítulos automáticamente.</p>
+    </div>
   {{else}}
-    <p class="muted">todavía no buscamos capítulos. el worker lo intentará en el próximo ciclo (~1h), o reintentá manualmente arriba.</p>
+    <div class="empty-state">
+      <span class="kanji">探</span>
+      <h2>buscando…</h2>
+      <p>todavía no buscamos capítulos. el worker lo intentará en el próximo ciclo (~1h), o reintentá manualmente arriba.</p>
+    </div>
   {{end}}
 {{end}}
 

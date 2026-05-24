@@ -1,9 +1,40 @@
 {{define "title"}}biblioteca de {{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} — mokuji{{end}}
 {{define "content"}}
-<h1>biblioteca de {{if .Slug}}@{{.Slug}}{{else}}<span class="muted">usuario #{{.UserID}}</span>{{end}}</h1>
+<header class="profile-header">
+  {{if .Slug}}
+    <div class="profile-avatar" aria-hidden="true">{{slice .Slug 0 1}}</div>
+    <div class="profile-meta">
+      <h1>@{{.Slug}}</h1>
+      <p class="profile-sub">biblioteca pública · {{len .Entries}} entrada{{if ne (len .Entries) 1}}s{{end}}</p>
+    </div>
+  {{else}}
+    <div class="profile-avatar" aria-hidden="true">#</div>
+    <div class="profile-meta">
+      <h1>usuario <span class="muted">#{{.UserID}}</span></h1>
+      <p class="profile-sub">biblioteca pública · {{len .Entries}} entrada{{if ne (len .Entries) 1}}s{{end}}</p>
+    </div>
+  {{end}}
+</header>
 
 {{if .IsOwner}}
-<p class="muted">esto es lo que el resto ve de tu biblioteca{{if eq .Visibility "private"}} (actualmente privada — solo tú puedes verla){{end}}.</p>
+<p class="muted" style="margin-top:0.75rem;">esto es lo que el resto ve de tu biblioteca{{if eq .Visibility "private"}} (actualmente privada — solo tú puedes verla){{end}}.</p>
+{{end}}
+
+{{if .Counters}}
+<div class="profile-counters">
+  <div class="profile-counter profile-counter--reading">
+    <div class="num">{{printf "%02d" .Counters.Reading}}</div>
+    <div class="label">leyendo</div>
+  </div>
+  <div class="profile-counter profile-counter--planned">
+    <div class="num">{{printf "%02d" .Counters.Planned}}</div>
+    <div class="label">por leer</div>
+  </div>
+  <div class="profile-counter profile-counter--completed">
+    <div class="num">{{printf "%02d" .Counters.Completed}}</div>
+    <div class="label">completado</div>
+  </div>
+</div>
 {{end}}
 
 {{if .Entries}}
@@ -12,14 +43,18 @@
   <li class="public-entry">
     {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
     <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
-    {{if .IsFavorite}}<span class="favorite" title="favorito">★</span>{{end}}
+    {{if .IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
     <strong>{{.Manga.Title}}</strong>
     {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
   </li>
 {{end}}
 </ul>
 {{else}}
-<p class="muted">biblioteca vacía.</p>
+<div class="empty-state">
+  <span class="kanji">{{if eq .Visibility "private"}}秘{{else}}白{{end}}</span>
+  <h2>{{if eq .Visibility "private"}}lista privada{{else}}biblioteca vacía{{end}}</h2>
+  <p>{{if eq .Visibility "private"}}solo el dueño puede verla.{{else}}todavía no agregaron nada.{{end}}</p>
+</div>
 {{end}}
 
 {{if .Session}}

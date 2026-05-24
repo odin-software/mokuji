@@ -1,7 +1,9 @@
 {{define "title"}}configuración — mokuji{{end}}
 {{define "content"}}
-<h1>configuración</h1>
-<p class="muted">cuenta: {{.Email}}</p>
+<header class="page-head">
+  <p class="eyebrow">cuenta · {{.Email}}</p>
+  <h1>configuración</h1>
+</header>
 
 {{if .Flash}}<p class="{{if eq .Flash.Kind "error"}}error{{else}}success{{end}}">{{.Flash.Message}}</p>{{end}}
 

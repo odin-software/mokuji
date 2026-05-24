@@ -162,6 +162,69 @@
   .landing-feature:last-child { border-right: 0; }
   .landing-feature-kanji { font-size: 3.5rem; }
 }
+
+.landing-close {
+  background: var(--text);
+  color: var(--bg);
+  padding: 2.5rem 1.5rem;
+  margin: 3rem -1.25rem 0;
+}
+.landing-close-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1rem;
+}
+.landing-close h2 {
+  font-family: var(--font-sans);
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+  margin: 0 0 1.25rem;
+  color: var(--bg);
+}
+.landing-close h2 .accent { color: var(--accent); }
+.landing-close-lead {
+  font-size: 1rem;
+  color: rgba(243, 237, 224, 0.7);
+  line-height: 1.5;
+  max-width: 28rem;
+  margin: 0 0 1.5rem;
+}
+.landing-close .landing-cta-primary {
+  background: var(--bg);
+  color: var(--text);
+}
+.landing-close .landing-cta-primary:hover { background: #fff; }
+.landing-close .landing-cta-secondary {
+  border-color: var(--bg);
+  color: var(--bg);
+}
+.landing-close .landing-cta-secondary:hover { background: var(--bg); color: var(--text); }
+
+.landing-footer {
+  background: var(--text);
+  color: rgba(243, 237, 224, 0.7);
+  padding: 1.5rem 1.5rem 1.75rem;
+  margin: 0 -1.25rem;
+  border-top: 1px solid rgba(243, 237, 224, 0.13);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.landing-footer a { color: rgba(243, 237, 224, 0.85); text-decoration: none; }
+.landing-footer a:hover { color: var(--bg); text-decoration: underline; }
+
+/* Cuando hay landing en /, el footer global de layout.html queda oculto:
+   el cierre oscuro del landing ya cumple su función. */
+body:has(.landing) > .app-footer { display: none; }
 </style>
 <div class="landing">
   <section class="landing-hero">
@@ -217,5 +280,23 @@
       <p class="landing-anti-body">sin recomendaciones · sin algoritmo · sin "para vos" · sin push molestos · sin social feed · sin métricas vanidosas.</p>
     </aside>
   </section>
+
+  <section class="landing-close" aria-labelledby="close-heading">
+    <p class="landing-close-eyebrow">№ 099 — empezar</p>
+    <h2 id="close-heading">Catalogá tu primera<br><span class="accent">entrada.</span></h2>
+    <p class="landing-close-lead">
+      Sin tarjeta. Sin email obligatorio en hosted. Código OTP por email o self-host — vos elegís dónde vive tu lista.
+    </p>
+    <div class="landing-ctas">
+      <a href="/auth" class="landing-cta-primary">Empezar a trackear →</a>
+      <a href="https://git.odin.do/odin/mokuji" class="landing-cta-secondary" rel="noopener">github · self-host</a>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <span>mokuji.org · <a href="/version">{{appVersion}}</a></span>
+    <span>"the table of contents, not the book."</span>
+    <span>© 2026 · agpl-3.0</span>
+  </footer>
 </div>
 {{end}}

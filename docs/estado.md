@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. **Producción corre v0.7.0** con identidad visual completa ("01 × 02-type"), landing pública, onboarding wizard, layout desktop con sidebar, y daily digest opt-in. Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
+Tracker de manga público en Go + SQLite. **Producción corre v0.8.0** con identidad visual completa, landing, onboarding wizard, layout desktop con sidebar, daily digest opt-in, y polish completo (empty states + microcopy + emails redesigned + favicons PNG + dark mode parity). Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
 
 Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
@@ -32,6 +32,7 @@ Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: ley
 | Fase 5 — Identidad visual | Rebrand "01 × 02-type" (paleta vermillón + cream + sumi-black, Albert Sans + Noto Serif JP + IBM Plex Mono, kanji 目次 wordmark), emails HTML multipart, 404/500 estilizados | [diseno-identidad](diseno-identidad.md) (✅ v0.5.0) |
 | v0.6 — Landing pública | Template responsive (mobile + desktop 1024px) + default OG/Twitter meta + OG card PNG 1200×630 | — (✅ v0.6.0) |
 | v0.7 — Cara externa completa | Onboarding wizard 3 pasos + auth redesign OTP + splash PWA + 5 variantes OG + desktop sidebar a 1024px + daily digest opt-in backend | — (✅ v0.7.0) |
+| v0.8 — Pulido | Empty states normalizados (6 kanji) + microcopy review + email templates redesigned (digest/otp/account-deletion) + favicons PNG completos + preload Google Fonts + dark mode parity audit + errrender package para 5xx estilizados | — (✅ v0.8.0) |
 
 ## Mapa de paquetes
 
@@ -179,7 +180,21 @@ Segunda fase del roadmap hacia v1.0. Cerró cara externa completa.
 - **Desktop sidebar a >=1024px** (`layout.html`): refactor `body { max-width }` → `.app-shell` grid `16rem 1fr`. Mobile <1024px sigue con nav top inside main. Desktop muestra sidebar lateral fijo con nav + perfil + logout + version.
 - **Daily digest backend** (migration `0012` + `internal/releases/digest/worker.go` + `internal/profile/profile.go`): nueva columna `users.digest_frequency` (`weekly`/`daily`/`off`), worker tickea cada hora dentro de 09-22 UTC y dispatch según frequency (`daily` siempre, `weekly` solo domingo). Settings reemplazó el checkbox por radio group de 3 opciones. Onboarding step 3 escribe `digest_frequency` + `onboarded_at` en el mismo POST.
 
-### Backlog post-v0.7 / v1.0 (sin priorizar — pendiente del brainstorming)
+Hotfix v0.7.1: padding lateral en desktop para `.app-shell` sin sidebar (landing y `/auth` quedaban pegadas al edge en pantallas anchas).
+
+### v0.8 — cerrado ✅ (branch `version-0-8`)
+
+Tercera fase del roadmap hacia v1.0. Cerró pulido.
+
+- **Empty states normalizados** (5 templates, 6 kanji): 白 biblioteca vacía / 無 sin coincidencias / 了 al día con releases / 秘 perfil privado / 待 buscando matches / 空 sin capítulos. `unsubscribe.html` movido de `.empty-state` a `.error-page` (semánticamente correcto). `library/entry.html` colapsado de 5 variantes a 2.
+- **Microcopy review** (auth): error strings refraseados con orientación accionable ("demasiados intentos. espera un momento" → "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar"). Variantes IP/email del rate limit ahora con copy uniforme al user.
+- **5xx estilizados** (`internal/errrender/`): nuevo paquete con `ErrorRenderer.InternalServerError(w, r)`. Wireado en 5 handlers user-facing (home/library/releases/auth/profile, ~38 call sites). Admin endpoints mantienen `http.Error` texto plano.
+- **Email templates redesign** (`web/emails/`): digest + otp + account-deletion alineados al handoff (outer cream `#dcd3bd` + paper card `#f3ede0` + header `目次 mokuji` + footer consistente). OTP usa grid de 6 dígitos en celdas table-based para compat con clientes legacy.
+- **Favicons completos** (`web/static/`): icon-180/192/512.png + icon-512-maskable.png + favicon.ico multi-resolution (16+32). Manifest declara 5 icons. Layout link tags actualizados (svg primario + PNG 512 fallback + apple-touch 180 + shortcut ICO).
+- **Performance** (`layout.html`): `<link rel="preload" as="style">` sobre el CSS de Google Fonts para reducir RTT crítico above-the-fold.
+- **Dark mode parity audit**: pasada sobre los 3 `@media (prefers-color-scheme: dark)` blocks. Gap encontrado y arreglado: `button.danger` no tenía override y quedaba apagado en dark. Override con `var(--accent)` + brighter hover.
+
+### Backlog post-v0.8 / v1.0 (sin priorizar — pendiente del brainstorming)
 
 - Onboarding flow nuevo para users (no hay flow más allá del OTP).
 - Activity feed / capa social sobre `/u/{slug}`.

@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. **Producción corre v0.5.0** con identidad visual completa ("01 × 02-type"). Trabajo activo en branch `version-0-6` apuntando a **v1.0** ("listo para promoción pública").
+Tracker de manga público en Go + SQLite. **Producción corre v0.6.0** con identidad visual completa ("01 × 02-type") y landing pública. Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
 
 Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
@@ -30,6 +30,7 @@ Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: ley
 | Fase 3 — Multi-source | Tabla `manga_sources` + `releasesource.Client` + Asura + Comick + backfill | [0014](adr/0014-fase-3-multi-source.md) (✅ v0.3.0) |
 | Fase 4 — Resiliencia / cuentas | Usernames `/u/{slug}`, flash messages, resiliencia digest (retry + recovery), separación `SMTP_FROM_PRODUCT`, rate limit `/unsubscribe` | — (✅ v0.4.0) |
 | Fase 5 — Identidad visual | Rebrand "01 × 02-type" (paleta vermillón + cream + sumi-black, Albert Sans + Noto Serif JP + IBM Plex Mono, kanji 目次 wordmark), emails HTML multipart, 404/500 estilizados | [diseno-identidad](diseno-identidad.md) (✅ v0.5.0) |
+| v0.6 — Landing pública | Template responsive (mobile + desktop 1024px) + default OG/Twitter meta + OG card PNG 1200×630 | — (✅ v0.6.0) |
 
 ## Mapa de paquetes
 
@@ -156,16 +157,15 @@ Vale dejarlos visibles para que no se rompa de nuevo en futuros deploys:
 
 Detalle en [decisiones-pendientes.md](decisiones-pendientes.md).
 
-### v0.6 — en progreso (branch `version-0-6`)
+### v0.6 — cerrado ✅ (branch `version-0-6`)
 
-Branch abierta como puente entre v0.5 (producción) y v1.0 (objetivo "shareable / promoción pública"). Trabajo cerrado hasta ahora:
+Primer minor del roadmap hacia v1.0 "shareable". Cerró landing pública +
+ordering de biblioteca.
 
 - **Orden biblioteca por estado** (`internal/library/library.go`): leyendo > por leer > completados, con favorito como tie-break dentro del bucket y `updated_at DESC` como último. Test `TestListEntriesOrderByStatus`.
-
-Pendiente activo en v0.6:
-
-- **Landing page pública**: espera export del diseño desde Claude Design (Anthropic Labs). No improvisar — esperar handoff.
-- **Brainstorming v1.0**: programado con skill `brainstorming` del plugin `superpowers` (obra/superpowers). Output va a `docs/superpowers/specs/2026-05-24-mokuji-v1.0-design.md`, después transición a `writing-plans` para plan ejecutable.
+- **Landing pública** en `/` para visitantes deslogueados (antes redirect a `/auth`). Mobile-first responsive con breakpoint desktop a 1024px. Portado de `dx-marketing.jsx` + `dx-marketing-more.jsx` del handoff Claude Design.
+- **OG meta tags por default** en `layout.html` (og:title, og:description, og:image, twitter:card) — variantes específicas por ruta llegan en v0.7. PNG en `web/static/og/og-default.png` (1200×630).
+- **app-nav global oculta cuando no hay sesión**: el landing controla su propio top bar editorial; las páginas auth tampoco muestran chrome de app.
 
 ### Backlog post-v0.6 / v1.0 (sin priorizar — pendiente del brainstorming)
 

@@ -233,3 +233,43 @@ func TestHomeHandlesMissingUser(t *testing.T) {
 		t.Errorf("status: esperado 500, obtenido %d", rec.Code)
 	}
 }
+
+func TestHome_LandingHasCriticalSections(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, esperado 200", w.Code)
+	}
+	body := w.Body.String()
+
+	// El test depende de strings concretos. Si el copy del landing cambia,
+	// actualizar el test. Es deliberado — el copy es producto, queremos
+	// que cambios pasen por revisión.
+	checks := map[string]string{
+		"hero copy":          "Una biblioteca",
+		"hero accent":        "para tu manga.",
+		"primary CTA target": `href="/auth"`,
+		"feature 01 kanji":   "登",
+		"feature 02 kanji":   "新",
+		"feature 03 kanji":   "蔵",
+		"feature 02 sources": "MangaDex y Asura",
+		"anti-feature":       "lo que no hace",
+		"closing CTA":        "Catalogá tu primera",
+		"footer tagline":     "table of contents, not the book",
+		"og image meta":      "og-default.png",
+		"twitter card":       "summary_large_image",
+	}
+	for name, needle := range checks {
+		if !strings.Contains(body, needle) {
+			t.Errorf("landing no contiene %s (esperaba %q)", name, needle)
+		}
+	}
+}

@@ -13,6 +13,9 @@
   "theme_color": "#1a1815",
   "icons": [
     { "src": "/static/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/static/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/static/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/static/icon-512-maskable.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
     { "src": "/static/icon-maskable.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
   ],
   "categories": ["books", "lifestyle"]

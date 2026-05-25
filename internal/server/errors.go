@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -31,6 +32,7 @@ func newErrorRenderer(htmlFS fs.FS, logger *slog.Logger) (*errorRenderer, error)
 	}
 	funcs := template.FuncMap{
 		"appVersion": func() string { return version.Value },
+		"csrfInput":  csrf.Input,
 	}
 	tmpl404, err := template.New("base").Funcs(funcs).ParseFS(htmlFS, "layout.html", "404.html")
 	if err != nil {

@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. **Producción corre v0.6.0** con identidad visual completa ("01 × 02-type") y landing pública. Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
+Tracker de manga público en Go + SQLite. **Producción corre v0.7.0** con identidad visual completa ("01 × 02-type"), landing pública, onboarding wizard, layout desktop con sidebar, y daily digest opt-in. Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
 
 Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
@@ -31,6 +31,7 @@ Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: ley
 | Fase 4 — Resiliencia / cuentas | Usernames `/u/{slug}`, flash messages, resiliencia digest (retry + recovery), separación `SMTP_FROM_PRODUCT`, rate limit `/unsubscribe` | — (✅ v0.4.0) |
 | Fase 5 — Identidad visual | Rebrand "01 × 02-type" (paleta vermillón + cream + sumi-black, Albert Sans + Noto Serif JP + IBM Plex Mono, kanji 目次 wordmark), emails HTML multipart, 404/500 estilizados | [diseno-identidad](diseno-identidad.md) (✅ v0.5.0) |
 | v0.6 — Landing pública | Template responsive (mobile + desktop 1024px) + default OG/Twitter meta + OG card PNG 1200×630 | — (✅ v0.6.0) |
+| v0.7 — Cara externa completa | Onboarding wizard 3 pasos + auth redesign OTP + splash PWA + 5 variantes OG + desktop sidebar a 1024px + daily digest opt-in backend | — (✅ v0.7.0) |
 
 ## Mapa de paquetes
 
@@ -167,7 +168,18 @@ ordering de biblioteca.
 - **OG meta tags por default** en `layout.html` (og:title, og:description, og:image, twitter:card) — variantes específicas por ruta llegan en v0.7. PNG en `web/static/og/og-default.png` (1200×630).
 - **app-nav global oculta cuando no hay sesión**: el landing controla su propio top bar editorial; las páginas auth tampoco muestran chrome de app.
 
-### Backlog post-v0.6 / v1.0 (sin priorizar — pendiente del brainstorming)
+### v0.7 — cerrado ✅ (branch `version-0-7`)
+
+Segunda fase del roadmap hacia v1.0. Cerró cara externa completa.
+
+- **Onboarding wizard** (`internal/onboarding/`): 3 pasos post-OTP — cataloga (登) / monitoreamos (新) / digest prefs (始). Gateado por `users.onboarded_at` via middleware `onboardingRedirect`. Backfill setea `created_at` para users existentes (no predatory).
+- **Auth redesign** (`web/templates/auth/start.html` + `verify.html`): copy traducido del handoff "magic link" → "código de 6 dígitos OTP". Kanji 封 en verify, hidden email field preservado.
+- **Splash PWA** (`web/manifest.webmanifest`): `background_color: #1a1815` (sumi-black) para que iOS renderee splash oscuro con el icon SVG en blanco. `display_override`, `categories`, `dir/lang` explícitos.
+- **OG variantes per-route**: 5 PNGs adicionales (`og-release.png`, `og-selfhost.png`, `og-minimal.png`, `og-profile.png`, `og-entry.png` — todos 1200×630) + override del bloque `meta` en `entry.html`, `releases.html`, `profile.html`.
+- **Desktop sidebar a >=1024px** (`layout.html`): refactor `body { max-width }` → `.app-shell` grid `16rem 1fr`. Mobile <1024px sigue con nav top inside main. Desktop muestra sidebar lateral fijo con nav + perfil + logout + version.
+- **Daily digest backend** (migration `0012` + `internal/releases/digest/worker.go` + `internal/profile/profile.go`): nueva columna `users.digest_frequency` (`weekly`/`daily`/`off`), worker tickea cada hora dentro de 09-22 UTC y dispatch según frequency (`daily` siempre, `weekly` solo domingo). Settings reemplazó el checkbox por radio group de 3 opciones. Onboarding step 3 escribe `digest_frequency` + `onboarded_at` en el mismo POST.
+
+### Backlog post-v0.7 / v1.0 (sin priorizar — pendiente del brainstorming)
 
 - Onboarding flow nuevo para users (no hay flow más allá del OTP).
 - Activity feed / capa social sobre `/u/{slug}`.

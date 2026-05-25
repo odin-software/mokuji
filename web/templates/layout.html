@@ -155,12 +155,23 @@ body {
     grid-template-columns: 16rem 1fr;
     min-height: 100vh;
   }
-  /* Sin sesión (landing, /auth): no hay .app-sidebar; el grid degrada a una
-     sola columna full-width para que la página no quede aplastada en 16rem. */
+  /* Sin sesión (landing, /auth): no hay .app-sidebar; el grid degrada a
+     single-column con padding lateral generoso para que el contenido no
+     quede pegado al borde del viewport en pantallas grandes. */
   .app-shell:not(:has(> .app-sidebar)) {
     display: block;
     max-width: none;
     margin: 0;
+    padding: 2rem 2.5rem;
+  }
+  /* La landing tiene secciones que bleed full-width (close oscura, footer
+     oscuro). Sus margin negativos -1.25rem estaban calibrados para el
+     padding mobile del shell. En desktop la padding del shell es 2.5rem,
+     así que las override para que sigan llegando al borde. */
+  .app-shell:not(:has(> .app-sidebar)) .landing-close,
+  .app-shell:not(:has(> .app-sidebar)) .landing-footer {
+    margin-left: -2.5rem;
+    margin-right: -2.5rem;
   }
   .app-sidebar {
     display: flex;

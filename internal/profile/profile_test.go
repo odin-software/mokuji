@@ -154,41 +154,53 @@ func TestUpdateSettingsPersists(t *testing.T) {
 	}
 }
 
-func TestUpdateSettingsTogglesDigest(t *testing.T) {
+func TestUpdateSettingsDigestFrequency(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db)
 	userID := insertUser(t, db, "alice@example.com")
-	// El default de la migration es 1 (ON). Confirmamos punto de partida.
-	var before int
-	db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, userID).Scan(&before)
-	if before != 1 {
-		t.Fatalf("estado inicial esperado 1 (ON), obtenido %d", before)
+	// El default de la migration es 'weekly'. Confirmamos punto de partida.
+	var before string
+	db.QueryRow(`SELECT digest_frequency FROM users WHERE id = ?`, userID).Scan(&before)
+	if before != "weekly" {
+		t.Fatalf("estado inicial esperado 'weekly', obtenido %q", before)
 	}
 
-	// Submit del form SIN el checkbox => digest OFF.
-	form := url.Values{"list_visibility": {"public"}}
+	// Cambiar a 'daily'.
+	form := url.Values{"list_visibility": {"public"}, "digest_frequency": {"daily"}}
 	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = session.WithUserID(req, userID)
 	rec := httptest.NewRecorder()
 	h.updateSettings(rec, req)
 
-	var got int
-	db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, userID).Scan(&got)
-	if got != 0 {
-		t.Errorf("digest no se desactivó: esperado 0, obtenido %d", got)
+	var got string
+	db.QueryRow(`SELECT digest_frequency FROM users WHERE id = ?`, userID).Scan(&got)
+	if got != "daily" {
+		t.Errorf("digest no se actualizó a 'daily': obtenido %q", got)
 	}
 
-	// Volver a activar.
-	form2 := url.Values{"list_visibility": {"public"}, "email_digest_enabled": {"on"}}
+	// Cambiar a 'off'.
+	form2 := url.Values{"list_visibility": {"public"}, "digest_frequency": {"off"}}
 	req2 := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form2.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req2 = session.WithUserID(req2, userID)
 	h.updateSettings(httptest.NewRecorder(), req2)
 
-	db.QueryRow(`SELECT email_digest_enabled FROM users WHERE id = ?`, userID).Scan(&got)
-	if got != 1 {
-		t.Errorf("digest no se reactivó: esperado 1, obtenido %d", got)
+	db.QueryRow(`SELECT digest_frequency FROM users WHERE id = ?`, userID).Scan(&got)
+	if got != "off" {
+		t.Errorf("digest no se actualizó a 'off': obtenido %q", got)
+	}
+
+	// Valor inválido cae a 'weekly' (safe default).
+	form3 := url.Values{"list_visibility": {"public"}, "digest_frequency": {"bogus"}}
+	req3 := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form3.Encode()))
+	req3.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req3 = session.WithUserID(req3, userID)
+	h.updateSettings(httptest.NewRecorder(), req3)
+
+	db.QueryRow(`SELECT digest_frequency FROM users WHERE id = ?`, userID).Scan(&got)
+	if got != "weekly" {
+		t.Errorf("valor inválido no cayó a 'weekly': obtenido %q", got)
 	}
 }
 

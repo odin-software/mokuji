@@ -151,10 +151,10 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 // ---- /settings ----
 
 type settingsData struct {
-	Session       *session.Session
-	Visibility    string
-	Email         string
-	DigestEnabled bool
+	Session         *session.Session
+	Visibility      string
+	Email           string
+	DigestFrequency string // 'weekly' | 'daily' | 'off'
 
 	// Flash es el mensaje one-shot post-redirect (cookie efímera).
 	// nil si no hay nada que mostrar.
@@ -189,12 +189,11 @@ func (h *Handler) renderSettings(w http.ResponseWriter, r *http.Request, draft, 
 	}
 
 	var (
-		visibility, emailAddr string
-		digestEnabled         int
+		visibility, emailAddr, digestFreq string
 	)
 	if err := h.db.QueryRowContext(r.Context(),
-		`SELECT list_visibility, email, email_digest_enabled FROM users WHERE id = ?`, s.UserID,
-	).Scan(&visibility, &emailAddr, &digestEnabled); err != nil {
+		`SELECT list_visibility, email, digest_frequency FROM users WHERE id = ?`, s.UserID,
+	).Scan(&visibility, &emailAddr, &digestFreq); err != nil {
 		h.logger.Error("cargar settings", "err", err, "user_id", s.UserID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -232,7 +231,7 @@ func (h *Handler) renderSettings(w http.ResponseWriter, r *http.Request, draft, 
 		Session:          s,
 		Visibility:       visibility,
 		Email:            emailAddr,
-		DigestEnabled:    digestEnabled == 1,
+		DigestFrequency:  digestFreq,
 		Flash:            fl,
 		Username:         slug.String,
 		UsernameDraft:    draft,
@@ -258,13 +257,16 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	digestEnabled := r.PostFormValue("email_digest_enabled") == "on"
+	freq := r.PostFormValue("digest_frequency")
+	if freq != "weekly" && freq != "daily" && freq != "off" {
+		freq = "weekly"
+	}
 
 	if _, err := h.db.ExecContext(r.Context(), `
 		UPDATE users
-		SET list_visibility = ?, email_digest_enabled = ?
+		SET list_visibility = ?, digest_frequency = ?
 		WHERE id = ?
-	`, vis, boolToInt(digestEnabled), s.UserID); err != nil {
+	`, vis, freq, s.UserID); err != nil {
 		h.logger.Error("actualizar settings", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -276,12 +278,6 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
 
 // updateUsername procesa el POST del form de username. En éxito redirige a
 // /settings?saved=username; en error de validación o conflicto, re-renderea

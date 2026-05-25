@@ -52,13 +52,33 @@
       </span>
     </label>
   </fieldset>
-  <fieldset class="settings-section">
-    <legend>notificaciones por email</legend>
-    <label class="checkbox">
-      <input type="checkbox" name="email_digest_enabled"{{if .DigestEnabled}} checked{{end}}>
+  <fieldset class="block">
+    <legend class="block-legend">digest por email</legend>
+    <p class="muted" style="margin-bottom: 0.75rem;">
+      cuándo te avisamos de capítulos nuevos. opt-in — nunca te llenamos la inbox.
+    </p>
+
+    <label class="radio" style="margin-bottom: 0.5rem;">
+      <input type="radio" name="digest_frequency" value="weekly" {{if eq .DigestFrequency "weekly"}}checked{{end}}>
       <span>
-        <strong>resumen semanal</strong>
-        <span class="muted">recibe un email los domingos con los capítulos nuevos de tu biblioteca</span>
+        <strong>semanal · domingos</strong>
+        <code>un solo email · prolijo</code>
+      </span>
+    </label>
+
+    <label class="radio" style="margin-bottom: 0.5rem;">
+      <input type="radio" name="digest_frequency" value="daily" {{if eq .DigestFrequency "daily"}}checked{{end}}>
+      <span>
+        <strong>diario · 09:00 UTC</strong>
+        <code>resumen de cada día · más rápido</code>
+      </span>
+    </label>
+
+    <label class="radio" style="margin-bottom: 0.75rem;">
+      <input type="radio" name="digest_frequency" value="off" {{if eq .DigestFrequency "off"}}checked{{end}}>
+      <span>
+        <strong>sin emails</strong>
+        <code>solo dentro de la app</code>
       </span>
     </label>
   </fieldset>

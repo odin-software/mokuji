@@ -1,26 +1,19 @@
 {
-  "name": "mokuji",
+  "name": "mokuji · table of contents",
   "short_name": "mokuji",
-  "description": "目次 — una biblioteca para tu manga. tracker público y self-hostable.",
+  "description": "Una biblioteca pública y self-hostable para tu manga. Cataloga, seguí capítulos nuevos, enlazá a la fuente.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
-  "lang": "es",
-  "background_color": "#f3ede0",
+  "lang": "es-AR",
+  "dir": "ltr",
+  "background_color": "#1a1815",
   "theme_color": "#1a1815",
   "icons": [
-    {
-      "src": "/static/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/icon-maskable.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "maskable"
-    }
-  ]
+    { "src": "/static/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "/static/icon-maskable.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+  ],
+  "categories": ["books", "lifestyle"]
 }

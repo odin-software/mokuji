@@ -166,7 +166,7 @@ func (h *Handler) finish(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
-func (h *Handler) render(w http.ResponseWriter, tmpl *template.Template, label string, data interface{}) {
+func (h *Handler) render(w http.ResponseWriter, tmpl *template.Template, label string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		h.logger.Error("renderizar onboarding", "step", label, "err", err)

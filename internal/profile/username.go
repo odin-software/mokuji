@@ -130,7 +130,7 @@ func (h *Handler) upsertUsername(ctx context.Context, userID int64, newSlug stri
 	}
 
 	// Cooldown solo aplica si ya había slug y está cambiando. Setear el
-	// mismo slug que ya tenés es no-op (silencioso).
+	// mismo slug que ya tienes es no-op (silencioso).
 	if currentSlug.Valid && currentSlug.String == newSlug {
 		return nil
 	}

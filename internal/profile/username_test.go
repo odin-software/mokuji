@@ -85,7 +85,7 @@ func TestUpsertUsernameHappyPath(t *testing.T) {
 }
 
 func TestUpsertUsernameSameSlugIsNoop(t *testing.T) {
-	// Setear el mismo slug que ya tenés no debe contar como cambio
+	// Setear el mismo slug que ya tienes no debe contar como cambio
 	// (no actualiza slug_changed_at, no triggerea cooldown).
 	db := setupDB(t)
 	h := newFullHandler(t, db)

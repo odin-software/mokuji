@@ -262,7 +262,7 @@ func TestHome_LandingHasCriticalSections(t *testing.T) {
 		"feature 03 kanji":   "蔵",
 		"feature 02 sources": "MangaDex y Asura",
 		"anti-feature":       "lo que no hace",
-		"closing CTA":        "Catalogá tu primera",
+		"closing CTA":        "Cataloga tu primera",
 		"footer tagline":     "table of contents, not the book",
 		"og image meta":      "og-default.png",
 		"twitter card":       "summary_large_image",

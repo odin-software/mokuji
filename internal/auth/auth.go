@@ -198,7 +198,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
 	if !h.startIPLim.Allow(ip) {
 		h.render(w, r, "auth/start.html", startData{
-			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
+			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
 		})
 		return
 	}
@@ -220,7 +220,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if !h.startEmailLim.Allow(emailAddr) {
 		h.render(w, r, "auth/start.html", startData{
 			Email: emailAddr,
-			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
+			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
 		})
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	if !h.verifyIPLim.Allow(h.clientIP(r)) {
 		h.render(w, r, "auth/verify.html", verifyData{
 			Email: r.URL.Query().Get("email"),
-			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
+			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
 		})
 		return
 	}
@@ -295,11 +295,11 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	otp := code.Sanitize(r.PostFormValue("code"))
 
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
-		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el email no parece válido. probá con el formato nombre@dominio."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el email no parece válido. prueba con el formato nombre@dominio."})
 		return
 	}
 	if !code.Valid(otp) {
-		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido. fijate que sean 6 dígitos sin espacios."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido. fíjate que sean 6 dígitos sin espacios."})
 		return
 	}
 
@@ -310,7 +310,7 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido o ya expiró. volvé a /auth para pedir uno nuevo."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido o ya expiró. vuelve a /auth para pedir uno nuevo."})
 		return
 	}
 

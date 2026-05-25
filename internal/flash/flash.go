@@ -30,7 +30,7 @@ import (
 )
 
 // Constantes públicas para el "kind" del mensaje. El template decide
-// cómo renderearlas (color, ícono). Si agregás un kind nuevo, actualizá
+// cómo renderearlas (color, ícono). Si agregas un kind nuevo, actualiza
 // los templates que renderean flashes.
 const (
 	KindSuccess = "success"

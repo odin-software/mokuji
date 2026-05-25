@@ -308,6 +308,10 @@ button {
 button:hover { background: var(--button-bg-hover); }
 button.danger { background: #a83422; color: #fff; }
 button.danger:hover { background: #8a2818; }
+@media (prefers-color-scheme: dark) {
+  button.danger { background: var(--accent); color: var(--bg); }
+  button.danger:hover { background: #e26b51; }
+}
 
 .error {
   padding: 0.625rem 0.875rem;

@@ -126,37 +126,17 @@
 {{end}}
 </ul>
 {{else}}
-  {{if eq .Entry.SourceStatus "matched"}}
-    {{if .IncludeRead}}
-      <div class="empty-state">
-        <span class="kanji">未</span>
-        <h2>sin capítulos todavía</h2>
-        <p>la fuente está matched, pero no hay capítulos publicados aún.</p>
-      </div>
-    {{else}}
-      <div class="empty-state">
-        <span class="kanji">了</span>
-        <h2>al día</h2>
-        <p>no hay capítulos nuevos. <a href="?include_read=1&sort={{.Sort}}">ver leídos</a>.</p>
-      </div>
-    {{end}}
-  {{else if eq .Entry.SourceStatus "needs_review"}}
+  {{if eq .Entry.SourceStatus "unmatched"}}
     <div class="empty-state">
-      <span class="kanji">疑</span>
-      <h2>matching ambiguo</h2>
-      <p>las fuentes encontraron múltiples coincidencias. usá los botones de arriba para reintentar.</p>
-    </div>
-  {{else if eq .Entry.SourceStatus "no_results"}}
-    <div class="empty-state">
-      <span class="kanji">無</span>
-      <h2>sin source</h2>
-      <p>no encontramos este manga en ninguna source habilitada. no vamos a poder seguir capítulos automáticamente.</p>
+      <span class="kanji">待</span>
+      <h2>buscando capítulos.</h2>
+      <p>estamos cruzando este título con las sources. tardamos pocos minutos — actualizá la página.</p>
     </div>
   {{else}}
     <div class="empty-state">
-      <span class="kanji">探</span>
-      <h2>buscando…</h2>
-      <p>todavía no buscamos capítulos. el worker lo intentará en el próximo ciclo (~1h), o reintentá manualmente arriba.</p>
+      <span class="kanji">空</span>
+      <h2>sin capítulos todavía.</h2>
+      <p>no encontramos releases en las sources que conectamos. probá reintentar la búsqueda o vincular una source manualmente.</p>
     </div>
   {{end}}
 {{end}}

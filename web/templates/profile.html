@@ -65,11 +65,19 @@
 {{end}}
 </ul>
 {{else}}
-<div class="empty-state">
-  <span class="kanji">{{if eq .Visibility "private"}}秘{{else}}白{{end}}</span>
-  <h2>{{if eq .Visibility "private"}}lista privada{{else}}biblioteca vacía{{end}}</h2>
-  <p>{{if eq .Visibility "private"}}solo el dueño puede verla.{{else}}todavía no agregaron nada.{{end}}</p>
-</div>
+  {{if eq .Visibility "private"}}
+  <div class="empty-state">
+    <span class="kanji">秘</span>
+    <h2>lista privada.</h2>
+    <p>este usuario eligió mantener su biblioteca oculta.</p>
+  </div>
+  {{else}}
+  <div class="empty-state">
+    <span class="kanji">白</span>
+    <h2>biblioteca vacía.</h2>
+    <p>{{if .Slug}}@{{.Slug}}{{else}}este usuario{{end}} todavía no agregó manga.</p>
+  </div>
+  {{end}}
 {{end}}
 
 {{if .Session}}

@@ -74,15 +74,15 @@
 {{else if or (ne .Filter "all") .Query}}
 <div class="empty-state">
   <span class="kanji">無</span>
-  <h2>sin coincidencias</h2>
-  <p>no hay entries que coincidan con el filtro. prueba <a href="/library">limpiarlo</a>.</p>
+  <h2>0 coincidencias.</h2>
+  <p>nada en tu lista matchea estos filtros. probá borrar la búsqueda o cambiar el estado.</p>
 </div>
 {{else}}
 <div class="empty-state">
   <span class="kanji">白</span>
-  <h2>tu índice está en blanco</h2>
-  <p>buscá el primer título y agregalo. mokuji empieza a seguir los capítulos nuevos en el próximo ciclo.</p>
-  <p style="margin-top:1.25rem;"><a href="/library/search" class="action-link">buscar manga →</a></p>
+  <h2>tu índice está en blanco.</h2>
+  <p>agregá tu primer manga — buscá por título y guardalo con tu progreso.</p>
+  <a href="/library/search" class="action-link">+ agregar manga</a>
 </div>
 {{end}}
 

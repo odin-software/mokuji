@@ -31,6 +31,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
+	"git.odin.do/kengru/mokuji/internal/onboarding"
 	"git.odin.do/kengru/mokuji/internal/mangadex"
 	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/mangasource/anilist"
@@ -291,6 +292,15 @@ func main() {
 		log.Fatalf("configurar releases: %v", err)
 	}
 
+	onboardingHandler, err := onboarding.New(onboarding.Config{
+		DB:            db,
+		HTMLTemplates: htmlFS,
+		Logger:        logger.With("component", "onboarding"),
+	})
+	if err != nil {
+		log.Fatalf("crear handler onboarding: %v", err)
+	}
+
 	// home se construye después de releasesHandler porque el widget de
 	// "últimos releases" en / reusa el método UnreadReleases. El orden
 	// importa solo para wiring; no hay ciclo de import (home → releases).
@@ -385,6 +395,7 @@ func main() {
 		Auth:          authHandler,
 		Home:          homeHandler,
 		Library:       libraryHandler,
+		Onboarding:    onboardingHandler,
 		Profile:       profileHandler,
 		Releases:      releasesHandler,
 		Unsubscribe:   unsubHandler,

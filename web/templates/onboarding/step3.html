@@ -1,0 +1,59 @@
+{{define "title"}}digest · mokuji{{end}}
+{{define "content"}}
+<div class="onb">
+  <div class="onb-progress" aria-hidden="true">
+    <span class="onb-progress-step"></span>
+    <span class="onb-progress-step"></span>
+    <span class="onb-progress-step onb-progress-active"></span>
+  </div>
+  <div class="onb-visual" aria-hidden="true">
+    <span class="onb-kanji">始</span>
+  </div>
+  <p class="eyebrow">03 — tu digest</p>
+  <h1>cuándo te avisamos<br><span class="accent">de capítulos nuevos.</span></h1>
+  <p class="onb-body">
+    nunca te llenamos la inbox. opt-in, cancelable cuando quieras desde /settings.
+  </p>
+
+  <form method="POST" action="/onboarding/finish">
+    {{csrfInput .Session}}
+    <label class="radio" style="margin-bottom: 0.5rem;">
+      <input type="radio" name="digest_frequency" value="weekly" checked>
+      <span>
+        <strong>semanal · domingos</strong>
+        <code>un solo email · prolijo</code>
+      </span>
+    </label>
+    <label class="radio" style="margin-bottom: 0.5rem;">
+      <input type="radio" name="digest_frequency" value="daily">
+      <span>
+        <strong>diario · 09:00 UTC</strong>
+        <code>resumen de cada día · más rápido</code>
+      </span>
+    </label>
+    <label class="radio" style="margin-bottom: 1rem;">
+      <input type="radio" name="digest_frequency" value="off">
+      <span>
+        <strong>sin emails</strong>
+        <code>solo dentro de la app</code>
+      </span>
+    </label>
+    <button type="submit" class="onb-cta-primary">empezar →</button>
+    <p class="muted" style="text-align: center; margin-top: 0.75rem;">
+      <a href="/onboarding/step2">← atrás</a>
+    </p>
+  </form>
+</div>
+<style>
+.onb { max-width: 26rem; margin: 0 auto; padding: 1rem 0; }
+.onb-progress { display: flex; gap: 0.25rem; margin-bottom: 2rem; }
+.onb-progress-step { display: block; width: 1.125rem; height: 3px; background: rgba(26, 24, 21, 0.13); }
+.onb-progress-active { width: 2rem; background: var(--accent); }
+.onb-visual { display: grid; place-items: center; padding: 1rem 0 1.5rem; }
+.onb-kanji { font-family: var(--font-jp); font-size: 10rem; font-weight: 900; color: var(--accent); line-height: 1; }
+.onb h1 { font-size: clamp(2.25rem, 7vw, 3.5rem); line-height: 0.95; letter-spacing: -0.035em; margin: 0 0 1rem; }
+.onb-body { font-size: 0.9375rem; color: var(--text-soft); line-height: 1.55; margin-bottom: 1.25rem; }
+.onb-cta-primary { display: block; width: 100%; background: var(--button-bg); color: var(--button-fg); padding: 0.875rem 1.25rem; font-weight: 700; text-align: center; text-decoration: none; border: 0; cursor: pointer; font-size: 0.9375rem; }
+.onb-cta-primary:hover { background: var(--button-bg-hover); }
+</style>
+{{end}}

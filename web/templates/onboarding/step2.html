@@ -1,0 +1,36 @@
+{{define "title"}}releases · mokuji{{end}}
+{{define "content"}}
+<div class="onb">
+  <div class="onb-progress" aria-hidden="true">
+    <span class="onb-progress-step"></span>
+    <span class="onb-progress-step onb-progress-active"></span>
+    <span class="onb-progress-step"></span>
+  </div>
+  <div class="onb-visual" aria-hidden="true">
+    <span class="onb-kanji">新</span>
+  </div>
+  <p class="eyebrow">02 — qué monitoreamos</p>
+  <h1>capítulos nuevos,<br><span class="accent">cuando salen.</span></h1>
+  <p class="onb-body">
+    seguimos <strong>MangaDex</strong> y <strong>Asura</strong> automáticamente. no tenés que configurar nada — cuando agregás un manga, encontramos las sources solas.
+  </p>
+  <div class="onb-ctas">
+    <a href="/onboarding/step3" class="onb-cta-primary">seguir →</a>
+    <a href="/onboarding" class="onb-cta-skip">← atrás</a>
+  </div>
+</div>
+<style>
+.onb { max-width: 26rem; margin: 0 auto; padding: 1rem 0; }
+.onb-progress { display: flex; gap: 0.25rem; margin-bottom: 2rem; }
+.onb-progress-step { display: block; width: 1.125rem; height: 3px; background: rgba(26, 24, 21, 0.13); }
+.onb-progress-active { width: 2rem; background: var(--accent); }
+.onb-visual { display: grid; place-items: center; padding: 1rem 0 1.5rem; }
+.onb-kanji { font-family: var(--font-jp); font-size: 10rem; font-weight: 900; color: var(--accent); line-height: 1; }
+.onb h1 { font-size: clamp(2.25rem, 7vw, 3.5rem); line-height: 0.95; letter-spacing: -0.035em; margin: 0 0 1rem; }
+.onb-body { font-size: 0.9375rem; color: var(--text-soft); line-height: 1.55; margin-bottom: 1.75rem; }
+.onb-ctas { display: flex; flex-direction: column; gap: 0.75rem; }
+.onb-cta-primary { background: var(--button-bg); color: var(--button-fg); padding: 0.875rem 1.25rem; font-weight: 700; text-align: center; text-decoration: none; }
+.onb-cta-primary:hover { background: var(--button-bg-hover); }
+.onb-cta-skip { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-muted); text-align: center; letter-spacing: 0.04em; }
+</style>
+{{end}}

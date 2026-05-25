@@ -41,6 +41,9 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Unsubscribe != nil {
 		s.cfg.Unsubscribe.Mount(mux)
 	}
+	if s.cfg.Onboarding != nil {
+		s.cfg.Onboarding.Mount(mux)
+	}
 	if s.cfg.Admin != nil {
 		s.cfg.Admin.Mount(mux)
 	}

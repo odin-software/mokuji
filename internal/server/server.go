@@ -18,6 +18,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
+	"git.odin.do/kengru/mokuji/internal/onboarding"
 	"git.odin.do/kengru/mokuji/internal/profile"
 	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -36,6 +37,7 @@ type Config struct {
 	Library     *library.Handler
 	Profile     *profile.Handler
 	Releases    *releaseshandler.Handler
+	Onboarding  *onboarding.Handler
 	Unsubscribe *unsubscribe.Handler
 	Admin       *admin.Handler
 	// StaticAssets es el FS de la carpeta web/ del repo (contiene static/,

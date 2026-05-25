@@ -57,7 +57,7 @@ func (h *Handler) emailRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.Error("email read: mark", "user_id", userID, "chapter_id", chapterID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 

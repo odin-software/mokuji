@@ -141,7 +141,7 @@ func (h *Handler) entrySourceRetry(w http.ResponseWriter, r *http.Request) {
 	if err := h.upsertMangaSource(r.Context(), entry.Manga.ID, sourceName, string(result.Status), sourceID); err != nil {
 		h.logger.Error("entry source retry: upsert",
 			"manga_id", entry.Manga.ID, "source", sourceName, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
@@ -163,7 +163,7 @@ func (h *Handler) entrySourceUnlink(w http.ResponseWriter, r *http.Request) {
 		entry.Manga.ID, sourceName,
 	); err != nil {
 		h.logger.Error("entry source unlink", "manga_id", entry.Manga.ID, "source", sourceName, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
@@ -186,7 +186,7 @@ func (h *Handler) parseSourceForm(w http.ResponseWriter, r *http.Request) (s *se
 	loaded, exists, err := h.loadEntry(r.Context(), s.UserID, entryID)
 	if err != nil {
 		h.logger.Error("parse source form: load entry", "err", err, "entry_id", entryID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return nil, nil, "", false
 	}
 	if !exists {

@@ -83,13 +83,13 @@ func (h *Handler) exportData(w http.ResponseWriter, r *http.Request) {
 	profile, err := h.loadProfile(r.Context(), s.UserID)
 	if err != nil {
 		h.logger.Error("export: cargar perfil", "user_id", s.UserID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	entries, err := h.loadExportLibrary(r.Context(), s.UserID)
 	if err != nil {
 		h.logger.Error("export: cargar biblioteca", "user_id", s.UserID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 

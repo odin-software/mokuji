@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -37,6 +38,7 @@ type Config struct {
 	DB            *sql.DB
 	HTMLTemplates fs.FS
 	Logger        *slog.Logger
+	Errs          *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler sirve /releases.
@@ -44,6 +46,7 @@ type Handler struct {
 	db     *sql.DB
 	tmpl   *template.Template
 	logger *slog.Logger
+	errs   *errrender.ErrorRenderer
 }
 
 // Release es una fila de la página: un capítulo + metadata mínima del manga.
@@ -84,7 +87,7 @@ func New(cfg Config) (*Handler, error) {
 		return nil, fmt.Errorf("parsear releases.html: %w", err)
 	}
 
-	return &Handler{db: cfg.DB, tmpl: page, logger: cfg.Logger}, nil
+	return &Handler{db: cfg.DB, tmpl: page, logger: cfg.Logger, errs: cfg.Errs}, nil
 }
 
 // Mount registra los endpoints en el mux.
@@ -108,7 +111,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	releases, err := h.UnreadReleases(r.Context(), s.UserID, MaxReleases)
 	if err != nil {
 		h.logger.Error("listar releases", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -155,7 +158,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	`, chapterID, time.Now().UTC().Unix(), s.UserID, chapterID)
 	if err != nil {
 		h.logger.Error("marcar leído", "user_id", s.UserID, "chapter_id", chapterID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	affected, _ := res.RowsAffected()

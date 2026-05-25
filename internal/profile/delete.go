@@ -59,10 +59,10 @@ func (h *Handler) deleteAccountPage(w http.ResponseWriter, r *http.Request) {
 		`SELECT email FROM users WHERE id = ?`, s.UserID,
 	).Scan(&emailAddr); err != nil {
 		h.logger.Error("delete: cargar email", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
-	h.render(w, "delete-account.html", deleteAccountData{
+	h.render(w, r, "delete-account.html", deleteAccountData{
 		Session:  s,
 		Email:    emailAddr,
 		CodeSent: r.URL.Query().Get("sent") == "1",
@@ -86,19 +86,19 @@ func (h *Handler) deleteAccountRequest(w http.ResponseWriter, r *http.Request) {
 		`SELECT email FROM users WHERE id = ?`, s.UserID,
 	).Scan(&emailAddr); err != nil {
 		h.logger.Error("delete: cargar email", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("delete: generar código", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if err := h.storeDeletionCode(r.Context(), s.UserID, code); err != nil {
 		h.logger.Error("delete: store code", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if err := h.sendDeletionEmail(emailAddr, code); err != nil {
@@ -133,7 +133,7 @@ func (h *Handler) deleteAccountConfirm(w http.ResponseWriter, r *http.Request) {
 	valid, err := h.consumeDeletionCode(r.Context(), s.UserID, otp)
 	if err != nil {
 		h.logger.Error("delete: consume code", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if !valid {
@@ -146,7 +146,7 @@ func (h *Handler) deleteAccountConfirm(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET deleted_at = ? WHERE id = ?`, now, s.UserID,
 	); err != nil {
 		h.logger.Error("delete: marcar deleted_at", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if _, err := h.db.ExecContext(r.Context(),
@@ -167,7 +167,7 @@ func (h *Handler) renderDeleteWithError(w http.ResponseWriter, r *http.Request, 
 		`SELECT email FROM users WHERE id = ?`, s.UserID,
 	).Scan(&emailAddr)
 	w.WriteHeader(http.StatusBadRequest)
-	h.render(w, "delete-account.html", deleteAccountData{
+	h.render(w, r, "delete-account.html", deleteAccountData{
 		Session:  s,
 		Email:    emailAddr,
 		CodeSent: true,
@@ -200,7 +200,7 @@ func (h *Handler) restoreAccountPage(w http.ResponseWriter, r *http.Request) {
 		`SELECT email, deleted_at FROM users WHERE id = ?`, s.UserID,
 	).Scan(&emailAddr, &deletedAt); err != nil {
 		h.logger.Error("restore: cargar user", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if !deletedAt.Valid {
@@ -210,7 +210,7 @@ func (h *Handler) restoreAccountPage(w http.ResponseWriter, r *http.Request) {
 	}
 	deletedTime := time.Unix(deletedAt.Int64, 0).UTC()
 	hardDelete := deletedTime.Add(GracePeriod)
-	h.render(w, "restore-account.html", restoreAccountData{
+	h.render(w, r, "restore-account.html", restoreAccountData{
 		Session:      s,
 		Email:        emailAddr,
 		DeletedAt:    deletedTime,
@@ -229,7 +229,7 @@ func (h *Handler) restoreAccountCancel(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET deleted_at = NULL WHERE id = ?`, s.UserID,
 	); err != nil {
 		h.logger.Error("restore: cancelar borrado", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	h.logger.Info("restore: borrado cancelado", "user_id", s.UserID)
@@ -245,7 +245,7 @@ func (h *Handler) restoreAccountDeleteNow(w http.ResponseWriter, r *http.Request
 	}
 	if err := HardDeleteUser(r.Context(), h.db, s.UserID, deletionLogPepperOrEmpty()); err != nil {
 		h.logger.Error("restore: hard delete inmediato", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	h.logger.Info("restore: hard delete inmediato confirmado", "user_id", s.UserID)

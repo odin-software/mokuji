@@ -15,6 +15,7 @@ import (
 	"net/http"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
@@ -36,6 +37,7 @@ type Config struct {
 	HTMLTemplates fs.FS // contiene layout.html, home.html y landing.html
 	Releases      ReleasesProvider
 	Logger        *slog.Logger
+	Errs          *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler sirve GET /.
@@ -45,6 +47,7 @@ type Handler struct {
 	tmplLanding   *template.Template
 	releases      ReleasesProvider
 	logger        *slog.Logger
+	errs          *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -79,6 +82,7 @@ func New(cfg Config) (*Handler, error) {
 		tmplLanding:   tmplLanding,
 		releases:      cfg.Releases,
 		logger:        cfg.Logger,
+		errs:          cfg.Errs,
 	}, nil
 }
 
@@ -115,7 +119,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	).Scan(&emailAddr, &slug)
 	if err != nil {
 		h.logger.Error("cargar email de usuario", "user_id", s.UserID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 

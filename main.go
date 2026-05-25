@@ -29,6 +29,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/comick"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
 	"git.odin.do/kengru/mokuji/internal/onboarding"
@@ -119,6 +120,16 @@ func main() {
 	rootCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// ErrorRenderer: construido antes que los handlers para que cada uno lo
+	// reciba como dependencia. Sirve 404 y 500 estilizados con el mismo
+	// layout/CSS del resto de la app. Si falla (template roto), seguimos
+	// arrancando — los handlers caen al texto plano de net/http.
+	errs, err := errrender.New(htmlFS, logger)
+	if err != nil {
+		logger.Error("inicializar error renderer", "err", err)
+		// errs queda nil; los handlers operan con fallback plano.
+	}
+
 	// Rate limiters para auth + unsubscribe.
 	//   /auth/start por IP:    ~5/min sostenido, burst 5
 	//   /auth/start por email: ~3/hora sostenido, burst 3
@@ -148,6 +159,7 @@ func main() {
 		StartIPLimiter:    startIPLim,
 		StartEmailLimiter: startEmailLim,
 		VerifyIPLimiter:   verifyIPLim,
+		Errs:              errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)
@@ -240,6 +252,7 @@ func main() {
 		Signer:        unsubSigner,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,
+		Errs:          errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar library: %v", err)
@@ -258,6 +271,7 @@ func main() {
 		BaseURL:        envOr("BASE_URL", "http://localhost:8080"),
 		Flasher:        flasher,
 		Logger:         logger,
+		Errs:           errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar profile: %v", err)
@@ -287,6 +301,7 @@ func main() {
 		DB:            db,
 		HTMLTemplates: htmlFS,
 		Logger:        logger,
+		Errs:          errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar releases: %v", err)
@@ -309,6 +324,7 @@ func main() {
 		HTMLTemplates: htmlFS,
 		Releases:      releasesHandler,
 		Logger:        logger,
+		Errs:          errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar home: %v", err)

@@ -74,7 +74,7 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	entry, ok, err := h.loadEntry(r.Context(), s.UserID, entryID)
 	if err != nil {
 		h.logger.Error("entry detail: cargar entry", "err", err, "entry_id", entryID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if !ok {
@@ -92,18 +92,18 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	chapters, err := h.loadChaptersForEntry(r.Context(), s.UserID, entry.Manga.ID, sort, includeRead)
 	if err != nil {
 		h.logger.Error("entry detail: cargar chapters", "err", err, "entry_id", entryID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	sources, err := h.loadEntrySources(r.Context(), entry.Manga.ID)
 	if err != nil {
 		h.logger.Error("entry detail: cargar sources", "err", err, "entry_id", entryID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
-	h.render(w, "library/entry.html", entryData{
+	h.render(w, r, "library/entry.html", entryData{
 		Session:     s,
 		Entry:       entry,
 		Chapters:    chapters,
@@ -135,14 +135,14 @@ func (h *Handler) entryReadAndOpen(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.markChapterRead(r.Context(), s.UserID, entry.ID, chapterID); err != nil {
 		h.logger.Error("read+open: mark", "err", err, "entry_id", entry.ID, "chapter_id", chapterID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	external, err := h.loadExternalURL(r.Context(), chapterID)
 	if err != nil {
 		h.logger.Error("read+open: external url", "err", err, "chapter_id", chapterID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *Handler) entryMarkRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.markChapterRead(r.Context(), s.UserID, entry.ID, chapterID); err != nil {
 		h.logger.Error("mark-read: mark", "err", err, "entry_id", entry.ID, "chapter_id", chapterID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
@@ -198,7 +198,7 @@ func (h *Handler) parseEntryReadForm(w http.ResponseWriter, r *http.Request) (*s
 	entry, exists, err := h.loadEntry(r.Context(), s.UserID, entryID)
 	if err != nil {
 		h.logger.Error("parse entry form: cargar entry", "err", err, "entry_id", entryID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return nil, nil, 0, false
 	}
 	if !exists {

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/mangasource"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -120,6 +121,7 @@ type Config struct {
 	// hasta que terminan o el proceso muere.
 	BackgroundCtx context.Context
 	Logger        *slog.Logger
+	Errs          *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler sirve los endpoints de /library/*.
@@ -132,6 +134,7 @@ type Handler struct {
 	pages     map[string]*template.Template
 	logger    *slog.Logger
 	bgCtx     context.Context
+	errs      *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -184,6 +187,7 @@ func New(cfg Config) (*Handler, error) {
 		pages:    pages,
 		logger:   cfg.Logger,
 		bgCtx:    cfg.BackgroundCtx,
+		errs:     cfg.Errs,
 	}, nil
 }
 
@@ -246,7 +250,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.listEntries(r.Context(), s.UserID, filter, query)
 	if err != nil {
 		h.logger.Error("listar biblioteca", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -259,7 +263,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("cargar slug para list", "user_id", s.UserID, "err", err)
 	}
 
-	h.render(w, "library/list.html", listData{
+	h.render(w, r, "library/list.html", listData{
 		Session:  s,
 		Entries:  entries,
 		Filter:   filter,
@@ -302,7 +306,7 @@ func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
 		data.Results = results
 	}
 
-	h.render(w, "library/search.html", data)
+	h.render(w, r, "library/search.html", data)
 }
 
 func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
@@ -329,13 +333,13 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 	mangaID, err := h.upsertManga(r.Context(), source, sourceID, title, coverURL)
 	if err != nil {
 		h.logger.Error("upsert manga", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	if err := h.createEntry(r.Context(), s.UserID, mangaID); err != nil && !isUniqueConstraintError(err) {
 		h.logger.Error("crear entry", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -461,7 +465,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	`, status, lastCh, sourceURL, notes, boolToInt(isFav), time.Now().UTC().Unix(), id, s.UserID)
 	if err != nil {
 		h.logger.Error("actualizar entry", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	affected, _ := res.RowsAffected()
@@ -491,7 +495,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		h.logger.Error("borrar entry", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	affected, _ := res.RowsAffected()
@@ -640,11 +644,11 @@ func (h *Handler) upsertMangaSource(ctx context.Context, mangaID int64, source, 
 
 // --- helpers ---
 
-func (h *Handler) render(w http.ResponseWriter, page string, data any) {
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, data any) {
 	tmpl, ok := h.pages[page]
 	if !ok {
 		h.logger.Error("plantilla no encontrada", "page", page)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

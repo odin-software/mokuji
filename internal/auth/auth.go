@@ -28,6 +28,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
@@ -50,6 +51,7 @@ type Config struct {
 	StartIPLimiter    *ratelimit.Limiter // limita /auth/start por IP; nil = sin límite
 	StartEmailLimiter *ratelimit.Limiter // limita /auth/start por email; nil = sin límite
 	VerifyIPLimiter   *ratelimit.Limiter // limita /auth/verify por IP; nil = sin límite
+	Errs              *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler agrupa endpoints de /auth/*.
@@ -69,6 +71,7 @@ type Handler struct {
 	startIPLim    *ratelimit.Limiter
 	startEmailLim *ratelimit.Limiter
 	verifyIPLim   *ratelimit.Limiter
+	errs          *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -138,6 +141,7 @@ func New(cfg Config) (*Handler, error) {
 		startIPLim:    cfg.StartIPLimiter,
 		startEmailLim: cfg.StartEmailLimiter,
 		verifyIPLim:   cfg.VerifyIPLimiter,
+		errs:          cfg.Errs,
 	}, nil
 }
 
@@ -181,13 +185,13 @@ func (h *Handler) startForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	h.render(w, "auth/start.html", startData{Email: r.URL.Query().Get("email")})
+	h.render(w, r, "auth/start.html", startData{Email: r.URL.Query().Get("email")})
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
 	if !h.startIPLim.Allow(ip) {
-		h.render(w, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", startData{
 			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
 		})
 		return
@@ -200,7 +204,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 	emailAddr := strings.TrimSpace(r.PostFormValue("email"))
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
-		h.render(w, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", startData{
 			Email: emailAddr,
 			Error: "ingresa un email válido",
 		})
@@ -208,7 +212,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.startEmailLim.Allow(emailAddr) {
-		h.render(w, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
 		})
@@ -218,7 +222,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("generar código", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -226,14 +230,14 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.storeCode(r.Context(), emailAddr, code, ip, ua); err != nil {
 		h.logger.Error("guardar código", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	plainBody, htmlBody, err := h.renderOTPEmail(code, emailAddr, ip, ua)
 	if err != nil {
 		h.logger.Error("renderizar email otp", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -244,7 +248,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		HTMLBody:  htmlBody,
 	}); err != nil {
 		h.logger.Error("enviar email", "err", err, "to", emailAddr)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -261,12 +265,12 @@ func (h *Handler) verifyForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth", http.StatusSeeOther)
 		return
 	}
-	h.render(w, "auth/verify.html", verifyData{Email: emailAddr})
+	h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr})
 }
 
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	if !h.verifyIPLim.Allow(h.clientIP(r)) {
-		h.render(w, "auth/verify.html", verifyData{
+		h.render(w, r, "auth/verify.html", verifyData{
 			Email: r.URL.Query().Get("email"),
 			Error: "demasiados intentos en pocos minutos. esperá un poco y volvé a intentar.",
 		})
@@ -285,22 +289,22 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	otp := code.Sanitize(r.PostFormValue("code"))
 
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
-		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "el email no parece válido. probá con el formato nombre@dominio."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el email no parece válido. probá con el formato nombre@dominio."})
 		return
 	}
 	if !code.Valid(otp) {
-		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido. fijate que sean 6 dígitos sin espacios."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido. fijate que sean 6 dígitos sin espacios."})
 		return
 	}
 
 	ok, err := h.consumeCode(r.Context(), emailAddr, otp)
 	if err != nil {
 		h.logger.Error("validar código", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	if !ok {
-		h.render(w, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido o ya expiró. volvé a /auth para pedir uno nuevo."})
+		h.render(w, r, "auth/verify.html", verifyData{Email: emailAddr, Error: "el código no es válido o ya expiró. volvé a /auth para pedir uno nuevo."})
 		return
 	}
 
@@ -311,13 +315,13 @@ func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.findOrCreateUser(r.Context(), emailAddr, digestOptIn)
 	if err != nil {
 		h.logger.Error("crear usuario", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	if err := h.sessions.Create(w, r, userID); err != nil {
 		h.logger.Error("crear sesión", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -332,11 +336,11 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 // render ejecuta la plantilla y la escribe a w. Si falla, loguea y responde 500.
-func (h *Handler) render(w http.ResponseWriter, page string, data any) {
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, data any) {
 	tmpl, ok := h.pages[page]
 	if !ok {
 		h.logger.Error("plantilla no encontrada", "page", page)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

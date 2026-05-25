@@ -22,6 +22,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
@@ -57,6 +58,7 @@ type Config struct {
 	BaseURL        string        // usado en el email de borrado
 	Flasher        *flash.Flasher
 	Logger         *slog.Logger
+	Errs           *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler sirve /settings, /u/{handle}, /settings/delete-account/* y /restore-account.
@@ -69,6 +71,7 @@ type Handler struct {
 	baseURL     string
 	flasher     *flash.Flasher
 	logger      *slog.Logger
+	errs        *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -130,6 +133,7 @@ func New(cfg Config) (*Handler, error) {
 		baseURL:     cfg.BaseURL,
 		flasher:     cfg.Flasher,
 		logger:      cfg.Logger,
+		errs:        cfg.Errs,
 	}, nil
 }
 
@@ -195,14 +199,14 @@ func (h *Handler) renderSettings(w http.ResponseWriter, r *http.Request, draft, 
 		`SELECT list_visibility, email, digest_frequency FROM users WHERE id = ?`, s.UserID,
 	).Scan(&visibility, &emailAddr, &digestFreq); err != nil {
 		h.logger.Error("cargar settings", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
 	slug, changedAt, err := h.loadUserSlug(r.Context(), s.UserID)
 	if err != nil {
 		h.logger.Error("cargar slug", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -227,7 +231,7 @@ func (h *Handler) renderSettings(w http.ResponseWriter, r *http.Request, draft, 
 		}
 	}
 
-	h.render(w, "settings.html", settingsData{
+	h.render(w, r, "settings.html", settingsData{
 		Session:          s,
 		Visibility:       visibility,
 		Email:            emailAddr,
@@ -268,7 +272,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		WHERE id = ?
 	`, vis, freq, s.UserID); err != nil {
 		h.logger.Error("actualizar settings", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -315,7 +319,7 @@ func (h *Handler) updateUsername(w http.ResponseWriter, r *http.Request) {
 		h.renderSettings(w, r, raw, usernameErrorMessage(err))
 	default:
 		h.logger.Error("actualizar username", "err", err, "user_id", s.UserID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 	}
 }
 
@@ -392,7 +396,7 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		} else if err != nil {
 			h.logger.Error("cargar usuario por id", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			h.errs.InternalServerError(w, r)
 			return
 		}
 		if slug.Valid {
@@ -408,7 +412,7 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			h.logger.Error("cargar usuario por slug", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			h.errs.InternalServerError(w, r)
 			return
 		}
 		userID = id
@@ -420,7 +424,7 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		`SELECT list_visibility FROM users WHERE id = ?`, userID,
 	).Scan(&visibility); err != nil {
 		h.logger.Error("cargar visibility", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
@@ -435,11 +439,11 @@ func (h *Handler) publicProfile(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.loadEntries(r.Context(), userID)
 	if err != nil {
 		h.logger.Error("cargar entries de perfil", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 
-	h.render(w, "profile.html", profileData{
+	h.render(w, r, "profile.html", profileData{
 		Session:    s,
 		UserID:     userID,
 		Slug:       slug.String,
@@ -513,11 +517,11 @@ func (h *Handler) loadEntries(ctx context.Context, userID int64) ([]ProfileEntry
 	return entries, rows.Err()
 }
 
-func (h *Handler) render(w http.ResponseWriter, page string, data any) {
+func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, data any) {
 	tmpl, ok := h.pages[page]
 	if !ok {
 		h.logger.Error("plantilla no encontrada", "page", page)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		h.errs.InternalServerError(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

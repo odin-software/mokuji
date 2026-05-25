@@ -105,8 +105,8 @@ func TestGetPageInvalidToken(t *testing.T) {
 	h.page(w, r)
 
 	body := w.Body.String()
-	if !strings.Contains(body, "link inválido") {
-		t.Errorf("no muestra error de link: %s", body)
+	if !strings.Contains(body, "reconocido") {
+		t.Errorf("no muestra error de link inválido: %s", body)
 	}
 }
 
@@ -119,8 +119,8 @@ func TestGetPageMissingToken(t *testing.T) {
 	h.page(w, r)
 
 	body := w.Body.String()
-	if !strings.Contains(body, "link inválido") {
-		t.Errorf("no muestra error de link: %s", body)
+	if !strings.Contains(body, "reconocido") {
+		t.Errorf("no muestra error de link inválido: %s", body)
 	}
 }
 
@@ -180,8 +180,8 @@ func TestPostInvalidTokenNoChange(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.submit(w, r)
 
-	if !strings.Contains(w.Body.String(), "link inválido") {
-		t.Errorf("no muestra error: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "reconocido") {
+		t.Errorf("no muestra error de link inválido: %s", w.Body.String())
 	}
 	if got := digestEnabled(t, db, uid); got != 1 {
 		t.Errorf("digest fue alterado: %d", got)

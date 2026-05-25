@@ -18,17 +18,35 @@
     <p class="muted">si cambias de opinión, lo puedes re-activar desde <a href="/settings">/settings</a>.</p>
 
   {{else if eq .State "expired"}}
-    <div class="empty-state">
-      <span class="kanji">期</span>
-      <h2>link expirado</h2>
-      <p>los links de baja duran 90 días desde que se envía el email. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
+    <div class="error-page">
+      <div class="error-glyph error-glyph--accent" aria-hidden="true">期</div>
+      <div class="error-body">
+        <p class="eyebrow">№ link · expirado</p>
+        <h1>link <span class="accent">vencido.</span></h1>
+        <p class="auth-lead">
+          este link de desuscripción venció. los links viven 30 días — pasado eso, podés cancelar el digest desde tu cuenta.
+        </p>
+        <div class="error-ctas">
+          <a href="/auth" class="action-link">entrar y cancelar</a>
+          <a href="/" class="error-cta-secondary">← volver</a>
+        </div>
+      </div>
     </div>
 
   {{else}}
-    <div class="empty-state">
-      <span class="kanji">無</span>
-      <h2>link inválido</h2>
-      <p>el link puede estar incompleto o haberse copiado mal. inicia sesión y desactiva el resumen desde <a href="/settings">/settings</a>.</p>
+    <div class="error-page">
+      <div class="error-glyph" aria-hidden="true">無</div>
+      <div class="error-body">
+        <p class="eyebrow">№ link · inválido</p>
+        <h1>link no <span class="accent">reconocido.</span></h1>
+        <p class="auth-lead">
+          no pudimos validar este link. puede que se haya cortado al copiar — probá abrirlo de nuevo desde el correo original, o cancelá el digest entrando a tu cuenta.
+        </p>
+        <div class="error-ctas">
+          <a href="/auth" class="action-link">entrar</a>
+          <a href="/" class="error-cta-secondary">← volver</a>
+        </div>
+      </div>
     </div>
   {{end}}
 </div>

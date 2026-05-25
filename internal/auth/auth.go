@@ -170,9 +170,15 @@ type verifyData struct {
 	Error   string
 }
 
-// otpEmailData es el modelo para otp.txt.
+// otpEmailData es el modelo para otp.txt y otp.html.
+//
+// Code es el código formateado con espacio para legibilidad en plain-text
+// ("123 456"). CodeDigits expone los 6 dígitos crudos (sin separador) para
+// que otp.html pueda renderizar el grid de celdas con {{range .CodeDigits}}
+// — html/template no soporta range directo sobre strings.
 type otpEmailData struct {
 	Code        string
+	CodeDigits  []string
 	To          string
 	IPAddress   string
 	UserAgent   string
@@ -353,8 +359,13 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 // y HTML (solo si otp.html está cargada). El caller manda multipart cuando
 // htmlBody no es vacío.
 func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (plainBody, htmlBody string, err error) {
+	digits := make([]string, 0, len(otp))
+	for _, r := range otp {
+		digits = append(digits, string(r))
+	}
 	data := otpEmailData{
 		Code:        code.Format(otp),
+		CodeDigits:  digits,
 		To:          to,
 		IPAddress:   ip,
 		UserAgent:   ua,

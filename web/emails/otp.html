@@ -32,7 +32,7 @@
     <tr><td style="padding:20px 32px 8px;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
         <tr>
-          {{range $i, $r := .Code}}<td width="16%" style="border:1.5px solid #1a1815; background:#f3ede0; font-family:'Courier New', Courier, monospace; font-weight:700; font-size:38px; padding:18px 0; text-align:center; color:#1a1815;">{{printf "%c" $r}}</td>{{end}}
+          {{range .CodeDigits}}<td width="16%" style="border:1.5px solid #1a1815; background:#f3ede0; font-family:'Courier New', Courier, monospace; font-weight:700; font-size:38px; padding:18px 0; text-align:center; color:#1a1815;">{{.}}</td>{{end}}
         </tr>
       </table>
       <div style="font-family:'Courier New', Courier, monospace; font-size:11px; color:#8a857a; margin-top:14px; letter-spacing:0.4px;">

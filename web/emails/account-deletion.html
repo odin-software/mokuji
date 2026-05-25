@@ -8,6 +8,8 @@
 <body style="margin:0; padding:0; background:#dcd3bd; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; color:#1a1815; -webkit-font-smoothing:antialiased;">
 <center style="width:100%; background:#dcd3bd; padding:32px 16px;">
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px; max-width:100%; background:#f3ede0; border:1px solid rgba(26,24,21,0.13);">
+
+    <!-- header -->
     <tr><td style="padding:28px 32px 16px; border-bottom:1px solid #1a1815;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0">
         <tr>
@@ -15,9 +17,10 @@
           <td style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:26px; font-weight:900; color:#1a1815; letter-spacing:-0.8px; line-height:1;">mokuji</td>
         </tr>
       </table>
-      <div style="font-family:'Courier New', Courier, monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:#a83422; margin-top:14px;">Confirmación · borrar cuenta</div>
+      <div style="font-family:'Courier New', Courier, monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:#a83422; margin-top:14px;">cuenta · confirmación de borrado</div>
     </td></tr>
 
+    <!-- headline -->
     <tr><td style="padding:32px 32px 12px;">
       <div style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:900; font-size:30px; letter-spacing:-1.2px; line-height:1.05; color:#1a1815;">
         borrar <span style="color:#a83422;">tu cuenta</span>.
@@ -25,6 +28,7 @@
       <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:15px; color:#3a352e; line-height:1.55; margin:16px 0 0;">pediste borrar tu cuenta de mokuji. para confirmar, ingresa este código en la página de borrado:</p>
     </td></tr>
 
+    <!-- OTP code -->
     <tr><td style="padding:20px 32px 24px;">
       <div style="border:1.5px solid #a83422; padding:18px 24px; text-align:center; background:#f3ede0;">
         <div style="font-family:'Courier New', Courier, monospace; font-weight:700; font-size:36px; letter-spacing:0.4em; color:#a83422;">{{.Code}}</div>
@@ -34,6 +38,7 @@
       </div>
     </td></tr>
 
+    <!-- warning block -->
     <tr><td style="padding:18px 32px; background:rgba(168,52,34,0.08); border-top:1.5px solid #a83422; border-left:4px solid #a83422;">
       <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:14px; color:#1a1815; line-height:1.55; margin:0;">
         <strong>al confirmar, esto pasa:</strong>
@@ -45,18 +50,22 @@
       </ul>
     </td></tr>
 
+    <!-- security note -->
     <tr><td style="padding:18px 32px; background:#eae3d2; border-top:1px solid rgba(26,24,21,0.13);">
       <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:13px; color:#3a352e; line-height:1.55; margin:0;">
         <strong style="color:#1a1815;">¿no fuiste tú?</strong> ignora este correo. nadie puede iniciar el borrado sin haber iniciado sesión con tu cuenta primero.
       </p>
     </td></tr>
 
+    <!-- footer -->
     <tr><td style="padding:20px 32px; background:#eae3d2; border-top:1px solid rgba(26,24,21,0.13);">
       <div style="font-family:'Courier New', Courier, monospace; font-size:10px; color:#8a857a; line-height:1.8; letter-spacing:0.5px;">
         mokuji.org · table of contents · est. 2026<br>
+        un tracker de manga público y self-hostable.<br>
         <a href="{{.BaseURL}}" style="color:#8a857a; text-decoration:underline;">{{.BaseURL}}</a>
       </div>
     </td></tr>
+
   </table>
 </center>
 </body>

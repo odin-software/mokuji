@@ -2,6 +2,7 @@ package digest
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -280,5 +281,146 @@ func TestWorkerPersistsCountersInDigestRun(t *testing.T) {
 	}
 	if finishedAt == nil {
 		t.Error("finished_at debería estar seteado al final del run")
+	}
+}
+
+// insertUserWithFrequency inserta un usuario con digest_frequency explícito.
+func insertUserWithFrequency(t *testing.T, db *sql.DB, emailAddr string, freq string) int64 {
+	t.Helper()
+	res, err := db.Exec(
+		`INSERT INTO users (email, created_at, email_digest_enabled, preferred_language, digest_frequency)
+		 VALUES (?, 0, 1, 'en', ?)`,
+		emailAddr, freq,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
+func TestSelectCandidates_DailyOnly(t *testing.T) {
+	// Miércoles (no domingo): usuario 'daily' recibe, usuario 'weekly' no.
+	// w.now fijado a miércoles controla isSunday=0 → weekly excluidos por SQL.
+	// Chapters y last_digest_sent_at usan tiempo real para que el Sender
+	// (firstRunLookback 7d) los encuentre dentro de la ventana.
+	db := setupDB(t)
+	sender, cap := newTestSender(t, db)
+
+	wednesday := time.Date(2025, 6, 4, 10, 0, 0, 0, time.UTC)
+
+	// A: daily, nunca recibió → candidato.
+	uidA := insertUserWithFrequency(t, db, "a@example.com", "daily")
+	// B: weekly → no es domingo → no candidato.
+	_ = insertUserWithFrequency(t, db, "b@example.com", "weekly")
+
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uidA, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	w, _ := NewWorker(WorkerConfig{DB: db, Sender: sender})
+	w.now = func() time.Time { return wednesday }
+
+	w.tickIfDue(context.Background())
+
+	if cap.count() != 1 {
+		t.Errorf("esperaba 1 email (solo daily A), obtuve %d", cap.count())
+	}
+}
+
+func TestSelectCandidates_WeeklyOnSunday(t *testing.T) {
+	// Domingo: weekly+daily son elegibles; 'off' nunca.
+	db := setupDB(t)
+	sender, cap := newTestSender(t, db)
+
+	sunday := time.Date(2025, 6, 1, 10, 0, 0, 0, time.UTC)
+
+	// A: weekly, nunca recibió → candidato.
+	uidA := insertUserWithFrequency(t, db, "a@example.com", "weekly")
+	// B: daily, nunca recibió → candidato.
+	uidB := insertUserWithFrequency(t, db, "b@example.com", "daily")
+	// C: off → nunca candidato.
+	_ = insertUserWithFrequency(t, db, "c@example.com", "off")
+
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uidA, mid, "reading")
+	insertEntry(t, db, uidB, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	w, _ := NewWorker(WorkerConfig{DB: db, Sender: sender})
+	w.now = func() time.Time { return sunday }
+
+	w.tickIfDue(context.Background())
+
+	if cap.count() != 2 {
+		t.Errorf("esperaba 2 emails (weekly A + daily B), obtuve %d", cap.count())
+	}
+}
+
+func TestSelectCandidates_OffSkipsAll(t *testing.T) {
+	// Users con frequency='off' nunca reciben, sin importar el día.
+	db := setupDB(t)
+	sender, cap := newTestSender(t, db)
+
+	sunday := time.Date(2025, 6, 1, 10, 0, 0, 0, time.UTC)
+
+	uid1 := insertUserWithFrequency(t, db, "x@example.com", "off")
+	uid2 := insertUserWithFrequency(t, db, "y@example.com", "off")
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uid1, mid, "reading")
+	insertEntry(t, db, uid2, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	w, _ := NewWorker(WorkerConfig{DB: db, Sender: sender})
+	w.now = func() time.Time { return sunday }
+
+	w.tickIfDue(context.Background())
+
+	if cap.count() != 0 {
+		t.Errorf("usuarios 'off' no deberían recibir emails, obtuve %d", cap.count())
+	}
+}
+
+func TestWorkerDailyFiresOnWeekdays(t *testing.T) {
+	// Un usuario 'daily' recibe en días de semana normales (no solo domingo).
+	db := setupDB(t)
+	sender, cap := newTestSender(t, db)
+
+	tuesday := time.Date(2025, 6, 3, 10, 0, 0, 0, time.UTC) // martes
+
+	uid := insertUserWithFrequency(t, db, "alice@example.com", "daily")
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uid, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	w, _ := NewWorker(WorkerConfig{DB: db, Sender: sender})
+	w.now = func() time.Time { return tuesday }
+
+	w.tickIfDue(context.Background())
+
+	if cap.count() != 1 {
+		t.Errorf("usuario 'daily' debería recibir en martes, obtuve %d emails", cap.count())
+	}
+}
+
+func TestWorkerWeeklySkipsNonSunday(t *testing.T) {
+	// Un usuario 'weekly' NO recibe en un día que no sea domingo.
+	db := setupDB(t)
+	sender, cap := newTestSender(t, db)
+
+	thursday := time.Date(2025, 6, 5, 10, 0, 0, 0, time.UTC) // jueves
+
+	uid := insertUserWithFrequency(t, db, "bob@example.com", "weekly")
+	mid := insertManga(t, db, "M")
+	insertEntry(t, db, uid, mid, "reading")
+	insertChapter(t, db, mid, "ch-1", "1", "en", time.Now().Add(-1*time.Hour))
+
+	w, _ := NewWorker(WorkerConfig{DB: db, Sender: sender})
+	w.now = func() time.Time { return thursday }
+
+	w.tickIfDue(context.Background())
+
+	if cap.count() != 0 {
+		t.Errorf("usuario 'weekly' no debería recibir en jueves, obtuve %d emails", cap.count())
 	}
 }

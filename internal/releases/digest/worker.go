@@ -96,7 +96,7 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 func (w *Worker) Run(ctx context.Context) {
 	w.logger.Info("digest worker iniciado",
 		"tick", w.tick,
-		"fire", w.fireDay.String()+" "+itoaHour(w.fireHourStart)+"-"+itoaHour(w.fireHourEnd)+" UTC",
+		"window_utc", itoaHour(w.fireHourStart)+"-"+itoaHour(w.fireHourEnd),
 		"max_runs_per_day", w.maxRunsPerDay,
 	)
 
@@ -117,7 +117,8 @@ func (w *Worker) Run(ctx context.Context) {
 
 // tickIfDue decide si disparar un dispatch en este tick.
 //
-// Ventana: dentro de FireDay y FireHourStart <= Hour <= FireHourEnd UTC.
+// Ventana: banda horaria FireHourStart <= Hour <= FireHourEnd UTC. La decisión
+// por usuario (daily vs weekly-domingo) la toma el SQL en selectCandidates.
 //
 // Dentro de la ventana consulta digest_runs del día (UTC). Tres casos:
 //   - sin runs hoy: primer intento del día → dispatch.
@@ -125,7 +126,9 @@ func (w *Worker) Run(ctx context.Context) {
 //   - último run completó sin failures, o ya estamos en el cap: skip.
 func (w *Worker) tickIfDue(ctx context.Context) {
 	now := w.now().UTC()
-	if now.Weekday() != w.fireDay || now.Hour() < w.fireHourStart || now.Hour() > w.fireHourEnd {
+	// Banda horaria 09-22 UTC. La decisión por user (daily vs weekly domingo)
+	// está en SQL — el weekday filter se eliminó de aquí.
+	if now.Hour() < w.fireHourStart || now.Hour() > w.fireHourEnd {
 		return
 	}
 
@@ -187,12 +190,28 @@ func (w *Worker) dispatchAll(ctx context.Context) error {
 	}
 	runID, _ := res.LastInsertId()
 
+	now := w.now().UTC()
+	isSunday := 0
+	if now.Weekday() == time.Sunday {
+		isSunday = 1
+	}
+
 	rows, err := w.db.QueryContext(ctx, `
 		SELECT id FROM users
-		WHERE email_digest_enabled = 1
-		  AND deleted_at IS NULL
-		  AND (last_digest_sent_at IS NULL OR last_digest_sent_at < ?)
-	`, startOfDay)
+		WHERE deleted_at IS NULL
+		  AND (
+		      (
+		          digest_frequency = 'daily'
+		          AND (last_digest_sent_at IS NULL OR last_digest_sent_at < ?)
+		      )
+		      OR
+		      (
+		          digest_frequency = 'weekly'
+		          AND ? = 1
+		          AND (last_digest_sent_at IS NULL OR last_digest_sent_at < ?)
+		      )
+		  )
+	`, startOfDay, isSunday, startOfDay)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -198,4 +199,58 @@ func isPendingDeletionExempt(path string) bool {
 		return true
 	}
 	return strings.HasPrefix(path, "/static/")
+}
+
+// onboardingRedirect intercepta requests autenticados con users.onboarded_at IS NULL
+// y los redirige a /onboarding, EXCEPTO rutas excluidas (el wizard mismo, /auth/*,
+// estáticos, /version, perfiles públicos, /unsubscribe).
+//
+// La decisión es por-request via session + una query a users — sin workers ni cache.
+func (s *Server) onboardingRedirect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isOnboardingExempt(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		sess, ok := sessionFromRequest(r)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		var onboardedAt sql.NullInt64
+		err := s.cfg.DB.QueryRowContext(r.Context(),
+			`SELECT onboarded_at FROM users WHERE id = ?`, sess.UserID,
+		).Scan(&onboardedAt)
+		if err != nil {
+			// Pass-through si la query falla — preferimos no bloquear el flujo.
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !onboardedAt.Valid {
+			http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isOnboardingExempt(path string) bool {
+	switch path {
+	case "/onboarding",
+		"/onboarding/step2",
+		"/onboarding/step3",
+		"/onboarding/finish",
+		"/auth",
+		"/auth/start",
+		"/auth/verify",
+		"/auth/logout",
+		"/health",
+		"/version",
+		"/manifest.webmanifest",
+		"/sw.js":
+		return true
+	}
+	return strings.HasPrefix(path, "/static/") ||
+		strings.HasPrefix(path, "/u/") ||
+		strings.HasPrefix(path, "/unsubscribe")
 }

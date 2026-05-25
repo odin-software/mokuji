@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -9,6 +10,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/session"
 )
 
 // htmlTemplatesFS apunta a web/templates/ del repo. Lo usamos en tests para
@@ -146,5 +153,110 @@ func TestRecovererFallsBackWhenTemplatesMissing(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "internal server error") {
 		t.Errorf("fallback plano no se renderizó: %q", rec.Body.String())
+	}
+}
+
+// setupTestDB crea una DB en memoria con las migrations aplicadas.
+func setupTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := migrations.Run(db, os.DirFS("../../migrations")); err != nil {
+		t.Fatalf("aplicar migrations: %v", err)
+	}
+	return db
+}
+
+func insertTestUser(t *testing.T, db *sql.DB, email string, onboardedAt sql.NullInt64) int64 {
+	t.Helper()
+	res, err := db.Exec(
+		`INSERT INTO users (email, created_at, onboarded_at) VALUES (?, ?, ?)`,
+		email, time.Now().Unix(), onboardedAt,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// newOnboardingRedirectServer construye un Server mínimo con la DB de test
+// y sin Sessions (para inyectar la sesión directamente en el context).
+func newOnboardingRedirectServer(t *testing.T, db *sql.DB) *Server {
+	t.Helper()
+	return New(Config{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:     db,
+	})
+}
+
+func TestOnboardingRedirect_NullOnboardedAt(t *testing.T) {
+	db := setupTestDB(t)
+	uid := insertTestUser(t, db, "nob@example.com", sql.NullInt64{})
+	s := newOnboardingRedirectServer(t, db)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := s.onboardingRedirect(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/library", nil)
+	req = session.WithUserID(req, uid)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status: esperado 303, obtenido %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/onboarding" {
+		t.Errorf("Location: esperado /onboarding, obtenido %q", loc)
+	}
+}
+
+func TestOnboardingRedirect_PathExcluded(t *testing.T) {
+	db := setupTestDB(t)
+	uid := insertTestUser(t, db, "nob2@example.com", sql.NullInt64{})
+	s := newOnboardingRedirectServer(t, db)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := s.onboardingRedirect(inner)
+
+	for _, path := range []string{"/auth/logout", "/onboarding", "/onboarding/step2", "/version"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req = session.WithUserID(req, uid)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("path %s: esperado 200 (pass-through), obtenido %d", path, rec.Code)
+		}
+	}
+}
+
+func TestOnboardingRedirect_AlreadyOnboarded(t *testing.T) {
+	db := setupTestDB(t)
+	uid := insertTestUser(t, db, "onb@example.com", sql.NullInt64{Valid: true, Int64: time.Now().Unix()})
+	s := newOnboardingRedirectServer(t, db)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := s.onboardingRedirect(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/library", nil)
+	req = session.WithUserID(req, uid)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200 (pass-through), obtenido %d", rec.Code)
 	}
 }

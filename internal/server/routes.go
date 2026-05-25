@@ -60,6 +60,7 @@ func (s *Server) routes() http.Handler {
 	var h http.Handler = mux
 	if s.cfg.Sessions != nil {
 		h = csrf.Middleware(h)
+		h = s.onboardingRedirect(h)
 		h = s.pendingDeletionRedirect(h)
 		h = s.cfg.Sessions.Middleware(h)
 	}

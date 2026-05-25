@@ -160,8 +160,9 @@
 @media (min-width: 1024px) {
   .landing-hero h1 { font-size: 8.25rem; }
   .landing-features { grid-template-columns: repeat(3, 1fr); border-top: 0; }
-  .landing-feature { border-bottom: 0; border-right: 1px solid var(--rule); padding: 1.5rem 1.5rem 1.5rem 0; }
-  .landing-feature:last-child { border-right: 0; }
+  .landing-feature { border-bottom: 0; border-right: 1px solid var(--rule); padding: 1.5rem; }
+  .landing-feature:first-child { padding-left: 0; }
+  .landing-feature:last-child { border-right: 0; padding-right: 0; }
   .landing-feature-kanji { font-size: 3.5rem; }
 
   .landing-topbar {

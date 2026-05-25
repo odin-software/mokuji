@@ -37,7 +37,7 @@ import (
 // silencioso"; el endpoint admin lo reporta al caller.
 var ErrNoNewChapters = errors.New("sin capítulos nuevos")
 
-// ErrDigestDisabled se devuelve cuando el user tiene email_digest_enabled=0.
+// ErrDigestDisabled se devuelve cuando el user tiene digest_frequency='off'.
 // El worker filtra antes con un query; existe para defensa en el path admin.
 var ErrDigestDisabled = errors.New("digest desactivado para este usuario")
 
@@ -238,16 +238,19 @@ func (s *Sender) sendWithRetry(ctx context.Context, userID int64, msg email.Mess
 }
 
 func (s *Sender) loadUser(ctx context.Context, userID int64) (emailAddr string, digestEnabled bool, lastSentAt sql.NullInt64, err error) {
-	var digest int
+	var freq string
 	err = s.db.QueryRowContext(ctx, `
-		SELECT email, email_digest_enabled, last_digest_sent_at
+		SELECT email, digest_frequency, last_digest_sent_at
 		FROM users
 		WHERE id = ? AND deleted_at IS NULL
-	`, userID).Scan(&emailAddr, &digest, &lastSentAt)
+	`, userID).Scan(&emailAddr, &freq, &lastSentAt)
 	if err != nil {
 		return "", false, sql.NullInt64{}, fmt.Errorf("cargar user %d: %w", userID, err)
 	}
-	return emailAddr, digest == 1, lastSentAt, nil
+	// 'weekly' o 'daily' → digest activo; 'off' → opt-out explícito.
+	// Migration 0012 dejó email_digest_enabled como columna legacy y el worker
+	// la ignora a partir de v0.7.
+	return emailAddr, freq != "off", lastSentAt, nil
 }
 
 func (s *Sender) cutoff(lastSentAt sql.NullInt64) time.Time {

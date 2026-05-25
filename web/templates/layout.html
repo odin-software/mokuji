@@ -155,6 +155,13 @@ body {
     grid-template-columns: 16rem 1fr;
     min-height: 100vh;
   }
+  /* Sin sesión (landing, /auth): no hay .app-sidebar; el grid degrada a una
+     sola columna full-width para que la página no quede aplastada en 16rem. */
+  .app-shell:not(:has(> .app-sidebar)) {
+    display: block;
+    max-width: none;
+    margin: 0;
+  }
   .app-sidebar {
     display: flex;
     flex-direction: column;
@@ -170,6 +177,13 @@ body {
     padding: 2rem 2.5rem;
     min-width: 0;
     max-width: 70rem;
+  }
+  /* En el modo sin sidebar, el main no necesita el padding lateral del shell
+     ni el max-width — las páginas anónimas (landing, auth) controlan su
+     propio chrome y ancho. */
+  .app-shell:not(:has(> .app-sidebar)) .app-main {
+    padding: 0;
+    max-width: none;
   }
   .app-nav { display: none; }  /* sidebar replaces it on desktop */
   .app-footer { display: none; }  /* sidebar foot handles version link */

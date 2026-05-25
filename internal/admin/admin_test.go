@@ -92,10 +92,16 @@ func setup(t *testing.T) (*Handler, *sql.DB, *captureSMTP) {
 
 func insertUserWithCaps(t *testing.T, db *sql.DB, email string, digestEnabled int) int64 {
 	t.Helper()
+	// digest_frequency canónico desde v0.7; sincronizamos con email_digest_enabled
+	// para que tests que toman el bool legacy mantengan su semántica.
+	freq := "weekly"
+	if digestEnabled == 0 {
+		freq = "off"
+	}
 	res, err := db.Exec(
-		`INSERT INTO users (email, created_at, email_digest_enabled, preferred_language)
-		 VALUES (?, 0, ?, 'en')`,
-		email, digestEnabled,
+		`INSERT INTO users (email, created_at, email_digest_enabled, digest_frequency, preferred_language)
+		 VALUES (?, 0, ?, ?, 'en')`,
+		email, digestEnabled, freq,
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -122,10 +122,18 @@ func newTestSender(t *testing.T, db *sql.DB) (*Sender, *captureSMTP) {
 
 func insertUser(t *testing.T, db *sql.DB, emailAddr string, digestEnabled int) int64 {
 	t.Helper()
+	// Mantener email_digest_enabled por compatibilidad con tests existentes
+	// que toman digestEnabled como bool. La columna canónica desde v0.7 es
+	// digest_frequency — mapeamos 0 → 'off', 1 → 'weekly' para que tests
+	// nuevos y viejos coincidan en semántica.
+	freq := "weekly"
+	if digestEnabled == 0 {
+		freq = "off"
+	}
 	res, err := db.Exec(
-		`INSERT INTO users (email, created_at, email_digest_enabled, preferred_language)
-		 VALUES (?, 0, ?, 'en')`,
-		emailAddr, digestEnabled,
+		`INSERT INTO users (email, created_at, email_digest_enabled, digest_frequency, preferred_language)
+		 VALUES (?, 0, ?, ?, 'en')`,
+		emailAddr, digestEnabled, freq,
 	)
 	if err != nil {
 		t.Fatal(err)

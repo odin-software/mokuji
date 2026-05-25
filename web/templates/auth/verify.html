@@ -1,32 +1,42 @@
-{{define "title"}}código — mokuji{{end}}
+{{define "title"}}código · mokuji{{end}}
 {{define "content"}}
 <div class="auth-page">
-  <p class="eyebrow">paso 2 · verificación</p>
-  <h1>tu <span class="accent">código</span></h1>
-  <p class="auth-lead">te enviamos un código a <strong>{{.Email}}</strong>. revisa tu inbox.</p>
+  <p class="eyebrow">№ 002 — revisá tu mail</p>
+
+  <div class="auth-glyph" aria-hidden="true">封</div>
+
+  <h1>te mandamos el<br><span class="accent">código.</span></h1>
+  <p class="auth-lead">
+    abrí el mail que mandamos a <strong>{{.Email}}</strong> y pegá los 6 dígitos abajo. expira en 10 minutos.
+  </p>
+
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-  <form method="POST" action="/auth/verify">
+
+  <form method="POST" action="/auth/verify" autocomplete="off">
+    {{csrfInput .Session}}
     <input type="hidden" name="email" value="{{.Email}}">
     <label>
-      código
-      <input
-        type="text"
-        name="code"
-        class="otp-input"
-        inputmode="numeric"
-        autocomplete="one-time-code"
-        required
-        autofocus>
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" name="digest_opt_in" checked>
-      <span>
-        <strong>recibir resumen semanal</strong>
-        <span class="muted">solo se aplica si es tu primera vez; puedes cambiarlo en /settings cuando quieras</span>
-      </span>
+      código de 6 dígitos
+      <input type="text" name="code" required autofocus
+             inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+             class="otp-input" placeholder="000000">
     </label>
     <button type="submit">entrar →</button>
   </form>
-  <p class="resend"><a href="/auth?email={{.Email}}">pedir otro código</a></p>
+
+  <p class="muted resend">
+    ¿no llegó? revisá spam · <a href="/auth">← editar email</a>
+  </p>
 </div>
+<style>
+.auth-glyph {
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: clamp(8rem, 22vw, 14rem);
+  color: var(--accent);
+  line-height: 0.85;
+  text-align: center;
+  margin: 1rem 0 0.5rem;
+}
+</style>
 {{end}}

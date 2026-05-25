@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>capítulos nuevos — mokuji</title>
+<title>tu resumen — mokuji</title>
 </head>
 <body style="margin:0; padding:0; background:#dcd3bd; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; color:#1a1815; -webkit-font-smoothing:antialiased;">
 <center style="width:100%; background:#dcd3bd; padding:32px 16px;">
   <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="width:600px; max-width:100%; background:#f3ede0; border:1px solid rgba(26,24,21,0.13);">
+
     <!-- header -->
     <tr><td style="padding:28px 32px 16px; border-bottom:1px solid #1a1815;">
       <table role="presentation" cellspacing="0" cellpadding="0" border="0">
@@ -16,32 +17,34 @@
           <td style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:26px; font-weight:900; color:#1a1815; letter-spacing:-0.8px; line-height:1;">mokuji</td>
         </tr>
       </table>
-      <div style="font-family:'Courier New', Courier, monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:#b8412a; margin-top:14px;">Resumen semanal · capítulos nuevos</div>
+      <div style="font-family:'Courier New', Courier, monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:#b8412a; margin-top:12px;">resumen · capítulos nuevos</div>
     </td></tr>
 
     <!-- headline -->
     <tr><td style="padding:28px 32px 18px;">
-      <div style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:900; font-size:30px; letter-spacing:-1.2px; line-height:1.05; color:#1a1815;">
-        capítulos nuevos<br>en <span style="color:#b8412a;">tu biblioteca</span>.
+      <div style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:900; font-size:32px; letter-spacing:-1.3px; line-height:1; color:#1a1815; margin-bottom:14px;">
+        {{len .Items}} {{if eq (len .Items) 1}}capítulo nuevo{{else}}capítulos nuevos{{end}}<br>en <span style="color:#b8412a;">tu biblioteca</span>.
       </div>
-      <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:14px; color:#3a352e; line-height:1.55; margin:14px 0 0;">hola — esto es lo que se publicó esta semana de los títulos que sigues.</p>
+      <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:14px; color:#3a352e; line-height:1.55; margin:0; max-width:480px;">los últimos releases en los títulos que seguís.</p>
     </td></tr>
 
     <!-- items -->
     {{range .Items}}
     <tr><td style="padding:14px 32px; border-top:1px solid rgba(26,24,21,0.13);">
-      <div style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:800; font-size:16px; letter-spacing:-0.3px; color:#1a1815; margin-bottom:6px;">{{.MangaTitle}}</div>
-      <div style="font-family:'Courier New', Courier, monospace; font-size:12px; color:#3a352e;">
-        <span style="color:#b8412a; font-weight:600;">{{with .ChapterNumber}}cap. {{.}}{{else}}cap. —{{end}}</span>{{with .ChapterTitle}}<span style="color:#8a857a;"> · {{.}}</span>{{end}}
-      </div>
-      <a href="{{.ReaderURL}}" style="display:inline-block; margin-top:10px; padding:6px 12px; background:#1a1815; color:#f3ede0; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:700; font-size:12px; letter-spacing:0.3px; text-decoration:none;">leer →</a>
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+        <tr>
+          <td style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:800; font-size:16px; letter-spacing:-0.3px; color:#1a1815;">{{.MangaTitle}}</td>
+          <td style="font-family:'Courier New', Courier, monospace; font-size:11px; color:#b8412a; font-weight:600; text-align:right; white-space:nowrap;">{{with .ChapterNumber}}cap {{.}}{{else}}—{{end}}</td>
+        </tr>
+      </table>
+      {{with .ChapterTitle}}<div style="font-family:'Courier New', Courier, monospace; font-size:12px; color:#3a352e; margin-top:6px;">{{.}}</div>{{end}}
+      <a href="{{.ReaderURL}}" style="display:inline-block; margin-top:8px; padding:6px 12px; background:#1a1815; color:#f3ede0; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:700; font-size:11px; letter-spacing:0.3px; text-decoration:none;">leer →</a>
     </td></tr>
     {{end}}
 
     <!-- CTA strip -->
-    <tr><td style="padding:24px 32px; background:rgba(184,65,42,0.10); border-top:1px solid rgba(26,24,21,0.13);">
-      <a href="{{.BaseURL}}/releases" style="display:inline-block; padding:12px 20px; background:#1a1815; color:#f3ede0; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:700; font-size:13px; letter-spacing:0.3px; text-decoration:none;">ver releases en mokuji →</a>
-      <div style="font-family:'Courier New', Courier, monospace; font-size:11px; color:#8a857a; margin-top:10px;">{{.BaseURL}}/releases</div>
+    <tr><td style="padding:24px 32px 28px; background:rgba(184,65,42,0.08); border-top:1px solid rgba(26,24,21,0.13);">
+      <a href="{{.BaseURL}}/releases" style="display:inline-block; padding:12px 20px; background:#1a1815; color:#f3ede0; font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight:700; font-size:13px; letter-spacing:0.3px; text-decoration:none;">ver todos en mokuji →</a>
     </td></tr>
 
     <!-- footer -->
@@ -49,9 +52,10 @@
       <div style="font-family:'Courier New', Courier, monospace; font-size:10px; color:#8a857a; line-height:1.8; letter-spacing:0.5px;">
         mokuji.org · table of contents · est. 2026<br>
         un tracker de manga público y self-hostable.<br>
-        <a href="{{.BaseURL}}/settings" style="color:#8a857a; text-decoration:underline;">preferencias</a> · <a href="{{.UnsubscribeURL}}" style="color:#8a857a; text-decoration:underline;">darse de baja</a>
+        <a href="{{.UnsubscribeURL}}" style="color:#8a857a; text-decoration:underline;">darse de baja</a> · <a href="{{.BaseURL}}/settings" style="color:#8a857a; text-decoration:underline;">preferencias</a>
       </div>
     </td></tr>
+
   </table>
 </center>
 </body>

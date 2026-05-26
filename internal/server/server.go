@@ -16,6 +16,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/admin"
 	"git.odin.do/kengru/mokuji/internal/auth"
+	"git.odin.do/kengru/mokuji/internal/feedback"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
 	"git.odin.do/kengru/mokuji/internal/onboarding"
@@ -43,6 +44,7 @@ type Config struct {
 	Onboarding  *onboarding.Handler
 	Unsubscribe *unsubscribe.Handler
 	Admin       *admin.Handler
+	Feedback    *feedback.Handler
 	// StaticAssets es el FS de la carpeta web/ del repo (contiene static/,
 	// manifest.webmanifest, sw.js). Si es nil, los endpoints PWA no se
 	// montan.

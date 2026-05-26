@@ -96,8 +96,9 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	funcs := template.FuncMap{
-		"csrfInput":  csrf.Input,
-		"appVersion": func() string { return version.Value },
+		"csrfInput":       csrf.Input,
+		"appVersion":      func() string { return version.Value },
+		"feedbackEnabled": IsEnabled,
 	}
 	tmpl, err := template.New("base").Funcs(funcs).ParseFS(
 		cfg.Templates, "layout.html", "feedback.html",

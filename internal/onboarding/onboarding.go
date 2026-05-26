@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
+	"git.odin.do/kengru/mokuji/internal/feedback"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -52,8 +53,9 @@ func New(cfg Config) (*Handler, error) {
 		cfg.Logger = slog.Default()
 	}
 	funcs := template.FuncMap{
-		"csrfInput":  csrf.Input,
-		"appVersion": func() string { return version.Value },
+		"csrfInput":       csrf.Input,
+		"appVersion":      func() string { return version.Value },
+		"feedbackEnabled": feedback.IsEnabled,
 	}
 	parse := func(stepFile string) (*template.Template, error) {
 		t, err := template.New("base").Funcs(funcs).ParseFS(

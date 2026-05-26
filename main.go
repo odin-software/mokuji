@@ -30,6 +30,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/comick"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/errrender"
+	"git.odin.do/kengru/mokuji/internal/feedback"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
 	"git.odin.do/kengru/mokuji/internal/onboarding"
@@ -373,6 +374,34 @@ func main() {
 	// Endpoint admin para disparar digests manualmente (test/QA). Si
 	// ADMIN_TOKEN está vacío, el endpoint responde 401 a todo — feature
 	// "off" sin código condicional adicional.
+	var feedbackHandler *feedback.Handler
+	if feedbackTo := os.Getenv("FEEDBACK_EMAIL_TO"); feedbackTo != "" {
+		feedbackHandler, err = feedback.New(feedback.Config{
+			Templates: htmlFS,
+			Email:     emailClient,
+			EmailTo:   feedbackTo,
+			Limiter:   ratelimit.New(rate.Every(12*time.Minute), 5), // 5/hora
+			Flasher:   flasher,
+			Logger:    logger,
+			UserEmail: func(ctx context.Context, userID int64) (string, error) {
+				var email string
+				err := db.QueryRowContext(ctx,
+					`SELECT email FROM users WHERE id = ?`, userID,
+				).Scan(&email)
+				if err != nil {
+					return "", err
+				}
+				return email, nil
+			},
+		})
+		if err != nil {
+			logger.Error("inicializar feedback handler", "err", err)
+			os.Exit(1)
+		}
+		feedback.SetEnabled(true)
+		logger.Info("feedback habilitado", "to", feedbackTo)
+	}
+
 	adminHandler, err := admin.New(admin.Config{
 		DB:     db,
 		Token:  os.Getenv("ADMIN_TOKEN"),
@@ -417,6 +446,7 @@ func main() {
 		Releases:      releasesHandler,
 		Unsubscribe:   unsubHandler,
 		Admin:         adminHandler,
+		Feedback:      feedbackHandler,
 		StaticAssets:  webFS,
 		HTMLTemplates: htmlFS,
 	})

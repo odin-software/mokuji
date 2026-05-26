@@ -22,6 +22,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/errrender"
+	"git.odin.do/kengru/mokuji/internal/feedback"
 	"git.odin.do/kengru/mokuji/internal/mangasource"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -153,9 +154,10 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	funcs := template.FuncMap{
-		"csrfInput":   csrf.Input,
-		"statusLabel": statusLabel,
-		"appVersion":  func() string { return version.Value },
+		"csrfInput":       csrf.Input,
+		"statusLabel":     statusLabel,
+		"appVersion":      func() string { return version.Value },
+		"feedbackEnabled": feedback.IsEnabled,
 	}
 	base, err := template.New("base").Funcs(funcs).ParseFS(cfg.HTMLTemplates, "layout.html")
 	if err != nil {

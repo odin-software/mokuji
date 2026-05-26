@@ -47,6 +47,9 @@ func (s *Server) routes() http.Handler {
 	if s.cfg.Admin != nil {
 		s.cfg.Admin.Mount(mux)
 	}
+	if s.cfg.Feedback != nil {
+		s.cfg.Feedback.Mount(mux)
+	}
 	if s.cfg.StaticAssets != nil {
 		s.mountPWA(mux)
 	}

@@ -405,6 +405,7 @@ func main() {
 
 	srv := server.New(server.Config{
 		Addr:          envOr("HTTP_ADDR", ":8080"),
+		BaseURL:       envOr("BASE_URL", "http://localhost:8080"),
 		DB:            db,
 		Logger:        logger,
 		Sessions:      sessions,

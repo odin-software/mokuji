@@ -28,7 +28,10 @@ import (
 // Config agrupa las dependencias del servidor. Todos los Handlers son
 // opcionales para facilitar tests del transporte HTTP sin un stack completo.
 type Config struct {
-	Addr        string
+	Addr string
+	// BaseURL es el origen público del servidor (ej. "https://mokuji.org").
+	// Usado por handlers que emiten URLs absolutas (sitemap, robots).
+	BaseURL     string
 	DB          *sql.DB
 	Logger      *slog.Logger
 	Sessions    *session.Manager

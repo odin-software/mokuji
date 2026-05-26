@@ -211,6 +211,8 @@ Cierre del roadmap: el proyecto está listo para promoción pública.
 ### Backlog post-v1.0
 
 - **Form de feedback in-app** (`/feedback` → email a `kg@odin.do`). Rate limit + honeypot (sin captchas third-party). Link en footer y `/settings`.
+- **Corregir read-state de caps**: hoy si marcas cap. 231 como leído por error, no hay forma de des-marcarlo ni de decir "en realidad voy por el 1". Necesita: (a) un botón "marcar como no leído" en cada chapter-row, (b) idealmente un "marcar todo hasta el cap. N como leído / no leído" para users que catalogan manga que ya leyeron en otra app. Anotado 2026-05-26.
+- **Badge "halando capítulos…" en entry recién agregado**: cuando `manga_sources.last_checked_at` es NULL/muy reciente y `chapter` aún no tiene filas para esa source, mostrar un indicador en `entry.html` para que el user no piense que el match falló. ~20 LOC en template + ajuste del query del entry view. Anotado 2026-05-26 después del caso Dr. Stone (poll inicial tardó minutos, user pensó que solo había 3 caps).
 - **`MANGADEX_ENABLED` env var** para apagar MangaDex como source. Requiere considerar el comportamiento del worker, matcher y `/releases` cuando las tres sources están apagadas (¿error de startup? ¿warning + correr en modo "biblioteca offline"?). Anotado 2026-05-25.
 - **Activity feed / capa social** sobre `/u/{slug}`.
 - **Bato.to como 4ta source** (scaffolding listo).

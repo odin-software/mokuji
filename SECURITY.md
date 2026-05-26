@@ -2,9 +2,9 @@
 
 ## Reportar una vulnerabilidad
 
-Si encontraste una vulnerabilidad en mokuji, contactá directamente a **support@odin.do**. No abras un issue público.
+Si encontraste una vulnerabilidad en mokuji, contacta directamente a **support@odin.do**. No abras un issue público.
 
-Si podés, incluí:
+Si puedes, incluye:
 
 - Descripción del problema y su impacto potencial
 - Pasos para reproducir
@@ -14,8 +14,8 @@ Si podés, incluí:
 ## Compromiso de respuesta
 
 - Respuesta inicial: dentro de 7 días.
-- Después de confirmar y mitigar el problema, coordinaremos disclosure responsable con vos.
-- Crédito al reporter en el changelog si lo deseás.
+- Después de confirmar y mitigar el problema, coordinaremos disclosure responsable contigo.
+- Crédito al reporter en el changelog si lo deseas.
 
 ## Versiones soportadas
 

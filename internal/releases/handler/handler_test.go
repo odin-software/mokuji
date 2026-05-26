@@ -305,8 +305,12 @@ func TestListRendersWithSession(t *testing.T) {
 	if !strings.Contains(body, "97") {
 		t.Error("body no contiene el número de capítulo")
 	}
-	if !strings.Contains(body, "https://mangadex.org/chapter/ch-1") {
-		t.Error("body no contiene el link al reader")
+	// El "leer →" ya no es un <a href> al reader externo: ahora es un form
+	// POST a /releases/read que marca leído + redirige (mismo flow que
+	// /library/entry/{id}/read). Verificamos que el form esté wireado al
+	// chapter_id correcto.
+	if !strings.Contains(body, `action="/releases/read"`) {
+		t.Error("body no contiene el form de leer→read")
 	}
 }
 

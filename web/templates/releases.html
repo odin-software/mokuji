@@ -39,7 +39,11 @@
       </div>
     </div>
     <div class="release-actions">
-      <a href="{{.ReaderURL}}" class="action-link" target="_blank" rel="noopener noreferrer">leer →</a>
+      <form method="POST" action="/releases/read" target="_blank" class="inline-form">
+        {{csrfInput $.Session}}
+        <input type="hidden" name="chapter_id" value="{{.ChapterID}}">
+        <button type="submit" class="action-link" title="abre el lector en una pestaña nueva y marca leído acá">leer →</button>
+      </form>
       <form method="POST" action="/releases/mark-read" class="inline-form">
         {{csrfInput $.Session}}
         <input type="hidden" name="chapter_id" value="{{.ChapterID}}">

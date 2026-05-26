@@ -94,6 +94,7 @@ func New(cfg Config) (*Handler, error) {
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /releases", h.list)
 	mux.HandleFunc("POST /releases/mark-read", h.markRead)
+	mux.HandleFunc("POST /releases/read", h.readAndOpen)
 }
 
 type pageData struct {
@@ -168,6 +169,95 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/releases", http.StatusSeeOther)
+}
+
+// readAndOpen sirve POST /releases/read. Equivalente al
+// /library/entry/{id}/read pero accesible desde el feed /releases sin
+// requerir el entry_id en el form (resolvemos manga_id desde chapter_id).
+//
+// Marca leído + responde con una página mínima que redirige al
+// external_url. No usamos http.Redirect cross-origin: el CSP del server
+// tiene form-action 'self' y aplicaría a redirects del form chain.
+// Resolvemos vía <meta http-equiv="refresh"> que no cuenta como
+// form-action.
+func (h *Handler) readAndOpen(w http.ResponseWriter, r *http.Request) {
+	s, ok := session.FromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	chapterID, err := strconv.ParseInt(r.PostFormValue("chapter_id"), 10, 64)
+	if err != nil || chapterID <= 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	// 1) Mark read — misma query que markRead, pero acá no redirigimos a
+	// /releases, sino al external_url.
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE library_entries
+		SET last_read_chapter_number = MAX(
+		      COALESCE(last_read_chapter_number, 0),
+		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
+		    ),
+		    updated_at = ?
+		WHERE user_id = ?
+		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)
+	`, chapterID, time.Now().UTC().Unix(), s.UserID, chapterID)
+	if err != nil {
+		h.logger.Error("read+open: marcar leído", "user_id", s.UserID, "chapter_id", chapterID, "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 2) Load external URL. Fallback a mangadex si está vacío
+	// (mismo patrón que UnreadReleases.ReaderURL).
+	var external, sourceID, mangaID sql.NullString
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT external_url, source_id, manga_id FROM chapter WHERE id = ?`, chapterID,
+	).Scan(&external, &sourceID, &mangaID); err != nil {
+		h.logger.Error("read+open: cargar url", "chapter_id", chapterID, "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	url := external.String
+	if url == "" && sourceID.Valid && sourceID.String != "" {
+		url = "https://mangadex.org/chapter/" + sourceID.String
+	}
+	if url == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	writeRedirectPage(w, url)
+}
+
+// writeRedirectPage emite una página HTML mínima que redirige al destino
+// via <meta http-equiv="refresh"> + fallback con <a> visible. Evita la
+// restricción CSP form-action que se aplica al redirect chain de un
+// http.Redirect.
+var redirectTmpl = template.Must(template.New("redir").Parse(`<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url={{.URL}}">
+<title>abriendo el lector…</title>
+</head><body>
+<p>abriendo el lector… si no pasa nada, <a href="{{.URL}}" rel="noopener">click acá</a>.</p>
+</body></html>`))
+
+func writeRedirectPage(w http.ResponseWriter, url string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = redirectTmpl.Execute(w, struct{ URL string }{URL: url})
 }
 
 // UnreadReleases devuelve los caps no leídos del usuario, ordenados por

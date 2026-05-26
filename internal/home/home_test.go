@@ -234,6 +234,32 @@ func TestHomeHandlesMissingUser(t *testing.T) {
 	}
 }
 
+func TestHome_LandingHasCanonicalAndJSONLD(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, esperado 200", w.Code)
+	}
+	body := w.Body.String()
+	for _, needle := range []string{
+		`<link rel="canonical" href="https://mokuji.org">`,
+		`<script type="application/ld+json">`,
+		`"@type": "SoftwareApplication"`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("landing body missing %q", needle)
+		}
+	}
+}
+
 func TestHome_LandingHasCriticalSections(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db)

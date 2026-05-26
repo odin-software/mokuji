@@ -1,4 +1,24 @@
 {{define "title"}}mokuji · una biblioteca para tu manga{{end}}
+{{define "head_extra"}}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "mokuji",
+  "applicationCategory": "BookCollectionApplication",
+  "operatingSystem": "Web, Linux, macOS, Windows, iOS, Android",
+  "description": "Una biblioteca pública y self-hostable para tu manga. Cataloga, sigue capítulos nuevos, enlaza a la fuente. Sin algoritmos.",
+  "url": "https://mokuji.org",
+  "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "inLanguage": "es"
+}
+</script>
+{{end}}
 {{define "content"}}
 <style>
 /* ── landing-only styles ───────────────────────────────────────────── */

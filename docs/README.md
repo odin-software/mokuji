@@ -2,6 +2,9 @@
 
 ## Índice
 
+- [Estado del proyecto](estado.md) — snapshot de qué corre, qué falta, gotchas operativos
+- [Self-hosting](self-hosting.md) — guía para correr tu propia instancia
+- [Contribuir](../CONTRIBUTING.md) — setup local, commits, ADR, flow de PRs
 - [Decisiones pendientes](decisiones-pendientes.md) — roadmap de decisiones aún abiertas
 - [ADRs](adr/README.md) — Architecture Decision Records de decisiones cerradas
 

@@ -33,6 +33,7 @@ Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: ley
 | v0.6 — Landing pública | Template responsive (mobile + desktop 1024px) + default OG/Twitter meta + OG card PNG 1200×630 | — (✅ v0.6.0) |
 | v0.7 — Cara externa completa | Onboarding wizard 3 pasos + auth redesign OTP + splash PWA + 5 variantes OG + desktop sidebar a 1024px + daily digest opt-in backend | — (✅ v0.7.0) |
 | v0.8 — Pulido | Empty states normalizados (6 kanji) + microcopy review + email templates redesigned (digest/otp/account-deletion) + favicons PNG completos + preload Google Fonts + dark mode parity audit + errrender package para 5xx estilizados | — (✅ v0.8.0) |
+| v1.0 — Docs + discoverability | README rico + self-hosting.md + CONTRIBUTING.md + JSON-LD/sitemap/llms.txt/canonical + /privacy + voseo sweep | — (✅ v1.0.0) |
 
 ## Mapa de paquetes
 
@@ -194,19 +195,32 @@ Tercera fase del roadmap hacia v1.0. Cerró pulido.
 - **Performance** (`layout.html`): `<link rel="preload" as="style">` sobre el CSS de Google Fonts para reducir RTT crítico above-the-fold.
 - **Dark mode parity audit**: pasada sobre los 3 `@media (prefers-color-scheme: dark)` blocks. Gap encontrado y arreglado: `button.danger` no tenía override y quedaba apagado en dark. Override con `var(--accent)` + brighter hover.
 
-### Backlog post-v0.8 / v1.0 (sin priorizar — pendiente del brainstorming)
+### v1.0 — cerrado ✅ (branch `version-1-0`)
 
-- Onboarding flow nuevo para users (no hay flow más allá del OTP).
-- Activity feed / capa social sobre `/u/{slug}`.
-- Bato.to como 4ta source (scaffolding listo).
-- Admin tool `POST /admin/link-source` (vincular sources manualmente, no user-facing).
-- `GET /admin/digest-status` (observabilidad del worker).
-- Layout desktop con sidebar (hoy `max-width: 42rem` centrado).
-- OpenGraph meta tags + cards 1200×630.
-- Passkeys / WebAuthn (research, no implementación).
-- Performance: CSS inline grande, 3 familias de fonts de Google.
-- Apertura comunidad: README más rico, contribution guide.
-- `Type=notify` con `sd_notify`. SMTP `:465`. Activity feed. Rating (este último explícitamente fuera de MVP).
+Cierre del roadmap: el proyecto está listo para promoción pública.
+
+- **README.md rico**: hero (`og-default.png`) + value prop + 3 bullets + stack + sources reales (MangaDex + Asura + Comick) + badges + links a self-host/CONTRIBUTING + AGPL nota.
+- **docs/self-hosting.md** (nuevo): guía agnóstica de plataforma. Build, env vars completas con grupos (esenciales / obligatorias en prod / opcionales por feature), principios de deploy (proceso supervisor + reverse proxy + persistencia), ejemplos de systemd y docker-compose sin prescribir uno.
+- **CONTRIBUTING.md** (nuevo): setup local, tests, estructura del repo, commits, cuándo ADR, flow de PRs, voz (tuteo dominicano + tono específico).
+- **Discoverability técnica**: `/robots.txt` + `/sitemap.xml` + `/llms.txt` servidos desde el root (handler nuevo `mountDiscoverability` en `internal/server/`). JSON-LD `SoftwareApplication` en landing. `<link rel="canonical">` overridable en layout. `BaseURL` agregado a `server.Config`.
+- **Página `/privacy`** pública, sin auth: qué se recolecta, por qué, retención, derechos (export/delete), contacto `kg@odin.do`. Link en footer.
+- **Sweep voseo**: limpia README y SECURITY que arrastraban voseo del primer commit (mayo 2026).
+- **Repo público**: Forgejo abierto a browse anónimo (2026-05-25).
+- **Bump VERSION a v1.0.0** + tag + release notes en Forgejo.
+
+### Backlog post-v1.0
+
+- **Form de feedback in-app** (`/feedback` → email a `kg@odin.do`). Rate limit + honeypot (sin captchas third-party). Link en footer y `/settings`.
+- **`MANGADEX_ENABLED` env var** para apagar MangaDex como source. Requiere considerar el comportamiento del worker, matcher y `/releases` cuando las tres sources están apagadas (¿error de startup? ¿warning + correr en modo "biblioteca offline"?). Anotado 2026-05-25.
+- **Activity feed / capa social** sobre `/u/{slug}`.
+- **Bato.to como 4ta source** (scaffolding listo).
+- **Admin tool `POST /admin/link-source`** (vincular sources manualmente, no user-facing).
+- **`GET /admin/digest-status`** (observabilidad del worker).
+- **Passkeys / WebAuthn** (research, no implementación).
+- **`Type=notify` con `sd_notify`** para readiness real en systemd.
+- **Soporte SMTP `:465`** (TLS implícito) para self-hosters.
+- **CI: tests antes de deployar** (rollbackeado; necesita cache de módulos + timeout explícito).
+- **Rating** (puntuación de manga) — explícitamente fuera de MVP, pero queda como espera potencial.
 
 ## Cómo retomar
 

@@ -1,0 +1,910 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}mokuji{{end}}</title>
+{{block "meta" .}}
+<meta name="description" content="Una biblioteca pública y self-hostable para tu manga. Cataloga, sigue capítulos nuevos, enlaza a la fuente. Sin algoritmos.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="mokuji">
+<meta property="og:title" content="mokuji · una biblioteca para tu manga">
+<meta property="og:description" content="Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin recomendaciones — solo un índice prolijo de lo que importa.">
+<meta property="og:image" content="/static/og/og-default.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="es_DO">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="mokuji · una biblioteca para tu manga">
+<meta name="twitter:description" content="Una biblioteca pública y self-hostable para tu manga.">
+<meta name="twitter:image" content="/static/og/og-default.png">
+{{end}}
+<link rel="canonical" href="{{block "canonical" .}}https://mokuji.org{{end}}">
+{{block "head_extra" .}}{{end}}
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<link rel="shortcut icon" href="/static/favicon.ico">
+<meta name="theme-color" content="#1a1815" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16140e" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="mokuji">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+JP:wght@700;900&display=swap">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+JP:wght@700;900&display=swap" rel="stylesheet">
+<script src="/static/app.js" defer></script>
+<style>
+:root {
+  color-scheme: light dark;
+
+  /* identity — paper + ink + vermillion */
+  --bg: #f3ede0;
+  --bg-2: #eae3d2;
+  --bg-3: #dfd6c0;
+  --text: #1a1815;
+  --text-soft: #3a352e;
+  --text-muted: #8a857a;
+  --text-label: #3a352e;
+
+  --rule: rgba(26, 24, 21, 0.13);
+  --rule-soft: rgba(26, 24, 21, 0.08);
+  --rule-strong: rgba(26, 24, 21, 0.22);
+
+  --border: rgba(26, 24, 21, 0.18);
+  --border-strong: var(--text);
+  --border-soft: var(--rule-soft);
+  --input-bg: var(--bg);
+  --details-bg: var(--bg-2);
+
+  --accent: #b8412a;          /* vermillion (朱) */
+  --accent-soft: rgba(184, 65, 42, 0.13);
+
+  --button-bg: var(--text);
+  --button-bg-hover: #000000;
+  --button-fg: var(--bg);
+  --logout-hover-bg: var(--bg-2);
+
+  --error-bg: rgba(184, 65, 42, 0.10);
+  --error-border: var(--accent);
+  --error-text: #6b1e10;
+
+  /* status badges */
+  --status-reading-bg: var(--accent);
+  --status-reading-fg: var(--bg);
+  --status-planned-bg: transparent;
+  --status-planned-fg: var(--text);
+  --status-planned-border: var(--text);
+  --status-completed-bg: transparent;
+  --status-completed-fg: var(--text-muted);
+  --status-completed-border: var(--text-muted);
+
+  /* fonts */
+  --font-sans: 'Albert Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-jp:   'Noto Serif JP', serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16140e;
+    --bg-2: #211c14;
+    --bg-3: #2b251a;
+    --text: #ece5d4;
+    --text-soft: #c9c1ab;
+    --text-muted: #8a8273;
+    --text-label: #c9c1ab;
+
+    --rule: rgba(236, 229, 212, 0.13);
+    --rule-soft: rgba(236, 229, 212, 0.07);
+    --rule-strong: rgba(236, 229, 212, 0.22);
+
+    --border: rgba(236, 229, 212, 0.20);
+    --border-strong: var(--text);
+    --border-soft: var(--rule-soft);
+    --input-bg: var(--bg);
+    --details-bg: var(--bg-2);
+
+    --accent: #d65a40;
+    --accent-soft: rgba(214, 90, 64, 0.16);
+
+    --button-bg: var(--text);
+    --button-bg-hover: #ffffff;
+    --button-fg: var(--bg);
+    --logout-hover-bg: var(--bg-2);
+
+    --error-bg: rgba(214, 90, 64, 0.12);
+    --error-border: var(--accent);
+    --error-text: #f4c8bd;
+
+    --status-reading-bg: var(--accent);
+    --status-reading-fg: var(--bg);
+    --status-planned-fg: var(--text);
+    --status-planned-border: var(--text);
+    --status-completed-fg: var(--text-muted);
+    --status-completed-border: var(--text-muted);
+  }
+}
+
+* { box-sizing: border-box; }
+::selection { background: var(--accent); color: var(--bg); }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.app-shell {
+  max-width: 42rem;
+  margin: 2.5rem auto;
+  padding: 0 1.25rem 2rem;
+}
+
+.app-sidebar { display: none; }
+
+@media (min-width: 64rem) {
+  .app-shell {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 16rem 1fr;
+    min-height: 100vh;
+  }
+  /* Sin sesión (landing, /auth): no hay .app-sidebar; el grid degrada a
+     single-column con padding lateral generoso para que el contenido no
+     quede pegado al borde del viewport en pantallas grandes. */
+  .app-shell:not(:has(> .app-sidebar)) {
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding: 2rem 2.5rem;
+  }
+  /* La landing tiene secciones que bleed full-width (close oscura, footer
+     oscuro). Sus margin negativos -1.25rem estaban calibrados para el
+     padding mobile del shell. En desktop la padding del shell es 2.5rem,
+     así que las override para que sigan llegando al borde. */
+  .app-shell:not(:has(> .app-sidebar)) .landing-close,
+  .app-shell:not(:has(> .app-sidebar)) .landing-footer {
+    margin-left: -2.5rem;
+    margin-right: -2.5rem;
+  }
+  .app-sidebar {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-2);
+    border-right: 1px solid var(--rule);
+    padding: 2rem 1.5rem;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .app-main {
+    padding: 2rem 2.5rem;
+    min-width: 0;
+    max-width: 70rem;
+    margin: 0 auto;  /* centra el contenido en pantallas grandes en vez de pegarlo a la izquierda del sidebar */
+    width: 100%;
+  }
+  /* En el modo sin sidebar, el main no necesita el padding lateral del shell
+     ni el max-width — las páginas anónimas (landing, auth) controlan su
+     propio chrome y ancho. */
+  .app-shell:not(:has(> .app-sidebar)) .app-main {
+    padding: 0;
+    max-width: none;
+  }
+  .app-nav { display: none; }  /* sidebar replaces it on desktop */
+  .app-footer { display: none; }  /* sidebar foot handles version link */
+}
+
+/* Sidebar internal styles */
+.app-sidebar-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+  color: var(--text);
+}
+.app-sidebar-logo::before {
+  content: "目次";
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 2rem;
+}
+.app-sidebar-nav a {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.4rem 0;
+  border-bottom: 2px solid transparent;
+}
+.app-sidebar-nav a:hover { color: var(--text); border-bottom-color: var(--accent); }
+.app-sidebar-foot {
+  margin-top: auto;
+  padding-top: 2rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.app-sidebar-foot a, .app-sidebar-foot button {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+  padding: 0.25rem 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+.app-sidebar-foot a:hover, .app-sidebar-foot button:hover { color: var(--text); }
+.app-sidebar-version {
+  margin-top: 1rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+}
+
+img { max-width: 100%; height: auto; }
+input, select, textarea { max-width: 100%; }
+
+h1, h2, h3 { font-family: var(--font-sans); letter-spacing: -0.02em; line-height: 1.05; }
+h1 { margin: 0 0 1rem; font-weight: 900; font-size: 2.25rem; letter-spacing: -0.035em; }
+h2 { margin: 1.5rem 0 0.75rem; font-weight: 800; font-size: 1.25rem; letter-spacing: -0.02em; }
+h3 { margin: 1rem 0 0.5rem; font-weight: 700; font-size: 1rem; }
+
+p { margin: 0.5rem 0 0.75rem; }
+a { color: inherit; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--accent); }
+
+code, kbd, samp { font-family: var(--font-mono); font-size: 0.9em; background: var(--rule-soft); padding: 0 0.25rem; border-radius: 2px; }
+
+/* forms */
+form { display: grid; gap: 0.75rem; }
+label { display: grid; gap: 0.3rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
+input, select, textarea {
+  padding: 0.625rem 0.75rem;
+  border: 1.5px solid var(--border);
+  border-radius: 0;
+  font-size: 1rem;
+  font-family: var(--font-sans);
+  background: var(--input-bg);
+  color: var(--text);
+}
+input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--text); }
+textarea { resize: vertical; min-height: 6rem; }
+button {
+  padding: 0.6875rem 1rem;
+  background: var(--button-bg);
+  color: var(--button-fg);
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  letter-spacing: 0.01em;
+}
+button:hover { background: var(--button-bg-hover); }
+button.danger { background: #a83422; color: #fff; }
+button.danger:hover { background: #8a2818; }
+@media (prefers-color-scheme: dark) {
+  button.danger { background: var(--accent); color: var(--bg); }
+  button.danger:hover { background: #e26b51; }
+}
+
+.error {
+  padding: 0.625rem 0.875rem;
+  background: var(--error-bg);
+  border-left: 3px solid var(--error-border);
+  color: var(--error-text);
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+}
+.success {
+  padding: 0.625rem 0.875rem;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+}
+
+.muted { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.8125rem; letter-spacing: 0.01em; }
+
+/* ── app chrome ───────────────────────────────────────────────────── */
+.app-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin: 0 0 1.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--text);
+}
+.app-nav-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+  color: var(--text);
+}
+.app-nav-logo::before {
+  content: "目次";
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+.app-nav nav { display: flex; gap: 1rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.app-nav nav a { color: var(--text-muted); text-decoration: none; padding-bottom: 0.2rem; border-bottom: 2px solid transparent; }
+.app-nav nav a:hover, .app-nav nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.app-footer {
+  margin: 3rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+.app-footer a { color: inherit; }
+
+/* ── action link / button-like anchors ───────────────────────────── */
+.action-link {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  background: var(--button-bg);
+  color: var(--button-fg);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.action-link:hover { background: var(--button-bg-hover); }
+
+/* ── library list ─────────────────────────────────────────────────── */
+.lib-header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: 0.5rem; }
+.lib-header h1 { margin: 0; }
+.lib-filters {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 1.25rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.lib-filters input[type="search"] { flex: 1; min-width: 0; border-width: 1px; padding: 0.4rem 0.6rem; }
+.lib-filters select { border-width: 1px; padding: 0.4rem 0.6rem; }
+.lib-filters button { padding: 0.4rem 0.85rem; font-size: 0.8125rem; }
+
+.manga-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; }
+.manga-list details {
+  border-top: 1px solid var(--rule);
+  padding: 0.625rem 0;
+}
+.manga-list li:last-child details { border-bottom: 1px solid var(--rule); }
+.manga-list summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+}
+.manga-list summary .cover { border-radius: 0; flex-shrink: 0; border: 1px solid var(--rule); }
+.manga-list summary strong { margin-right: 0.25rem; font-weight: 700; }
+.manga-title-link { text-decoration: none; color: inherit; }
+.manga-title-link:hover strong { color: var(--accent); }
+.manga-list details[open] { background: var(--bg-2); padding-left: 0.75rem; padding-right: 0.75rem; }
+.entry-form { margin-top: 0.75rem; }
+.entry-source-link { margin: 0.75rem 0 0; font-family: var(--font-mono); font-size: 0.8125rem; }
+.delete-form { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); }
+
+/* ── status badges (lowercase, monospace number prefix) ──────────── */
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  border: 1.5px solid currentColor;
+}
+.status::before {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  opacity: 0.65;
+}
+.status-reading {
+  background: var(--status-reading-bg);
+  color: var(--status-reading-fg);
+  border-color: var(--status-reading-bg);
+}
+.status-reading::before { content: "01"; opacity: 0.85; }
+.status-planned {
+  background: var(--status-planned-bg);
+  color: var(--status-planned-fg);
+  border-color: var(--status-planned-border);
+}
+.status-planned::before { content: "02"; }
+.status-completed {
+  background: var(--status-completed-bg);
+  color: var(--status-completed-fg);
+  border-color: var(--status-completed-border);
+}
+.status-completed::before { content: "03"; }
+
+.favorite { color: var(--accent); font-size: 0.9rem; line-height: 1; }
+.favorite::before { content: "●"; }
+.favorite > * { display: none; }   /* hide any inner ★ glyph from old markup */
+
+/* ── checkboxes / radios ──────────────────────────────────────────── */
+.checkbox, .radio {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+}
+.checkbox input, .radio input { width: auto; padding: 0; margin: 0.25rem 0 0; flex-shrink: 0; accent-color: var(--accent); }
+.checkbox > span, .radio > span { display: flex; flex-direction: column; gap: 0.15rem; }
+.radio code { background: var(--rule-soft); padding: 0 0.25rem; font-size: 0.8125rem; }
+
+/* ── search ──────────────────────────────────────────────────────── */
+.search-form { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
+.search-form input[type="search"] { flex: 1 1 12rem; min-width: 0; }
+.search-results { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.75rem; }
+.search-results .result {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  align-items: start;
+}
+.search-results .result img { border: 1px solid var(--rule); }
+.search-results .info p { margin: 0.4rem 0 0; font-size: 0.875rem; line-height: 1.5; max-height: 6em; overflow: hidden; color: var(--text-soft); font-family: var(--font-sans); }
+.search-results .info strong { color: var(--text); font-weight: 700; }
+
+/* ── logout / user-links ─────────────────────────────────────────── */
+.logout-form { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.logout-form button { background: transparent; color: var(--text); border: 1px solid var(--border); padding: 0.4rem 0.85rem; font-size: 0.8125rem; font-weight: 600; }
+.logout-form button:hover { background: var(--logout-hover-bg); }
+
+.user-links { margin-top: 2rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.04em; }
+.user-links .sep { margin: 0 0.5rem; opacity: 0.5; }
+.user-links a { color: inherit; }
+
+/* ── settings ────────────────────────────────────────────────────── */
+.settings-section {
+  border: 1px solid var(--rule);
+  padding: 1rem;
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.75rem;
+  background: var(--bg);
+}
+.settings-section legend {
+  padding: 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── public profile ──────────────────────────────────────────────── */
+.public-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+.manga-list.public { gap: 0; }
+.manga-list.public > li:last-child { border-bottom: 1px solid var(--rule); }
+.public-entry .cover { flex-shrink: 0; border: 1px solid var(--rule); }
+
+.username-nudge {
+  padding: 0.75rem 0.875rem;
+  background: var(--bg-2);
+  border-left: 3px solid var(--accent);
+  font-size: 0.9375rem;
+  margin: 0 0 1.25rem;
+}
+.username-nudge code { background: var(--rule-soft); padding: 0 0.25rem; font-size: 0.8125rem; }
+
+/* ── home widget / releases ──────────────────────────────────────── */
+.home-widget { margin-top: 2rem; }
+.home-widget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--text);
+}
+.home-widget-header h2 { margin: 0; font-size: 1rem; font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+.release-list { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0; }
+.release {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.release .cover { flex-shrink: 0; border: 1px solid var(--rule); }
+.release-info { min-width: 0; }
+.release-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.release-meta { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--text-soft); margin-top: 0.15rem; }
+.release-meta > span:first-child { color: var(--accent); font-weight: 600; }
+.release-meta > span:not(:first-child) { margin-left: 0.25rem; }
+.release-actions { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
+
+.inline-form { display: inline; margin: 0; }
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+.link-button:hover { color: var(--text); background: none; }
+
+/* ── md-badge (mangadex status pill) ─────────────────────────────── */
+.md-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+.md-badge-new { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.md-badge-new:hover { background: var(--accent); color: var(--bg); }
+.md-badge-ok { color: var(--text); border-color: var(--rule-strong); }
+.md-badge-warn { color: #8a6a00; border-color: #8a6a00; }
+.md-badge-muted { color: var(--text-muted); border-color: var(--rule); }
+@media (prefers-color-scheme: dark) {
+  .md-badge-warn { color: #f0c14a; border-color: #f0c14a; }
+}
+
+/* ── entry detail ────────────────────────────────────────────────── */
+.entry-detail-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--text);
+}
+.entry-detail-cover { flex-shrink: 0; border: 1px solid var(--rule); }
+.entry-detail-meta { min-width: 0; }
+.entry-detail-meta h1 { margin: 0 0 0.4rem; font-size: 1.875rem; }
+.entry-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 0.5rem;
+}
+
+/* ── chapter list ────────────────────────────────────────────────── */
+.chapter-list { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0; }
+.chapter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.chapter-row.chapter-read { opacity: 0.5; }
+.chapter-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.7rem;
+}
+.chapter-num { font-size: 0.9375rem; font-weight: 700; }
+.chapter-title { font-size: 0.875rem; color: var(--text-soft); }
+.chapter-meta { font-family: var(--font-mono); font-size: 0.75rem; margin-left: auto; }
+.chapter-meta > * { margin-right: 0.2rem; }
+.chapter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+.chapter-read-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chapter-read-btn { padding: 0.3rem 0.7rem; font-size: 0.75rem; font-weight: 700; }
+.chapter-mark-read { margin-left: auto; }
+
+/* ── sources panel (entry page) ──────────────────────────────────── */
+.sources-fieldset { margin: 1.5rem 0; padding: 0.75rem 0.875rem; border: 1px solid var(--rule); background: var(--bg); }
+.sources-fieldset h2 { margin: 0 0 0.5rem; font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.sources-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; }
+.source-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; font-family: var(--font-mono); font-size: 0.8125rem; padding: 0.25rem 0; }
+.source-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+.source-info strong { font-weight: 600; }
+.source-status { font-size: 0.75rem; color: var(--text-muted); }
+.source-matched .source-status { color: var(--accent); }
+.source-disabled { opacity: 0.6; }
+.source-actions { display: flex; gap: 0.5rem; }
+
+/* ── page heading helper (used by lib, releases, settings, etc.) ── */
+.page-head { margin-bottom: 1.5rem; }
+.page-head .eyebrow { margin: 0 0 0.4rem; }
+.page-head h1 { margin: 0; font-size: 2.5rem; }
+.page-head .meta { margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.8125rem; color: var(--text-muted); letter-spacing: 0.02em; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.accent { color: var(--accent); }
+
+/* ── auth pages ──────────────────────────────────────────────────── */
+.auth-page { max-width: 28rem; margin: 1.5rem auto 0; }
+.auth-page h1 { font-size: 2.5rem; }
+.auth-lead { font-size: 0.9375rem; color: var(--text-soft); margin: 0 0 1.25rem; line-height: 1.55; }
+.auth-lead strong { color: var(--text); font-weight: 700; }
+.auth-page .resend { margin-top: 1.25rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); }
+.auth-page .resend a { color: inherit; }
+
+.otp-input {
+  font-family: var(--font-mono) !important;
+  font-size: 1.75rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.45em !important;
+  text-align: center !important;
+  padding: 0.75rem 0.5rem !important;
+  border-width: 1.5px !important;
+}
+
+/* ── lib-header refinement (used in lib/list, releases, settings) ── */
+.lib-header { border-bottom: 2px solid var(--text); padding-bottom: 0.5rem; align-items: flex-end; }
+.lib-header h1 { font-size: 2.5rem; }
+.lib-header .lib-heading .eyebrow { margin: 0 0 0.2rem; }
+.lib-header .lib-heading { display: flex; flex-direction: column; }
+
+/* ── release feed empty state ────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  border: 1px solid var(--rule);
+  margin: 1rem 0;
+  background: var(--bg-2);
+}
+.empty-state .kanji {
+  font-family: var(--font-jp);
+  font-size: 5rem;
+  font-weight: 900;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 1rem;
+  display: block;
+}
+.empty-state h2 { margin: 0.5rem 0; font-size: 1.25rem; }
+.empty-state p { margin: 0.5rem auto; max-width: 24rem; color: var(--text-soft); font-family: var(--font-sans); font-size: 0.9375rem; }
+
+/* ── public profile header ─────────────────────────────────────────── */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+.profile-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-sans);
+  font-weight: 900;
+  font-size: 1.625rem;
+  letter-spacing: -0.04em;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.profile-meta { min-width: 0; }
+.profile-meta h1 { margin: 0; font-size: 1.875rem; letter-spacing: -0.04em; }
+.profile-meta .profile-sub { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.04em; color: var(--text-muted); margin: 0.25rem 0 0; }
+
+.profile-counters {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid var(--text);
+  margin: 1rem 0 1.5rem;
+}
+.profile-counter { padding: 0.75rem 0.875rem; border-left: 1px solid var(--text); }
+.profile-counter:first-child { border-left: 0; }
+.profile-counter .num { font-family: var(--font-sans); font-weight: 900; font-size: 1.75rem; letter-spacing: -0.03em; line-height: 1; }
+.profile-counter .label { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-top: 0.375rem; display: block; }
+.profile-counter--reading .num { color: var(--accent); }
+.profile-counter--planned .num { color: var(--text); }
+.profile-counter--completed .num { color: var(--text-muted); }
+
+/* ── danger callout (delete-account, restore-account) ──────────────── */
+.danger-callout {
+  border: 1.5px solid #a83422;
+  border-left-width: 4px;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0;
+  background: rgba(168, 52, 34, 0.08);
+}
+.danger-callout h2 { margin: 0 0 0.5rem; font-size: 1rem; color: #a83422; }
+.danger-callout p { margin: 0.25rem 0; font-size: 0.9375rem; }
+@media (prefers-color-scheme: dark) {
+  .danger-callout { border-color: var(--accent); background: rgba(214, 90, 64, 0.10); }
+  .danger-callout h2 { color: var(--accent); }
+}
+
+/* ── section block (settings, restore-account, etc.) ──────────────── */
+.block {
+  border: 1px solid var(--rule);
+  padding: 1rem;
+  margin: 0 0 1rem;
+  background: var(--bg);
+}
+.block .block-legend {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.block h2 { margin: 0 0 0.5rem; font-size: 1.125rem; }
+.block p { margin: 0.25rem 0; }
+.block form { margin-top: 0.75rem; }
+
+/* ── error pages (404, 500) ─────────────────────────────────────────── */
+.error-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1.5rem 0 2.5rem;
+}
+@media (min-width: 36rem) {
+  .error-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 2.5rem; }
+}
+
+.error-glyph {
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: clamp(8rem, 24vw, 14rem);
+  color: var(--text);
+  line-height: 0.9;
+  text-align: center;
+}
+.error-glyph--accent { color: var(--accent); }
+
+.error-body h1 { font-size: clamp(2rem, 5vw, 3.25rem); line-height: 0.95; margin: 0.5rem 0 1rem; }
+.error-body .auth-lead { margin-top: 0; }
+.error-body .error-id {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--bg-2);
+  padding: 0.5rem 0.75rem;
+  letter-spacing: 0.02em;
+  margin: 0 0 1.25rem;
+}
+.error-body .error-id code { background: transparent; padding: 0; }
+
+.error-ctas { display: flex; flex-wrap: wrap; gap: 0.625rem; align-items: center; margin-top: 0.5rem; }
+.error-cta-secondary {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border: 1.5px solid var(--text);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.error-cta-secondary:hover { background: var(--text); color: var(--bg); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  {{if .Session}}
+  <aside class="app-sidebar">
+    <a href="/" class="app-sidebar-logo">mokuji</a>
+    <nav class="app-sidebar-nav">
+      <a href="/library">biblioteca</a>
+      <a href="/releases">releases</a>
+      <a href="/settings">settings</a>
+    </nav>
+    <div class="app-sidebar-foot">
+      <a href="/u/{{.Session.UserID}}">tu perfil</a>
+      <form method="POST" action="/auth/logout" style="margin: 0; padding: 0;">
+        {{csrfInput .Session}}
+        <button type="submit">cerrar sesión</button>
+      </form>
+      <div class="app-sidebar-version">
+        <a href="/version">mokuji {{appVersion}}</a> · <a href="/privacy">privacidad</a> · 目次
+      </div>
+    </div>
+  </aside>
+  {{end}}
+  <main class="app-main">
+    {{if .Session}}
+    <header class="app-nav">
+      <a href="/" class="app-nav-logo">mokuji</a>
+      <nav>
+        <a href="/library">biblioteca</a>
+        <a href="/releases">releases</a>
+        <a href="/settings">settings</a>
+      </nav>
+    </header>
+    {{end}}
+    {{block "content" .}}<p>contenido vacío</p>{{end}}
+  </main>
+</div>
+<footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a> · 目次</footer>
+</body>
+</html>{{end}}

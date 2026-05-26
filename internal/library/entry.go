@@ -87,7 +87,20 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	if sort != "asc" {
 		sort = "desc"
 	}
-	includeRead := r.URL.Query().Get("include_read") == "1"
+	// Default: ocultar leídos para que la vista priorice lo nuevo. Si el
+	// user no tiene unread, fallback a mostrar leídos — sino la página
+	// queda vacía cuando está al día con un manga.
+	// ?include_read=0 fuerza ocultar; ?include_read=1 fuerza mostrar.
+	includeReadParam := r.URL.Query().Get("include_read")
+	var includeRead bool
+	switch includeReadParam {
+	case "1":
+		includeRead = true
+	case "0":
+		includeRead = false
+	default:
+		includeRead = entry.UnreadCount == 0
+	}
 
 	chapters, err := h.loadChaptersForEntry(r.Context(), s.UserID, entry.Manga.ID, sort, includeRead)
 	if err != nil {

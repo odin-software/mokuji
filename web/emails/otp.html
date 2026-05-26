@@ -28,13 +28,11 @@
       <p style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:15px; color:#3a352e; line-height:1.55; margin:16px 0 0;">alguien pidió un código para entrar a mokuji con este correo. si fuiste tú, ingrésalo en la página de verificación:</p>
     </td></tr>
 
-    <!-- digits grid -->
+    <!-- code (single block — copy-pasteable) -->
     <tr><td style="padding:20px 32px 8px;">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-        <tr>
-          {{range .CodeDigits}}<td width="16%" style="border:1.5px solid #1a1815; background:#f3ede0; font-family:'Courier New', Courier, monospace; font-weight:700; font-size:38px; padding:18px 0; text-align:center; color:#1a1815;">{{.}}</td>{{end}}
-        </tr>
-      </table>
+      <div style="border:1.5px solid #1a1815; background:#f3ede0; padding:18px 24px; text-align:center;">
+        <code style="font-family:'Courier New', Courier, monospace; font-weight:700; font-size:38px; letter-spacing:0.4em; color:#1a1815; user-select:all; -webkit-user-select:all;">{{.RawCode}}</code>
+      </div>
       <div style="font-family:'Courier New', Courier, monospace; font-size:11px; color:#8a857a; margin-top:14px; letter-spacing:0.4px;">
         expira en <strong style="color:#1a1815;">10 minutos</strong> · solo se usa una vez
       </div>

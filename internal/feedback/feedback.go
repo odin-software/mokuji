@@ -162,6 +162,15 @@ func (h *Handler) post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rate limit por user_id. La clave es deliberadamente prefijada para
+	// no colisionar con buckets de otros endpoints (auth/start, etc.) si
+	// más adelante un solo Limiter sirve a varios features.
+	key := fmt.Sprintf("feedback:%d", s.UserID)
+	if !h.limiter.Allow(key) {
+		h.renderError(w, s, "demasiado feedback en poco tiempo. espera un rato y vuelve a intentar", http.StatusTooManyRequests)
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		h.renderError(w, s, "no pude leer el formulario, vuelve a intentarlo", http.StatusBadRequest)
 		return

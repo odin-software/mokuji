@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/flash"
@@ -222,5 +225,48 @@ func TestPostFeedbackValidatesMessage(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400", rec.Code)
+	}
+}
+
+func TestPostFeedbackRateLimits(t *testing.T) {
+	sender := &captureSender{}
+	h, err := New(Config{
+		Templates: testTemplates(t),
+		Email:     newEmailClient(t, sender),
+		EmailTo:   "kg@odin.do",
+		// Burst 1, refill muy lento — la segunda request del mismo user
+		// debe ser bloqueada.
+		Limiter: ratelimit.New(rate.Every(time.Hour), 1),
+		Flasher: flash.New(false),
+		UserEmail: func(ctx context.Context, userID int64) (string, error) {
+			return "user@example.com", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("feedback.New: %v", err)
+	}
+	mux := http.NewServeMux()
+	h.Mount(mux)
+
+	doPost := func() *httptest.ResponseRecorder {
+		form := url.Values{}
+		form.Set("tipo", "bug")
+		form.Set("mensaje", "primer mensaje del user")
+		req := httptest.NewRequest(http.MethodPost, "/feedback", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req = withSession(req, 7)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := doPost()
+	if first.Code != http.StatusSeeOther {
+		t.Fatalf("primer POST: got %d, want 303", first.Code)
+	}
+
+	second := doPost()
+	if second.Code != http.StatusTooManyRequests {
+		t.Errorf("segundo POST: got %d, want 429", second.Code)
 	}
 }

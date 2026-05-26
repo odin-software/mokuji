@@ -91,6 +91,10 @@
   <a href="/u/{{if .Username}}{{.Username}}{{else}}{{.Session.UserID}}{{end}}">ver mi perfil público</a>
   <span class="sep">·</span>
   <a href="/settings/export">exportar mis datos</a>
+  {{if feedbackEnabled}}
+  <span class="sep">·</span>
+  <a href="/feedback">enviar feedback</a>
+  {{end}}
   <span class="sep">·</span>
   <a href="/settings/delete-account">borrar cuenta</a>
 </p>

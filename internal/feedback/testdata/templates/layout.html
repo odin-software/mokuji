@@ -886,7 +886,7 @@ button.danger:hover { background: #8a2818; }
         <button type="submit">cerrar sesión</button>
       </form>
       <div class="app-sidebar-version">
-        <a href="/version">mokuji {{appVersion}}</a> · <a href="/privacy">privacidad</a> · 目次
+        <a href="/version">mokuji {{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} · 目次
       </div>
     </div>
   </aside>
@@ -905,6 +905,6 @@ button.danger:hover { background: #8a2818; }
     {{block "content" .}}<p>contenido vacío</p>{{end}}
   </main>
 </div>
-<footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a> · 目次</footer>
+<footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} · 目次</footer>
 </body>
 </html>{{end}}

@@ -260,6 +260,34 @@ func TestHome_LandingHasCanonicalAndJSONLD(t *testing.T) {
 	}
 }
 
+func TestHome_PrivacyPageRenders(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+
+	// No session needed — privacy es pública.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/privacy", nil)
+
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200. body: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, needle := range []string{
+		"política de privacidad",
+		"kg@odin.do",
+		"7 días de gracia",
+		"mokuji.org",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("body missing %q", needle)
+		}
+	}
+}
+
 func TestHome_LandingHasCriticalSections(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db)

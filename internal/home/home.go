@@ -45,6 +45,7 @@ type Handler struct {
 	db            *sql.DB
 	tmplDashboard *template.Template
 	tmplLanding   *template.Template
+	tmplPrivacy   *template.Template
 	releases      ReleasesProvider
 	logger        *slog.Logger
 	errs          *errrender.ErrorRenderer
@@ -75,11 +76,18 @@ func New(cfg Config) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsear templates landing: %w", err)
 	}
+	tmplPrivacy, err := template.New("base").Funcs(funcs).ParseFS(
+		cfg.HTMLTemplates, "layout.html", "privacy.html",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parsear templates privacy: %w", err)
+	}
 
 	return &Handler{
 		db:            cfg.DB,
 		tmplDashboard: tmplDashboard,
 		tmplLanding:   tmplLanding,
+		tmplPrivacy:   tmplPrivacy,
 		releases:      cfg.Releases,
 		logger:        cfg.Logger,
 		errs:          cfg.Errs,
@@ -90,6 +98,7 @@ func New(cfg Config) (*Handler, error) {
 // exacto "/" en vez de ser catch-all.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", h.home)
+	mux.HandleFunc("GET /privacy", h.privacy)
 }
 
 type homeData struct {
@@ -144,6 +153,18 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		HasUsername: slug.Valid,
 	}); err != nil {
 		h.logger.Error("renderizar home", "err", err)
+	}
+}
+
+// privacy sirve GET /privacy. Página pública sin auth; el contenido refleja
+// las prácticas de mokuji.org. Self-hosters definen las propias.
+func (h *Handler) privacy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Renderiza con landingData{} (Session nil) para que el layout no muestre
+	// sidebar/nav autenticada — la página es pública y se ve igual con o sin
+	// sesión.
+	if err := h.tmplPrivacy.ExecuteTemplate(w, "layout", landingData{}); err != nil {
+		h.logger.Error("renderizar privacy", "err", err)
 	}
 }
 

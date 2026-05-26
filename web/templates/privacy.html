@@ -1,0 +1,60 @@
+{{define "title"}}privacidad · mokuji{{end}}
+{{define "content"}}
+<style>
+.privacy { max-width: 42rem; margin: 0 auto; padding: 1.5rem 0 3rem; }
+.privacy h1 { font-size: 2rem; letter-spacing: -0.02em; margin: 0 0 0.25rem; }
+.privacy .meta { color: var(--text-muted); font-size: 0.8125rem; margin: 0 0 2rem; }
+.privacy h2 { font-size: 1.125rem; margin: 2rem 0 0.5rem; font-weight: 700; }
+.privacy p, .privacy ul { font-size: 0.9375rem; line-height: 1.55; color: var(--text-soft); }
+.privacy ul { padding-left: 1.2rem; }
+.privacy li { margin: 0.25rem 0; }
+.privacy a { color: var(--accent); }
+.privacy code { background: var(--bg-2); padding: 0.05em 0.3em; border-radius: 2px; font-size: 0.875em; }
+</style>
+<main class="privacy">
+  <h1>política de privacidad</h1>
+  <p class="meta">última actualización: <time datetime="2026-05-25">25 de mayo, 2026</time></p>
+
+  <p>Esta política aplica a la instancia pública en <strong>mokuji.org</strong>. Si corres tu propia instancia, define tus propias prácticas — el código es el mismo, las decisiones operativas son tuyas.</p>
+
+  <h2>qué recolectamos</h2>
+  <ul>
+    <li><strong>Tu email</strong>. Para enviarte el código OTP de login y, si lo activas, el digest semanal/diario de capítulos nuevos.</li>
+    <li><strong>Tu biblioteca de manga</strong>. Los títulos que catalogues, su estado (leyendo/por leer/completado), favoritos, y cualquier dato del título que venga de las sources (MangaDex, Asura, Comick).</li>
+    <li><strong>Tu username público</strong> si activaste el perfil público (en <code>/u/{handle}</code>). Esto es opt-in; por default tu lista es privada.</li>
+    <li><strong>IP de las requests</strong>. Solo en logs efímeros de rate limit (para prevenir abuso de OTP/auth) y logs de servidor que rotamos. No asociamos el IP a tu cuenta a largo plazo.</li>
+    <li><strong>Session ID</strong> server-side. Lo guardamos hasheado en la DB; la cookie en tu browser tiene el ID en plano. La sesión expira sola.</li>
+  </ul>
+
+  <h2>por qué</h2>
+  <p>Login sin password (OTP), notificarte capítulos nuevos si lo activas, prevenir abuso de auth y rate limit. Nada más.</p>
+
+  <h2>con quién compartimos</h2>
+  <p>Con nadie. mokuji.org no usa analytics third-party, no tiene ad networks, no vende ni alquila datos. El único servicio externo es el proveedor SMTP (hoy Resend) que envía los emails — ese proveedor procesa tu email como destinatario.</p>
+
+  <h2>cuánto tiempo guardamos</h2>
+  <ul>
+    <li>Tu cuenta y datos: mientras la mantengas activa.</li>
+    <li>Al eliminar la cuenta: pasa por <strong>7 días de gracia</strong> (soft delete, recuperable) y después hard delete definitivo.</li>
+    <li>Backups del DB: con la frecuencia del operador (mokuji.org backupea diario; la copia más vieja se reemplaza eventualmente).</li>
+    <li>Logs efímeros de rate limit y server: rotan en horas/días.</li>
+  </ul>
+
+  <h2>tus derechos</h2>
+  <ul>
+    <li><strong>Exportar todo</strong>. Desde <a href="/settings">settings</a> bajas un JSON con tu biblioteca.</li>
+    <li><strong>Eliminar la cuenta</strong>. Desde settings también. Pasa por 7 días de gracia recuperables; después no se puede revertir.</li>
+    <li><strong>Cambiar tu email o username</strong>. Desde settings.</li>
+    <li><strong>Apagar el digest</strong>. Desde settings o con el link de unsubscribe one-click en cada email.</li>
+  </ul>
+
+  <h2>cookies</h2>
+  <p>Una sola cookie: la de sesión. Es <code>HttpOnly</code>, <code>Secure</code> en producción, <code>SameSite=Lax</code>. No usamos cookies de tracking.</p>
+
+  <h2>contacto</h2>
+  <p>Preguntas o requests de privacidad: <a href="mailto:kg@odin.do">kg@odin.do</a>. Para reportes de seguridad, mira <a href="https://git.odin.do/kengru/mokuji/src/branch/main/SECURITY.md">SECURITY.md</a> en el repo.</p>
+
+  <h2>cambios</h2>
+  <p>Si esta política cambia, actualizamos la fecha de arriba. Cambios sustanciales se anuncian en el changelog del repo.</p>
+</main>
+{{end}}

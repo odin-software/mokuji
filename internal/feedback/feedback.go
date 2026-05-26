@@ -5,12 +5,14 @@
 package feedback
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
@@ -48,6 +50,11 @@ type Config struct {
 	Limiter *ratelimit.Limiter
 	Flasher *flash.Flasher
 	Logger  *slog.Logger
+	// UserEmail mapea un user_id a su email. Se inyecta en lugar de un *sql.DB
+	// para que el paquete feedback quede libre de dependencia con la capa de
+	// persistencia. En prod, main.go construye una closure que consulta la
+	// tabla users; los tests stubean con una función fija.
+	UserEmail func(ctx context.Context, userID int64) (string, error)
 }
 
 // Handler sirve GET y POST /feedback. Sólo se construye cuando el
@@ -59,6 +66,8 @@ type Handler struct {
 	limiter *ratelimit.Limiter
 	flasher *flash.Flasher
 	logger  *slog.Logger
+
+	userEmail func(ctx context.Context, userID int64) (string, error)
 }
 
 // New construye un Handler. Falla si los templates no parsean o si los
@@ -78,6 +87,9 @@ func New(cfg Config) (*Handler, error) {
 	}
 	if cfg.Flasher == nil {
 		return nil, errors.New("Flasher requerido")
+	}
+	if cfg.UserEmail == nil {
+		return nil, errors.New("UserEmail requerido")
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -101,6 +113,8 @@ func New(cfg Config) (*Handler, error) {
 		limiter: cfg.Limiter,
 		flasher: cfg.Flasher,
 		logger:  cfg.Logger,
+
+		userEmail: cfg.UserEmail,
 	}, nil
 }
 
@@ -129,7 +143,87 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// post es stub por ahora; lo completamos en Task 3.
+const (
+	minMessage = 4
+	maxMessage = 4000
+)
+
+var validTipos = map[string]bool{
+	"bug":     true,
+	"feature": true,
+	"copy":    true,
+	"otro":    true,
+}
+
 func (h *Handler) post(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	s, ok := session.FromContext(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.renderError(w, s, "no pude leer el formulario, vuelve a intentarlo", http.StatusBadRequest)
+		return
+	}
+
+	tipo := strings.TrimSpace(r.PostFormValue("tipo"))
+	mensaje := strings.TrimSpace(r.PostFormValue("mensaje"))
+
+	if !validTipos[tipo] {
+		h.renderError(w, s, "elige un tipo válido (bug / feature / copy / otro)", http.StatusBadRequest)
+		return
+	}
+	if len(mensaje) < minMessage {
+		h.renderError(w, s, fmt.Sprintf("el mensaje es muy corto (mínimo %d caracteres)", minMessage), http.StatusBadRequest)
+		return
+	}
+	if len(mensaje) > maxMessage {
+		h.renderError(w, s, fmt.Sprintf("el mensaje es muy largo (máximo %d caracteres)", maxMessage), http.StatusBadRequest)
+		return
+	}
+
+	userEmail, err := h.userEmail(r.Context(), s.UserID)
+	if err != nil {
+		h.logger.Error("resolver email del user para feedback", "user_id", s.UserID, "err", err)
+		h.renderError(w, s, "no pude procesar tu envío, intenta de nuevo en un minuto", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.sendEmail(s, userEmail, tipo, mensaje, r); err != nil {
+		h.logger.Error("enviar feedback", "user_id", s.UserID, "err", err)
+		h.renderError(w, s, "no pude enviar el email, intenta de nuevo en un minuto", http.StatusInternalServerError)
+		return
+	}
+
+	h.flasher.Set(w, "success", "gracias, recibí tu feedback")
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) renderError(w http.ResponseWriter, s *session.Session, msg string, status int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_ = h.tmpl.ExecuteTemplate(w, "layout", formData{Session: s, Error: msg})
+}
+
+func (h *Handler) sendEmail(s *session.Session, userEmail, tipo, mensaje string, r *http.Request) error {
+	ua := r.UserAgent()
+	if ua == "" {
+		ua = "(unknown)"
+	}
+	plain := fmt.Sprintf(`De: %s (user_id: %d)
+Tipo: %s
+User-Agent: %s
+
+%s
+`, userEmail, s.UserID, tipo, ua, mensaje)
+
+	return h.email.SendMessage(email.Message{
+		To:        h.emailTo,
+		Subject:   "[mokuji feedback] " + tipo,
+		PlainBody: plain,
+		ExtraHeaders: map[string]string{
+			"Reply-To": userEmail,
+		},
+	})
 }

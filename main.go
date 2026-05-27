@@ -167,17 +167,18 @@ func main() {
 	}
 
 	// Multi-source release tracking (ADR 0014). Cada source es un
-	// releasesource.Client; main wirea el map por nombre. MangaDex
-	// siempre on; Asura es opt-in via ASURA_ENABLED (default on en
-	// mokuji.org; self-hosters conservadores la apagan). Comick queda
-	// fuera de v1 por Cloudflare managed challenge — no se puede hablar
-	// con su API desde Go vanilla.
-	mangadexClient := mangadex.New()
-	sourceClients := map[string]releasesource.Client{
-		mangadexClient.Name(): mangadexClient,
-	}
-	sourceMatchers := map[string]library.Matcher{
-		mangadexClient.Name(): matcher.New(mangadexClient),
+	// releasesource.Client; main wirea el map por nombre. Cada source es
+	// opt-in vía su propia env var; default on para preservar el
+	// comportamiento histórico de mokuji.org. Si las 3 quedan apagadas,
+	// el binario arranca igual con warning — la biblioteca queda como
+	// catálogo manual sin tracking automático.
+	sourceClients := map[string]releasesource.Client{}
+	sourceMatchers := map[string]library.Matcher{}
+	if envBool("MANGADEX_ENABLED", true) {
+		mangadexClient := mangadex.New()
+		sourceClients[mangadexClient.Name()] = mangadexClient
+		sourceMatchers[mangadexClient.Name()] = matcher.New(mangadexClient)
+		logger.Info("source mangadex habilitada")
 	}
 	if envBool("ASURA_ENABLED", true) {
 		opts := []asura.Option{
@@ -210,15 +211,21 @@ func main() {
 		logger.Info("source comick habilitada", "api_base", envOr("COMICK_API_BASE_URL", "default"))
 	}
 
-	// Worker periódico que polleea cada source (ADR 0014 §5). dispatch
-	// vía Clients[source] según la fila de manga_sources.
-	releasesWorker, err := worker.New(worker.Config{
-		DB:      db,
-		Clients: sourceClients,
-		Logger:  logger,
-	})
-	if err != nil {
-		log.Fatalf("configurar release worker: %v", err)
+	// Worker periódico que polleea cada source (ADR 0014 §5). Solo se
+	// construye si hay al menos una source habilitada; con todas off, el
+	// binario funciona como catálogo manual y skipea el polling.
+	var releasesWorker *worker.Worker
+	if len(sourceClients) == 0 {
+		logger.Warn("ninguna source de releases habilitada — el worker no arranca. La biblioteca queda como catálogo manual sin tracking automático.")
+	} else {
+		releasesWorker, err = worker.New(worker.Config{
+			DB:      db,
+			Clients: sourceClients,
+			Logger:  logger,
+		})
+		if err != nil {
+			log.Fatalf("configurar release worker: %v", err)
+		}
 	}
 
 	// Signer de tokens HMAC para opt-out de emails (ADR 0013 §6, RFC 8058)
@@ -419,18 +426,23 @@ func main() {
 	// cliente HTTP regula la velocidad. Si nadie habilitó sources
 	// nuevas desde el último arranque, el query devuelve cero filas y
 	// el job termina rápido sin red.
-	backfiller, err := library.NewBackfiller(library.BackfillConfig{
-		DB:             db,
-		SourceMatchers: sourceMatchers,
-		Logger:         logger,
-	})
-	if err != nil {
-		log.Fatalf("configurar backfiller: %v", err)
+	var backfiller *library.Backfiller
+	if len(sourceMatchers) > 0 {
+		backfiller, err = library.NewBackfiller(library.BackfillConfig{
+			DB:             db,
+			SourceMatchers: sourceMatchers,
+			Logger:         logger,
+		})
+		if err != nil {
+			log.Fatalf("configurar backfiller: %v", err)
+		}
+		go backfiller.Run(rootCtx)
 	}
-	go backfiller.Run(rootCtx)
 
 	go cleanupSessions(rootCtx, sessions, logger)
-	go releasesWorker.Run(rootCtx)
+	if releasesWorker != nil {
+		go releasesWorker.Run(rootCtx)
+	}
 
 	srv := server.New(server.Config{
 		Addr:          envOr("HTTP_ADDR", ":8080"),

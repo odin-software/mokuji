@@ -89,6 +89,7 @@ escala según las features que actives.
 | `SMTP_FROM_PRODUCT` | comparte `SMTP_FROM` | "From" separado para emails de producto (digest). Útil para que la deliverability de auth y producto sean independientes. |
 | `ADMIN_TOKEN` | (vacío = endpoints deshabilitados) | Bearer token para `POST /admin/trigger-digest` y `GET /admin/sources-health`. |
 | `FEEDBACK_EMAIL_TO` | (vacío = feature desactivado) | Destino del form `/feedback` in-app. Solo users autenticados; rate-limit 5/hora por user_id. Si vacío, la ruta y el link en el footer no existen. |
+| `MANGADEX_ENABLED` | `true` | Source primaria. Apaga con `false` si prefieres solo Asura/Comick. **Si las 3 sources están apagadas**, mokuji arranca pero el worker no se construye — la biblioteca funciona como catálogo manual sin tracking automático. |
 | `ASURA_ENABLED` | `true` | Source [Asura Scans](https://asurascans.com). Zona gris legal (scanlation no oficial); bájalo a `false` si prefieres solo MangaDex. |
 | `ASURA_API_BASE_URL` | — | Override si Asura rota su dominio. Vacío = `api.asurascans.com`. |
 | `ASURA_FRONTEND_BASE_URL` | — | Override del frontend para reconstruir URLs de reader. |

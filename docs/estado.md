@@ -208,12 +208,25 @@ Cierre del roadmap: el proyecto está listo para promoción pública.
 - **Repo público**: Forgejo abierto a browse anónimo (2026-05-25).
 - **Bump VERSION a v1.0.0** + tag + release notes en Forgejo.
 
-### Backlog post-v1.0
+### v1.0.1 — cerrado ✅ (branch `feat/feedback-form`)
 
-- **Form de feedback in-app** (`/feedback` → email a `kg@odin.do`). Rate limit + honeypot (sin captchas third-party). Link en footer y `/settings`.
-- **Corregir read-state de caps**: hoy si marcas cap. 231 como leído por error, no hay forma de des-marcarlo ni de decir "en realidad voy por el 1". Necesita: (a) un botón "marcar como no leído" en cada chapter-row, (b) idealmente un "marcar todo hasta el cap. N como leído / no leído" para users que catalogan manga que ya leyeron en otra app. Anotado 2026-05-26.
-- **Badge "halando capítulos…" en entry recién agregado**: cuando `manga_sources.last_checked_at` es NULL/muy reciente y `chapter` aún no tiene filas para esa source, mostrar un indicador en `entry.html` para que el user no piense que el match falló. ~20 LOC en template + ajuste del query del entry view. Anotado 2026-05-26 después del caso Dr. Stone (poll inicial tardó minutos, user pensó que solo había 3 caps).
-- **`MANGADEX_ENABLED` env var** para apagar MangaDex como source. Requiere considerar el comportamiento del worker, matcher y `/releases` cuando las tres sources están apagadas (¿error de startup? ¿warning + correr en modo "biblioteca offline"?). Anotado 2026-05-25.
+Primer minor post-v1.0. Form de feedback in-app, opt-in vía env var.
+
+- **`/feedback`** auth-only con `tipo` (bug/feature/copy/otro) + `mensaje`. Email a `FEEDBACK_EMAIL_TO` (vacío = feature desactivado, ruta 404, link oculto). Rate limit 5/hora por user_id. `Reply-To` con el email del user (resuelto vía closure DB inyectada en Config — el paquete `feedback` queda libre de `sql`).
+- **Link condicional** en footer global, sidebar y `/settings` gateado por template func `feedbackEnabled` que delega en `feedback.IsEnabled()` (flag `atomic.Bool` seteado al startup).
+- **Sin DB nueva**, sin captchas third-party.
+
+### v1.0.2 — cerrado ✅ (branch `feat/library-improvements`)
+
+Tres mejoras chicas a la experiencia de biblioteca + sources.
+
+- **Cursor arbitrario** (`POST /library/entry/{id}/cursor`): form numérico "voy por el capítulo X" que setea `library_entries.last_read_chapter_number` sin la guarda monotónica de `markChapterRead`. Permite retroceder (corregir caps marcados tarde) y subir (catalogar manga ya leído afuera). Prefill con el valor actual.
+- **Badge "halando capítulos…"** en sources matched sin chapters todavía. `EntrySource.Pending` se calcula vía `LEFT JOIN chapter` + `COUNT()` en `loadEntrySources`; el template renderiza `⏳ halando capítulos…` en lugar de `✓ matched` mientras el poll inicial corre. Cierra el caso Dr. Stone (poll inicial de >100 caps con rate limit toma minutos y el user pensaba que el match había fallado).
+- **`MANGADEX_ENABLED` env var** (default `true`) + manejo gracioso del caso all-off: `main.go` arranca normal con un warning, no construye worker ni backfiller. La biblioteca queda como catálogo manual sin tracking automático.
+
+### Backlog post-v1.0.2
+
+- **Tie-break del matcher con MangaDex/Asura**: hoy si esas sources devuelven >1 exact-match del título, el matcher cae a `needs_review` porque `pickBestExact` necesita `LastChapter`/`LastChapterAt` y solo Comick los popula. Agregar parsing de esos campos en `internal/mangadex/client.go` (API expone `attributes.lastChapter`) resolvería el caso Dr. Stone-tipo donde MD tiene 4 entries que matchean "Dr. Stone". ~10 LOC + test.
 - **Activity feed / capa social** sobre `/u/{slug}`.
 - **Bato.to como 4ta source** (scaffolding listo).
 - **Admin tool `POST /admin/link-source`** (vincular sources manualmente, no user-facing).

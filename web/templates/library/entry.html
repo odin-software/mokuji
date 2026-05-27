@@ -16,6 +16,48 @@
 {{define "title"}}{{.Entry.Manga.Title}} — mokuji{{end}}
 
 {{define "content"}}
+<style>
+.cursor-form {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  padding: 0.875rem 1rem;
+  background: var(--bg-2);
+  border-left: 3px solid var(--accent);
+  margin: 1rem 0;
+}
+.cursor-form label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-label);
+  letter-spacing: 0.02em;
+}
+.cursor-form input[type="number"] {
+  width: 6rem;
+  padding: 0.375rem 0.5rem;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+}
+.cursor-form input[type="number"]:focus { outline: none; border-color: var(--accent); }
+.cursor-form button {
+  padding: 0.375rem 0.875rem;
+  background: var(--button-bg);
+  color: var(--button-fg);
+  border: none;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cursor-form button:hover { background: var(--button-bg-hover); }
+.cursor-form .cursor-hint {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  margin: 0.25rem 0 0;
+}
+</style>
 <p class="muted" style="margin-bottom: 0.75rem;"><a href="/library">← biblioteca</a></p>
 
 <header class="entry-detail-header">
@@ -78,6 +120,23 @@
   </ul>
 </section>
 {{end}}
+
+<form method="POST" action="/library/entry/{{.Entry.ID}}/cursor" class="cursor-form">
+  {{csrfInput .Session}}
+  <label for="cursor-input">voy por el capítulo</label>
+  <input type="number"
+         id="cursor-input"
+         name="last_read_chapter_number"
+         min="0"
+         step="0.1"
+         value="{{.Entry.LastReadChapterNumber}}"
+         placeholder="0">
+  <button type="submit">guardar</button>
+  <p class="cursor-hint muted">
+    Si marcaste un capítulo por error, pon acá el número correcto.
+    También sirve si ya leíste el manga afuera y solo quieres trackear desde donde vas.
+  </p>
+</form>
 
 <form method="GET" action="/library/entry/{{.Entry.ID}}" class="lib-filters">
   <label class="checkbox" style="margin: 0;">

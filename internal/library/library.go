@@ -74,18 +74,23 @@ type Manga struct {
 
 // Entry es un library_entry de un usuario sobre un manga.
 type Entry struct {
-	ID            int64
-	Manga         Manga
-	Status        string
-	LastChapter   string
-	IsFavorite    bool
-	SourceURL     string
-	Notes         string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	SourceStatus  matcher.Status // summary cross-source: matched si al menos una source matchea
-	UnreadCount   int            // caps publicados después del cursor en preferred_language
-	TotalChapters int            // caps en DB para este manga en preferred_language
+	ID          int64
+	Manga       Manga
+	Status      string
+	LastChapter string
+	// LastReadChapterNumber es el cursor numérico de lectura (a diferencia de
+	// LastChapter, que es texto libre que el user edita manualmente). Se usa
+	// para derivar qué caps aparecen marcados como leídos y para el prefill
+	// del form de "voy por el capítulo X" en entry.html.
+	LastReadChapterNumber float64
+	IsFavorite            bool
+	SourceURL             string
+	Notes                 string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	SourceStatus          matcher.Status // summary cross-source: matched si al menos una source matchea
+	UnreadCount           int            // caps publicados después del cursor en preferred_language
+	TotalChapters         int            // caps en DB para este manga en preferred_language
 }
 
 // Poller dispara un fetch sincrónico de capítulos para un (manga, source)

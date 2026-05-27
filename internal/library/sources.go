@@ -29,6 +29,10 @@ type EntrySource struct {
 	NextCheckAt time.Time
 	HasRow      bool
 	Configured  bool
+	// Pending reporta cuando la source matcheó pero el chapter table
+	// aún no tiene filas para ella. UI muestra "halando capítulos…"
+	// para que el user no piense que el match falló.
+	Pending bool
 }
 
 // loadEntrySources arma la lista renderizable para el fieldset combinando
@@ -38,9 +42,12 @@ type EntrySource struct {
 // alfabético por nombre de source.
 func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntrySource, error) {
 	rows, err := h.db.QueryContext(ctx, `
-		SELECT source, source_id, status, checked_at, next_check_at
-		FROM manga_sources
-		WHERE manga_id = ?
+		SELECT ms.source, ms.source_id, ms.status, ms.checked_at, ms.next_check_at,
+		       COUNT(c.id) AS chapter_count
+		FROM manga_sources ms
+		LEFT JOIN chapter c ON c.manga_id = ms.manga_id AND c.source = ms.source
+		WHERE ms.manga_id = ?
+		GROUP BY ms.source, ms.source_id, ms.status, ms.checked_at, ms.next_check_at
 	`, mangaID)
 	if err != nil {
 		return nil, err
@@ -50,11 +57,12 @@ func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntryS
 	byName := map[string]EntrySource{}
 	for rows.Next() {
 		var (
-			es        EntrySource
-			checked   sql.NullInt64
-			nextCheck sql.NullInt64
+			es           EntrySource
+			checked      sql.NullInt64
+			nextCheck    sql.NullInt64
+			chapterCount int64
 		)
-		if err := rows.Scan(&es.Source, &es.SourceID, &es.Status, &checked, &nextCheck); err != nil {
+		if err := rows.Scan(&es.Source, &es.SourceID, &es.Status, &checked, &nextCheck, &chapterCount); err != nil {
 			return nil, err
 		}
 		es.HasRow = true
@@ -65,6 +73,8 @@ func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntryS
 		if nextCheck.Valid {
 			es.NextCheckAt = time.Unix(nextCheck.Int64, 0).UTC()
 		}
+		// Pending = matched pero el LEFT JOIN no devolvió chapters.
+		es.Pending = es.Status == matcher.StatusMatched && chapterCount == 0
 		byName[es.Source] = es
 	}
 	if err := rows.Err(); err != nil {

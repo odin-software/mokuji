@@ -95,6 +95,75 @@ func TestLoadEntrySourcesFlagsDisabledRow(t *testing.T) {
 	}
 }
 
+func TestLoadEntrySourcesMarksPendingWhenMatchedWithoutChapters(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
+	uid := insertUser(t, db, "alice@example.com")
+	_, mangaID := insertEntryWithSource(t, db, uid, "mdx-1", "matched")
+	// No chapter rows insertados — Pending debe ser true.
+
+	got, err := h.loadEntrySources(context.Background(), mangaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var md *EntrySource
+	for i := range got {
+		if got[i].Source == "mangadex" {
+			md = &got[i]
+		}
+	}
+	if md == nil {
+		t.Fatal("source mangadex no apareció")
+	}
+	if !md.Pending {
+		t.Errorf("Pending: got false, want true (matched + 0 chapters)")
+	}
+}
+
+func TestLoadEntrySourcesPendingFalseWhenChaptersExist(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
+	uid := insertUser(t, db, "alice@example.com")
+	_, mangaID := insertEntryWithSource(t, db, uid, "mdx-1", "matched")
+	// Insertar 1 cap — Pending debe ser false.
+	if _, err := db.Exec(`
+		INSERT INTO chapter (manga_id, source, source_id, number, language, published_at, created_at)
+		VALUES (?, 'mangadex', 'ch-1', '1', 'en', ?, ?)
+	`, mangaID, time.Now().Unix(), time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := h.loadEntrySources(context.Background(), mangaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range got {
+		if s.Source == "mangadex" && s.Pending {
+			t.Errorf("mangadex Pending = true; con caps existentes debe ser false")
+		}
+	}
+}
+
+func TestLoadEntrySourcesPendingFalseForNeedsReview(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
+	uid := insertUser(t, db, "alice@example.com")
+	_, mangaID := insertEntryWithSource(t, db, uid, "", "needs_review")
+
+	got, err := h.loadEntrySources(context.Background(), mangaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range got {
+		if s.Source == "mangadex" && s.Pending {
+			t.Errorf("mangadex Pending = true; needs_review nunca debe ser pending")
+		}
+	}
+}
+
 // --- entrySourceRetry ---
 
 func authRetryReq(method, target string, userID int64, entryID int64, source string) *http.Request {

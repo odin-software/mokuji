@@ -88,7 +88,11 @@
         <strong>{{.Source}}</strong>
         <span class="source-status">
           {{- if eq .Status "matched" -}}
-            ✓ matched
+            {{- if .Pending -}}
+              ⏳ halando capítulos…
+            {{- else -}}
+              ✓ matched
+            {{- end -}}
           {{- else if eq .Status "needs_review" -}}
             ⚠ matching incierto
           {{- else if eq .Status "no_results" -}}

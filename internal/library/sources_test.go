@@ -376,9 +376,10 @@ func TestEntryDetailRendersSourcesFieldset(t *testing.T) {
 	if !strings.Contains(body, "sources-fieldset") {
 		t.Error("falta el section sources-fieldset")
 	}
-	// mangadex con fila matched
-	if !strings.Contains(body, ">mangadex<") || !strings.Contains(body, "✓ matched") {
-		t.Error("falta mangadex matched en el render")
+	// mangadex con fila matched pero sin chapters todavía — Pending,
+	// se renderiza como "halando capítulos…" en vez de "✓ matched".
+	if !strings.Contains(body, ">mangadex<") || !strings.Contains(body, "halando capítulos") {
+		t.Error("falta mangadex pending en el render")
 	}
 	// asura sin fila — placeholder "sin intentar"
 	if !strings.Contains(body, ">asura<") || !strings.Contains(body, "sin intentar") {

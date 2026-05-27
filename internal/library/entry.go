@@ -8,6 +8,7 @@ import (
 	htmltmpl "html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -194,6 +195,56 @@ func (h *Handler) entryMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
+}
+
+// entryCursor sirve POST /library/entry/{id}/cursor. Setea el cursor de
+// lectura a un valor arbitrario — explícitamente permite retroceso
+// (a diferencia de markChapterRead, que es monotónico). Útil para
+// corregir errores de mark-read o para catalogar manga ya leído.
+func (h *Handler) entryCursor(w http.ResponseWriter, r *http.Request) {
+	s, ok := h.requireSession(w, r)
+	if !ok {
+		return
+	}
+	entryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || entryID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "form inválido", http.StatusBadRequest)
+		return
+	}
+	raw := strings.TrimSpace(r.PostFormValue("last_read_chapter_number"))
+	cursor, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		http.Error(w, "valor inválido para cursor", http.StatusBadRequest)
+		return
+	}
+	if cursor < 0 {
+		http.Error(w, "cursor no puede ser negativo", http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.db.ExecContext(r.Context(), `
+		UPDATE library_entries
+		SET last_read_chapter_number = ?, updated_at = ?
+		WHERE id = ? AND user_id = ?
+	`, cursor, time.Now().UTC().Unix(), entryID, s.UserID)
+	if err != nil {
+		h.logger.Error("set cursor", "err", err, "entry_id", entryID, "user_id", s.UserID)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// Entry no existe o pertenece a otro user. 404 sin revelar.
+		http.NotFound(w, r)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entryID), http.StatusSeeOther)
 }
 
 // parseEntryReadForm valida sesión + entry id de la URL + chapter_id del form

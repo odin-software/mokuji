@@ -412,3 +412,81 @@ func TestEntryMarkReadRedirectsInternal(t *testing.T) {
 		t.Errorf("Location: %q, want %q", loc, want)
 	}
 }
+
+func TestEntryCursorAllowsArbitraryValue(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, uid, "matched")
+	// Setup: cursor empieza en 231 (caso bug del user que marcó tarde).
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = 231 WHERE id = ?`, entryID); err != nil {
+		t.Fatalf("setup cursor: %v", err)
+	}
+
+	form := url.Values{"last_read_chapter_number": {"1"}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/cursor", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryCursor(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status: got %d, want 303. body: %s", w.Code, w.Body.String())
+	}
+	want := "/library/entry/" + strconv.FormatInt(entryID, 10)
+	if loc := w.Header().Get("Location"); loc != want {
+		t.Errorf("Location: %q, want %q", loc, want)
+	}
+	var cursor float64
+	if err := db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, entryID).Scan(&cursor); err != nil {
+		t.Fatalf("scan cursor: %v", err)
+	}
+	if cursor != 1.0 {
+		t.Errorf("cursor: got %v, want 1.0 (retroceso explícito permitido)", cursor)
+	}
+}
+
+func TestEntryCursorRejectsNegative(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, uid, "matched")
+
+	form := url.Values{"last_read_chapter_number": {"-3"}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/cursor", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryCursor(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400", w.Code)
+	}
+}
+
+func TestEntryCursorScopedToOwner(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	owner := insertUser(t, db, "alice@example.com")
+	intruder := insertUser(t, db, "bob@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, owner, "matched")
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = 5 WHERE id = ?`, entryID); err != nil {
+		t.Fatalf("setup cursor: %v", err)
+	}
+
+	form := url.Values{"last_read_chapter_number": {"100"}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/cursor", form.Encode(), intruder)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryCursor(w, r)
+
+	// 404 sin revelar la existencia del entry del owner.
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d, want 404", w.Code)
+	}
+	var cursor float64
+	if err := db.QueryRow(`SELECT last_read_chapter_number FROM library_entries WHERE id = ?`, entryID).Scan(&cursor); err != nil {
+		t.Fatalf("scan cursor: %v", err)
+	}
+	if cursor != 5.0 {
+		t.Errorf("cursor del owner cambió: got %v, want 5.0", cursor)
+	}
+}

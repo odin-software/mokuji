@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -480,5 +481,89 @@ func TestMarkReadHidesChapterFromSubsequentList(t *testing.T) {
 	}
 	if releases[0].ChapterNumber != "2" {
 		t.Errorf("cap restante esperado '2', obtenido %q", releases[0].ChapterNumber)
+	}
+}
+
+func TestUnreadReleasesPageReturnsCursorWhenMore(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	uid := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "mdx-1")
+	insertEntry(t, db, uid, mangaID, "reading", nil)
+	// Insertar 60 caps no leídos (> ReleasesPageSize).
+	for i := 1; i <= 60; i++ {
+		insertChapter(t, db, mangaID, fmt.Sprintf("ch-%d", i), strconv.Itoa(i), "en",
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	releases, next, err := h.UnreadReleasesPage(context.Background(), uid, ReleasesPageSize, Cursor{})
+	if err != nil {
+		t.Fatalf("UnreadReleasesPage: %v", err)
+	}
+	if got := len(releases); got != ReleasesPageSize {
+		t.Errorf("primera página: %d items, want %d", got, ReleasesPageSize)
+	}
+	if next == nil {
+		t.Fatal("next == nil; esperaba un cursor para la siguiente página")
+	}
+	last := releases[len(releases)-1]
+	if next.BeforeID != last.ChapterID {
+		t.Errorf("next.BeforeID = %d, want %d (último item)", next.BeforeID, last.ChapterID)
+	}
+}
+
+func TestUnreadReleasesPageNoNextWhenFewerThanPage(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	uid := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "mdx-1")
+	insertEntry(t, db, uid, mangaID, "reading", nil)
+	for i := 1; i <= 5; i++ {
+		insertChapter(t, db, mangaID, fmt.Sprintf("ch-%d", i), strconv.Itoa(i), "en",
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	releases, next, err := h.UnreadReleasesPage(context.Background(), uid, ReleasesPageSize, Cursor{})
+	if err != nil {
+		t.Fatalf("UnreadReleasesPage: %v", err)
+	}
+	if len(releases) != 5 {
+		t.Errorf("items: %d, want 5", len(releases))
+	}
+	if next != nil {
+		t.Errorf("next = %+v, want nil (no hay más)", next)
+	}
+}
+
+func TestUnreadReleasesPageSecondPageDoesNotRepeat(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	uid := insertUser(t, db, "alice@example.com")
+	mangaID := insertManga(t, db, "mdx-1")
+	insertEntry(t, db, uid, mangaID, "reading", nil)
+	for i := 1; i <= 60; i++ {
+		insertChapter(t, db, mangaID, fmt.Sprintf("ch-%d", i), strconv.Itoa(i), "en",
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	first, next, err := h.UnreadReleasesPage(context.Background(), uid, ReleasesPageSize, Cursor{})
+	if err != nil || next == nil {
+		t.Fatalf("primera página falló: err=%v next=%v", err, next)
+	}
+	second, _, err := h.UnreadReleasesPage(context.Background(), uid, ReleasesPageSize, *next)
+	if err != nil {
+		t.Fatalf("segunda página: %v", err)
+	}
+	if len(second) != 10 {
+		t.Errorf("segunda página: %d items, want 10", len(second))
+	}
+	seen := map[int64]bool{}
+	for _, r := range first {
+		seen[r.ChapterID] = true
+	}
+	for _, r := range second {
+		if seen[r.ChapterID] {
+			t.Errorf("chapter %d aparece en ambas páginas", r.ChapterID)
+		}
 	}
 }

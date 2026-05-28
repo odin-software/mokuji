@@ -34,6 +34,26 @@ import (
 // que de UX nuestra.
 const MaxReleases = 100
 
+// ReleasesPageSize es el tamaño de página de /releases. Cursor-based:
+// la siguiente página continúa después del último (published_at, id) de
+// la anterior, evitando que caps nuevos publicados durante la navegación
+// salten o dupliquen items.
+const ReleasesPageSize = 50
+
+// Cursor es la posición de paginación. Zero-value = sin cursor (primera
+// página). Before/BeforeID identifican el último item de la página
+// anterior; la siguiente query devuelve filas estrictamente posteriores
+// a ese punto en el orden (published_at DESC, id DESC).
+type Cursor struct {
+	Before   time.Time
+	BeforeID int64
+}
+
+// IsZero reporta si el cursor es zero (sin paginación previa).
+func (c Cursor) IsZero() bool {
+	return c.Before.IsZero() && c.BeforeID == 0
+}
+
 // Config agrupa las dependencias del handler.
 type Config struct {
 	DB            *sql.DB
@@ -100,8 +120,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 }
 
 type pageData struct {
-	Session  *session.Session
-	Releases []Release
+	Session    *session.Session
+	Releases   []Release
+	NextCursor *Cursor // nil = no hay más
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +132,8 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	releases, err := h.UnreadReleases(r.Context(), s.UserID, MaxReleases)
+	cursor := parseReleasesCursor(r)
+	releases, next, err := h.UnreadReleasesPage(r.Context(), s.UserID, ReleasesPageSize, cursor)
 	if err != nil {
 		h.logger.Error("listar releases", "err", err)
 		h.errs.InternalServerError(w, r)
@@ -120,10 +142,35 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, "layout", pageData{
-		Session:  s,
-		Releases: releases,
+		Session:    s,
+		Releases:   releases,
+		NextCursor: next,
 	}); err != nil {
 		h.logger.Error("renderizar releases", "err", err)
+	}
+}
+
+// parseReleasesCursor extrae el cursor de los query params. Tolerante:
+// si los valores son inválidos o faltan, devuelve cursor zero (= primera
+// página). Eso evita errores 400 por links viejos / bots con params
+// raros.
+func parseReleasesCursor(r *http.Request) Cursor {
+	beforeRaw := r.URL.Query().Get("before")
+	beforeIDRaw := r.URL.Query().Get("before_id")
+	if beforeRaw == "" || beforeIDRaw == "" {
+		return Cursor{}
+	}
+	beforeUnix, err := strconv.ParseInt(beforeRaw, 10, 64)
+	if err != nil {
+		return Cursor{}
+	}
+	beforeID, err := strconv.ParseInt(beforeIDRaw, 10, 64)
+	if err != nil {
+		return Cursor{}
+	}
+	return Cursor{
+		Before:   time.Unix(beforeUnix, 0).UTC(),
+		BeforeID: beforeID,
 	}
 }
 
@@ -269,7 +316,8 @@ func writeRedirectPage(w http.ResponseWriter, url string) {
 //   - solo caps publicados después del cursor (o todos si cursor NULL)
 //
 // Exportado para que el widget en home reuse el mismo query con un
-// limit más chico, sin duplicar la query.
+// limit más chico, sin duplicar la query. Para paginación cursor-based
+// usa UnreadReleasesPage.
 func (h *Handler) UnreadReleases(ctx context.Context, userID int64, limit int) ([]Release, error) {
 	// Dedup por (manga, number, language): elegimos el row con MAX
 	// published_at por grupo (tie-break por id desc). Sin esto, un cap
@@ -299,14 +347,84 @@ func (h *Handler) UnreadReleases(ctx context.Context, userID int64, limit int) (
 		    ORDER BY c2.published_at DESC, c2.id DESC
 		    LIMIT 1
 		  )
-		ORDER BY chapter.published_at DESC
+		ORDER BY chapter.published_at DESC, chapter.id DESC
 		LIMIT ?
 	`, userID, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanReleases(rows)
+}
 
+// UnreadReleasesPage devuelve una página de caps no leídos con cursor.
+// Si cursor.IsZero(), arranca desde el más reciente; si no, sigue después
+// del item (published_at, id) indicado.
+//
+// Devuelve el slice de releases y un *Cursor para la siguiente página
+// (nil si no hay más). Internamente fetcha limit+1 filas para detectar
+// si hay más sin un COUNT extra: si vinieron más de limit, descarta la
+// última fila y emite cursor; si vinieron <= limit, no hay más.
+func (h *Handler) UnreadReleasesPage(ctx context.Context, userID int64, limit int, cursor Cursor) ([]Release, *Cursor, error) {
+	args := []any{userID}
+	cursorClause := ""
+	if !cursor.IsZero() {
+		cursorClause = `
+			AND (chapter.published_at < ?
+			     OR (chapter.published_at = ? AND chapter.id < ?))`
+		unix := cursor.Before.UTC().Unix()
+		args = append(args, unix, unix, cursor.BeforeID)
+	}
+	args = append(args, limit+1)
+
+	query := `
+		SELECT chapter.id, chapter.source_id, chapter.number, chapter.title, chapter.language,
+		       chapter.published_at, chapter.external_url,
+		       manga.id, manga.title, manga.cover_url
+		FROM chapter
+		JOIN manga          ON manga.id = chapter.manga_id
+		JOIN library_entries le ON le.manga_id = manga.id
+		JOIN users          ON users.id = le.user_id
+		WHERE le.user_id = ?
+		  AND le.status = 'reading'
+		  AND chapter.language = users.preferred_language
+		  AND (le.last_read_chapter_number IS NULL
+		       OR CAST(chapter.number AS REAL) > le.last_read_chapter_number)
+		  AND chapter.id = (
+		    SELECT c2.id FROM chapter c2
+		    WHERE c2.manga_id = chapter.manga_id
+		      AND c2.number = chapter.number
+		      AND c2.language = chapter.language
+		    ORDER BY c2.published_at DESC, c2.id DESC
+		    LIMIT 1
+		  )` + cursorClause + `
+		ORDER BY chapter.published_at DESC, chapter.id DESC
+		LIMIT ?
+	`
+
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	out, err := scanReleases(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(out) <= limit {
+		return out, nil, nil
+	}
+	out = out[:limit]
+	last := out[len(out)-1]
+	return out, &Cursor{Before: last.PublishedAt, BeforeID: last.ChapterID}, nil
+}
+
+// scanReleases extrae las filas comunes de UnreadReleases y
+// UnreadReleasesPage. Mantiene el bloque de Scan + conversión a Release
+// en un solo lugar para que las dos queries no driften.
+func scanReleases(rows *sql.Rows) ([]Release, error) {
 	var out []Release
 	for rows.Next() {
 		var (
@@ -340,5 +458,8 @@ func (h *Handler) UnreadReleases(ctx context.Context, userID int64, limit int) (
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

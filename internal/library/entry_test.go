@@ -2,6 +2,7 @@ package library
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -459,6 +460,101 @@ func TestEntryCursorRejectsNegative(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400", w.Code)
+	}
+}
+
+func TestEntryDetailPaginatesChapters(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	// Insertar 250 caps en inglés (=preferred_language default).
+	for i := 1; i <= 250; i++ {
+		insertChapter(t, db, mangaID,
+			fmt.Sprintf("ch-%d", i),
+			strconv.Itoa(i),
+			"en",
+			fmt.Sprintf("https://reader.example/%d", i),
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10)+"?page=1", "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// Cuenta la string que entry.html usa para identificar un cap row.
+	count := strings.Count(body, `class="chapter-num"`)
+	if count != EntryChaptersPageSize {
+		t.Errorf("page 1: %d caps renderizados, want %d", count, EntryChaptersPageSize)
+	}
+	// La UI link a page=2 se renderiza en Task 4. En este test (Task 3)
+	// validamos que el handler reciba page=1 correctamente y renderice
+	// exactamente 100 caps. La existencia del link viene después.
+}
+
+func TestEntryDetailPageTwoReturnsNextSlice(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	for i := 1; i <= 250; i++ {
+		insertChapter(t, db, mangaID,
+			fmt.Sprintf("ch-%d", i),
+			strconv.Itoa(i),
+			"en",
+			fmt.Sprintf("https://reader.example/%d", i),
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10)+"?page=2", "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d", w.Code)
+	}
+	body := w.Body.String()
+	count := strings.Count(body, `class="chapter-num"`)
+	if count != EntryChaptersPageSize {
+		t.Errorf("page 2: %d caps renderizados, want %d", count, EntryChaptersPageSize)
+	}
+}
+
+func TestEntryDetailPageOutOfBoundsClampsToLast(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	// Solo 10 caps — una sola página posible.
+	for i := 1; i <= 10; i++ {
+		insertChapter(t, db, mangaID,
+			fmt.Sprintf("ch-%d", i),
+			strconv.Itoa(i),
+			"en",
+			fmt.Sprintf("https://reader.example/%d", i),
+			time.Now().Add(-time.Duration(i)*time.Hour))
+	}
+
+	// Pedir page=999 — el handler clampa a la última página válida (1) y
+	// renderiza normal. No 500, no crash.
+	r := authReq("GET", "/library/entry/"+strconv.FormatInt(entryID, 10)+"?page=999", "", uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: %d (out-of-bounds debe devolver 200)", w.Code)
+	}
+	body := w.Body.String()
+	count := strings.Count(body, `class="chapter-num"`)
+	if count != 10 {
+		t.Errorf("page 999 (clamp to 1): %d caps, want 10", count)
 	}
 }
 

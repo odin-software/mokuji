@@ -22,6 +22,12 @@ import (
 // Autorización: el endpoint scope estricto por user_id. Si el library_entry
 // no existe para el user, 404 (sin revelar existencia del manga).
 
+// EntryChaptersPageSize es el tamaño de página de la chapter list del
+// entry detail. Offset-based: la lista es estable (no llegan caps al
+// medio del rango histórico), así que el user puede saltar a "página N"
+// predecible.
+const EntryChaptersPageSize = 100
+
 // Chapter es una fila de la lista de caps en la vista detail. Con
 // multi-source, un cap (mismo número + idioma) puede estar disponible
 // en N sources/scanlators distintos — esa lista vive en ReadOptions.
@@ -58,6 +64,12 @@ type entryData struct {
 	IncludeRead   bool
 	UnreadCount   int
 	TotalChapters int
+
+	// Paginación de la chapter list.
+	Page       int  // 1-indexed; siempre >= 1
+	TotalPages int  // total de páginas (1 si no hay overflow)
+	HasPrev    bool // Page > 1
+	HasNext    bool // Page < TotalPages
 }
 
 // entryDetail sirve GET /library/entry/{id}.
@@ -117,10 +129,26 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Paginación 1-indexed. Default 1, invalid → 1, out-of-bounds → clamp a TotalPages.
+	page := 1
+	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
+		page = p
+	}
+
+	totalGroups := len(chapters)
+	totalPages := max((totalGroups+EntryChaptersPageSize-1)/EntryChaptersPageSize, 1)
+	if page > totalPages {
+		page = totalPages
+	}
+
+	start := (page - 1) * EntryChaptersPageSize
+	end := min(start+EntryChaptersPageSize, totalGroups)
+	pageChapters := chapters[start:end]
+
 	h.render(w, r, "library/entry.html", entryData{
 		Session:     s,
 		Entry:       entry,
-		Chapters:    chapters,
+		Chapters:    pageChapters,
 		Sources:     sources,
 		Sort:        sort,
 		IncludeRead: includeRead,
@@ -129,6 +157,10 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		// del user, no el del slice mostrado: ese cambia con include_read y
 		// confunde ("0 capítulos" para un manga con 480 todos leídos).
 		TotalChapters: entry.TotalChapters,
+		Page:          page,
+		TotalPages:    totalPages,
+		HasPrev:       page > 1,
+		HasNext:       page < totalPages,
 	})
 }
 

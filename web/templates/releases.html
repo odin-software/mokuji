@@ -15,6 +15,24 @@
 {{end}}
 {{define "title"}}releases — mokuji{{end}}
 {{define "content"}}
+<style>
+.pagination {
+  margin: 2rem 0 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+.pagination-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: 1.5px solid var(--text);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pagination-link:hover { background: var(--text); color: var(--bg); }
+</style>
 <header class="lib-header">
   <div class="lib-heading">
     <p class="eyebrow">{{if .Releases}}{{len .Releases}} capítulo{{if ne (len .Releases) 1}}s{{end}} nuevo{{if ne (len .Releases) 1}}s{{end}}{{else}}al día{{end}}</p>
@@ -53,6 +71,13 @@
   </li>
 {{end}}
 </ul>
+{{if .NextCursor}}
+<nav class="pagination" aria-label="paginación de releases">
+  <a href="/releases?before={{.NextCursor.Before.Unix}}&before_id={{.NextCursor.BeforeID}}" class="pagination-link">
+    siguiente →
+  </a>
+</nav>
+{{end}}
 {{else}}
 <div class="empty-state">
   <span class="kanji">了</span>

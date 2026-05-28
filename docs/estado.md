@@ -224,7 +224,16 @@ Tres mejoras chicas a la experiencia de biblioteca + sources.
 - **Badge "halando capítulos…"** en sources matched sin chapters todavía. `EntrySource.Pending` se calcula vía `LEFT JOIN chapter` + `COUNT()` en `loadEntrySources`; el template renderiza `⏳ halando capítulos…` en lugar de `✓ matched` mientras el poll inicial corre. Cierra el caso Dr. Stone (poll inicial de >100 caps con rate limit toma minutos y el user pensaba que el match había fallado).
 - **`MANGADEX_ENABLED` env var** (default `true`) + manejo gracioso del caso all-off: `main.go` arranca normal con un warning, no construye worker ni backfiller. La biblioteca queda como catálogo manual sin tracking automático.
 
-### Backlog post-v1.0.2
+### v1.0.3 — cerrado ✅ (branch `feat/pagination`)
+
+Paginación en `/releases` y en `/library/entry/{id}` chapter list. Resuelve la friction del caso Dr. Stone (232 caps en una sola página) y permite navegar releases acumulados por bloques.
+
+- **Releases**: `UnreadReleasesPage(ctx, userID, limit, cursor) ([]Release, *Cursor, error)` con cursor `(published_at, chapter_id) DESC`. Page size 50 fijo. Fetcha `limit+1` para detectar siguiente sin COUNT extra. El home widget sigue usando `UnreadReleases` sin cursor. `scanReleases` helper compartido evita drift entre queries.
+- **Entry chapters**: `?page=N` offset-based. Page size 100. Slicea post-grouping en Go (no en SQL, porque la dedup por `(number, language)` sucede en Go). Clampa `page > totalPages` al último válido vía `min`/`max` builtins.
+- **UI**: "← anterior · página N de M · siguiente →" en entry; "siguiente →" único en releases (cursor no soporta back nativamente). Preserva `include_read` y `sort` en los links via `add`/`sub` template funcs.
+- **CSS** `.pagination` + `.pagination-link` + `.pagination-current` duplicado en `releases.html` y `entry.html` (cada template tiene su propio `<style>` block; ~15 LOC c/u).
+
+### Backlog post-v1.0.3
 
 - **Tie-break del matcher con MangaDex/Asura**: hoy si esas sources devuelven >1 exact-match del título, el matcher cae a `needs_review` porque `pickBestExact` necesita `LastChapter`/`LastChapterAt` y solo Comick los popula. Agregar parsing de esos campos en `internal/mangadex/client.go` (API expone `attributes.lastChapter`) resolvería el caso Dr. Stone-tipo donde MD tiene 4 entries que matchean "Dr. Stone". ~10 LOC + test.
 - **Activity feed / capa social** sobre `/u/{slug}`.

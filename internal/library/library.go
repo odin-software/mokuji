@@ -163,6 +163,8 @@ func New(cfg Config) (*Handler, error) {
 		"statusLabel":     statusLabel,
 		"appVersion":      func() string { return version.Value },
 		"feedbackEnabled": feedback.IsEnabled,
+		"add":             func(a, b int) int { return a + b },
+		"sub":             func(a, b int) int { return a - b },
 	}
 	base, err := template.New("base").Funcs(funcs).ParseFS(cfg.HTMLTemplates, "layout.html")
 	if err != nil {

@@ -57,6 +57,24 @@
   font-size: 0.75rem;
   margin: 0.25rem 0 0;
 }
+.pagination {
+  margin: 2rem 0 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.pagination-link {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: 1.5px solid var(--text);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.pagination-link:hover { background: var(--text); color: var(--bg); }
+.pagination-current { color: var(--text-muted); font-size: 0.875rem; align-self: center; }
 </style>
 <p class="muted" style="margin-bottom: 0.75rem;"><a href="/library">← biblioteca</a></p>
 
@@ -188,6 +206,21 @@
   </li>
 {{end}}
 </ul>
+{{if gt .TotalPages 1}}
+<nav class="pagination" aria-label="paginación de capítulos">
+  {{if .HasPrev}}
+    <a href="/library/entry/{{.Entry.ID}}?page={{sub .Page 1}}{{if .IncludeRead}}&include_read=1{{end}}{{if eq .Sort "asc"}}&sort=asc{{end}}" class="pagination-link">
+      ← anterior
+    </a>
+  {{end}}
+  <span class="pagination-current">página {{.Page}} de {{.TotalPages}}</span>
+  {{if .HasNext}}
+    <a href="/library/entry/{{.Entry.ID}}?page={{add .Page 1}}{{if .IncludeRead}}&include_read=1{{end}}{{if eq .Sort "asc"}}&sort=asc{{end}}" class="pagination-link">
+      siguiente →
+    </a>
+  {{end}}
+</nav>
+{{end}}
 {{else}}
   {{if eq .Entry.SourceStatus "unmatched"}}
     <div class="empty-state">

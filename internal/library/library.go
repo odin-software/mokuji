@@ -227,6 +227,23 @@ func (h *Handler) requireSession(w http.ResponseWriter, r *http.Request) (*sessi
 	return s, true
 }
 
+// CatalogResult es un resultado de búsqueda externa (catálogo) anotado con
+// si el user ya lo tiene en su biblioteca, para el dedup del search unificado.
+type CatalogResult struct {
+	mangasource.SearchResult
+	InLibrary bool
+}
+
+// dedupeCatalog marca cada resultado de catálogo cuyo SourceID ya esté en la
+// biblioteca del user (owned), para no ofrecer "agregar" lo que ya tiene.
+func dedupeCatalog(results []mangasource.SearchResult, owned map[string]bool) []CatalogResult {
+	out := make([]CatalogResult, 0, len(results))
+	for _, r := range results {
+		out = append(out, CatalogResult{SearchResult: r, InLibrary: owned[r.SourceID]})
+	}
+	return out
+}
+
 type listData struct {
 	Session *session.Session
 	Entries []Entry
@@ -633,6 +650,31 @@ func (h *Handler) createEntry(ctx context.Context, userID, mangaID int64) error 
 		VALUES (?, ?, 'reading', ?, ?)
 	`, userID, mangaID, now, now)
 	return err
+}
+
+// ownedSourceIDs retorna el set de source_id que el user ya tiene en su
+// biblioteca para una source dada (ej. "anilist"). Sirve para deduplicar la
+// sección de catálogo del search unificado.
+func (h *Handler) ownedSourceIDs(ctx context.Context, userID int64, source string) (map[string]bool, error) {
+	rows, err := h.db.QueryContext(ctx, `
+		SELECT m.source_id
+		FROM library_entries le
+		JOIN manga m ON m.id = le.manga_id
+		WHERE le.user_id = ? AND m.source = ?
+	`, userID, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	owned := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		owned[id] = true
+	}
+	return owned, rows.Err()
 }
 
 // upsertMangaSource persiste el resultado del matcher como una fila de

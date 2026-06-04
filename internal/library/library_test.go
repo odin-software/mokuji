@@ -818,3 +818,68 @@ func TestListEntriesCountsTotalAndUnread(t *testing.T) {
 		t.Errorf("con cursor: Total=%d Unread=%d (esperado 3/2)", entries[0].TotalChapters, entries[0].UnreadCount)
 	}
 }
+
+func TestDedupeCatalogMarcaInLibrary(t *testing.T) {
+	results := []mangasource.SearchResult{
+		{SourceID: "1", Title: "Berserk"},
+		{SourceID: "2", Title: "Vagabond"},
+	}
+	owned := map[string]bool{"1": true}
+
+	got := dedupeCatalog(results, owned)
+
+	if len(got) != 2 {
+		t.Fatalf("esperaba 2 resultados, obtuve %d", len(got))
+	}
+	if !got[0].InLibrary {
+		t.Error("Berserk (source_id 1) debería estar marcado InLibrary")
+	}
+	if got[1].InLibrary {
+		t.Error("Vagabond (source_id 2) NO debería estar marcado InLibrary")
+	}
+}
+
+func TestOwnedSourceIDs(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	ctx := context.Background()
+	userID := insertUser(t, db, "alice@example.com")
+
+	mangaID, err := h.upsertManga(ctx, "anilist", "30002", "Berserk", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.createEntry(ctx, userID, mangaID); err != nil {
+		t.Fatal(err)
+	}
+
+	owned, err := h.ownedSourceIDs(ctx, userID, "anilist")
+	if err != nil {
+		t.Fatalf("ownedSourceIDs: %v", err)
+	}
+	if !owned["30002"] {
+		t.Errorf("esperaba que 30002 estuviera en owned, got %v", owned)
+	}
+	if owned["99999"] {
+		t.Error("99999 no debería estar en owned")
+	}
+
+	// Aislamiento por source: el mismo manga bajo otra source no aparece.
+	ownedOtra, err := h.ownedSourceIDs(ctx, userID, "mangadex")
+	if err != nil {
+		t.Fatalf("ownedSourceIDs (otra source): %v", err)
+	}
+	if len(ownedOtra) != 0 {
+		t.Errorf("filtro por source roto: esperaba vacío para mangadex, got %v", ownedOtra)
+	}
+
+	// Aislamiento por user: otro user sin esa entry no ve el source_id.
+	otroUser := insertUser(t, db, "bob@example.com")
+	ownedBob, err := h.ownedSourceIDs(ctx, otroUser, "anilist")
+	if err != nil {
+		t.Fatalf("ownedSourceIDs (otro user): %v", err)
+	}
+	if len(ownedBob) != 0 {
+		t.Errorf("filtro por user roto: esperaba vacío para bob, got %v", ownedBob)
+	}
+}

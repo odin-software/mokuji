@@ -871,6 +871,7 @@ button.danger:hover { background: #8a2818; }
 </head>
 <body>
 <div class="app-shell">
+  {{block "chrome" .}}
   {{if .Session}}
   <aside class="app-sidebar">
     <a href="/" class="app-sidebar-logo">mokuji</a>
@@ -891,7 +892,9 @@ button.danger:hover { background: #8a2818; }
     </div>
   </aside>
   {{end}}
+  {{end}}
   <main class="app-main">
+    {{block "appnav" .}}
     {{if .Session}}
     <header class="app-nav">
       <a href="/" class="app-nav-logo">mokuji</a>
@@ -902,9 +905,12 @@ button.danger:hover { background: #8a2818; }
       </nav>
     </header>
     {{end}}
+    {{end}}
     {{block "content" .}}<p>contenido vacío</p>{{end}}
   </main>
 </div>
+{{block "appfooter" .}}
 <footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} · 目次</footer>
+{{end}}
 </body>
 </html>{{end}}

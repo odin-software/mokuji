@@ -148,6 +148,38 @@ func TestFinish_WritesOnboardedAtAndFrequency(t *testing.T) {
 	}
 }
 
+func TestStep1_FullScreenNoChromeWithSkip(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com", sql.NullInt64{}) // no onboardeado
+
+	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	req = withSession(req, userID)
+	w := httptest.NewRecorder()
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Takeover full-screen: ninguno de los elementos HTML del chrome.
+	// (Chequeamos tags, no clases sueltas — las clases también viven en el CSS.)
+	for _, forbidden := range []string{`<aside`, `<header class="app-nav"`, `<footer class="app-footer"`} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("onboarding renderiza chrome %q; debe ser full-screen", forbidden)
+		}
+	}
+	if !strings.Contains(body, `action="/onboarding/finish"`) {
+		t.Error("falta el form de skip a /onboarding/finish")
+	}
+	if !strings.Contains(body, "saltar") {
+		t.Error("falta el texto de skip 'saltar'")
+	}
+}
+
 func TestFinish_InvalidFrequencyDefaultsToWeekly(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db)
@@ -168,5 +200,30 @@ func TestFinish_InvalidFrequencyDefaultsToWeekly(t *testing.T) {
 	}
 	if freq != "weekly" {
 		t.Errorf("digest_frequency = %q, esperado 'weekly' (safe default)", freq)
+	}
+}
+
+func TestSteps2And3_FullScreenNoChrome(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com", sql.NullInt64{}) // no onboardeado
+	mux := http.NewServeMux()
+	h.Mount(mux)
+
+	for _, path := range []string{"/onboarding/step2", "/onboarding/step3"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req = withSession(req, userID)
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status esperado 200, obtenido %d", path, w.Code)
+		}
+		body := w.Body.String()
+		for _, forbidden := range []string{`<aside`, `<header class="app-nav"`, `<footer class="app-footer"`} {
+			if strings.Contains(body, forbidden) {
+				t.Errorf("%s: renderiza chrome %q; debe ser full-screen", path, forbidden)
+			}
+		}
 	}
 }

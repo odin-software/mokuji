@@ -1,4 +1,8 @@
 {{define "title"}}digest · mokuji{{end}}
+{{/* {{print}} emite "" — Go ignora los {{define}} con body vacío, así que un define vacío NO suprimiría el chrome */}}
+{{define "chrome"}}{{print}}{{end}}
+{{define "appnav"}}{{print}}{{end}}
+{{define "appfooter"}}{{print}}{{end}}
 {{define "content"}}
 <div class="onb">
   <div class="onb-progress" aria-hidden="true">
@@ -45,7 +49,7 @@
   </form>
 </div>
 <style>
-.onb { max-width: 26rem; margin: 0 auto; padding: 1rem 0; }
+.onb { max-width: 30rem; margin: 0 auto; padding: 2rem 1.25rem; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; }
 .onb-progress { display: flex; gap: 0.25rem; margin-bottom: 2rem; }
 .onb-progress-step { display: block; width: 1.125rem; height: 3px; background: rgba(26, 24, 21, 0.13); }
 .onb-progress-active { width: 2rem; background: var(--accent); }

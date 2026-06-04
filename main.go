@@ -132,35 +132,46 @@ func main() {
 	}
 
 	// Rate limiters para auth + unsubscribe.
-	//   /auth/start por IP:    ~5/min sostenido, burst 5
-	//   /auth/start por email: ~3/hora sostenido, burst 3
-	//   /auth/verify por IP:   ~10/min sostenido, burst 10
-	//   /unsubscribe por IP:   ~60/min sostenido, burst 20 (más permisivo
-	//                          porque users legítimos pueden refrescar y
-	//                          re-clickear; un fuzzer enumerando tokens
-	//                          HMAC se topa con el cap igual).
-	startIPLim := ratelimit.New(rate.Every(12*time.Second), 5)
+	//   /auth/start por IP:     ~5/min sostenido, burst 3
+	//   /auth/start por email:  ~3/hora sostenido, burst 3
+	//   /auth/start GLOBAL:     ~3/hora sostenido, burst 20 (circuit breaker
+	//                           de OTP: un solo bucket para todo el envío.
+	//                           Peor caso ~92 envíos/día, cómodo bajo el free
+	//                           tier de Resend (100/día). Es lo único que
+	//                           acota un flood distribuido — muchos IPs/emails
+	//                           random no comparten los buckets por-IP/email,
+	//                           pero sí comparten este. Subir post-launch +
+	//                           Resend pago.)
+	//   /auth/verify por IP:    ~10/min sostenido, burst 10
+	//   /unsubscribe por IP:    ~60/min sostenido, burst 20 (más permisivo
+	//                           porque users legítimos pueden refrescar y
+	//                           re-clickear; un fuzzer enumerando tokens
+	//                           HMAC se topa con el cap igual).
+	startIPLim := ratelimit.New(rate.Every(12*time.Second), 3)
 	startEmailLim := ratelimit.New(rate.Every(20*time.Minute), 3)
+	startGlobalLim := ratelimit.New(rate.Every(20*time.Minute), 20)
 	verifyIPLim := ratelimit.New(rate.Every(6*time.Second), 10)
 	unsubIPLim := ratelimit.New(rate.Every(time.Second), 20)
 	go startIPLim.Cleanup(rootCtx, 1*time.Hour)
 	go startEmailLim.Cleanup(rootCtx, 2*time.Hour)
+	go startGlobalLim.Cleanup(rootCtx, 2*time.Hour)
 	go verifyIPLim.Cleanup(rootCtx, 30*time.Minute)
 	go unsubIPLim.Cleanup(rootCtx, 30*time.Minute)
 
 	authHandler, err := auth.New(auth.Config{
-		DB:                db,
-		Sessions:          sessions,
-		Email:             emailClient,
-		HTMLTemplates:     htmlFS,
-		EmailTemplates:    emailFS,
-		BaseURL:           envOr("BASE_URL", "http://localhost:8080"),
-		Logger:            logger,
-		TrustProxy:        envBool("TRUST_PROXY", false),
-		StartIPLimiter:    startIPLim,
-		StartEmailLimiter: startEmailLim,
-		VerifyIPLimiter:   verifyIPLim,
-		Errs:              errs,
+		DB:                 db,
+		Sessions:           sessions,
+		Email:              emailClient,
+		HTMLTemplates:      htmlFS,
+		EmailTemplates:     emailFS,
+		BaseURL:            envOr("BASE_URL", "http://localhost:8080"),
+		Logger:             logger,
+		TrustProxy:         envBool("TRUST_PROXY", false),
+		StartIPLimiter:     startIPLim,
+		StartEmailLimiter:  startEmailLim,
+		StartGlobalLimiter: startGlobalLim,
+		VerifyIPLimiter:    verifyIPLim,
+		Errs:               errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)

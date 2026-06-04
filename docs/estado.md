@@ -233,6 +233,16 @@ Paginación en `/releases` y en `/library/entry/{id}` chapter list. Resuelve la 
 - **UI**: "← anterior · página N de M · siguiente →" en entry; "siguiente →" único en releases (cursor no soporta back nativamente). Preserva `include_read` y `sort` en los links via `add`/`sub` template funcs.
 - **CSS** `.pagination` + `.pagination-link` + `.pagination-current` duplicado en `releases.html` y `entry.html` (cada template tiene su propio `<style>` block; ~15 LOC c/u).
 
+### v1.0.4 — cerrado ✅ (branch `fix/otp-abuse`)
+
+Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/start` público (aún sin lanzar) y lo floodeó con emails random, agotando la quota diaria de Resend y — más grave — generando bounces que dañan la reputación del dominio como sender.
+
+- **Circuit breaker global de OTP** (`internal/auth/auth.go`): un único bucket (`ratelimit.Limiter` con clave constante `"global"`) para todo el envío de `/auth/start`, chequeado justo antes de `SendMessage`. `~3/hora sostenido, burst 20` → peor caso ~92 envíos/día, bajo el free tier de Resend (100/día). Es lo único que acota un flood distribuido: los límites por-IP y por-email no sirven porque cada IP/email random estrena su propio bucket. Al agotarse: no envía, no escribe el OTP, no redirige a verify, muestra el error genérico (no revela el tope) y loguea `WARN` con el IP.
+- **Per-IP de `/auth/start` apretado** burst 5→3.
+- **Cleanup goroutine** para el limiter global (TTL 2h), igual que los demás.
+- Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
+- **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
+
 ### Backlog post-v1.0.3
 
 - **Tie-break del matcher con MangaDex/Asura**: hoy si esas sources devuelven >1 exact-match del título, el matcher cae a `needs_review` porque `pickBestExact` necesita `LastChapter`/`LastChapterAt` y solo Comick los popula. Agregar parsing de esos campos en `internal/mangadex/client.go` (API expone `attributes.lastChapter`) resolvería el caso Dr. Stone-tipo donde MD tiene 4 entries que matchean "Dr. Stone". ~10 LOC + test.

@@ -51,7 +51,13 @@ type Config struct {
 	TrustProxy        bool
 	StartIPLimiter    *ratelimit.Limiter // limita /auth/start por IP; nil = sin límite
 	StartEmailLimiter *ratelimit.Limiter // limita /auth/start por email; nil = sin límite
-	VerifyIPLimiter   *ratelimit.Limiter // limita /auth/verify por IP; nil = sin límite
+	// StartGlobalLimiter es el circuit breaker global de envíos de OTP: un
+	// solo bucket para todo /auth/start, chequeado justo antes de mandar el
+	// email. Acota el daño de un flood (quota + reputación de sender) sin
+	// importar cuántos IPs o emails random rote el atacante, que es el hueco
+	// que los límites por-IP y por-email no cubren. nil = sin límite.
+	StartGlobalLimiter *ratelimit.Limiter
+	VerifyIPLimiter    *ratelimit.Limiter // limita /auth/verify por IP; nil = sin límite
 	Errs              *errrender.ErrorRenderer // nil en tests sin assets
 }
 
@@ -69,9 +75,10 @@ type Handler struct {
 	baseURL       string
 	logger        *slog.Logger
 	trustProxy    bool
-	startIPLim    *ratelimit.Limiter
-	startEmailLim *ratelimit.Limiter
-	verifyIPLim   *ratelimit.Limiter
+	startIPLim     *ratelimit.Limiter
+	startEmailLim  *ratelimit.Limiter
+	startGlobalLim *ratelimit.Limiter
+	verifyIPLim    *ratelimit.Limiter
 	errs          *errrender.ErrorRenderer
 }
 
@@ -140,9 +147,10 @@ func New(cfg Config) (*Handler, error) {
 		baseURL:       cfg.BaseURL,
 		logger:        cfg.Logger,
 		trustProxy:    cfg.TrustProxy,
-		startIPLim:    cfg.StartIPLimiter,
-		startEmailLim: cfg.StartEmailLimiter,
-		verifyIPLim:   cfg.VerifyIPLimiter,
+		startIPLim:     cfg.StartIPLimiter,
+		startEmailLim:  cfg.StartEmailLimiter,
+		startGlobalLim: cfg.StartGlobalLimiter,
+		verifyIPLim:    cfg.VerifyIPLimiter,
 		errs:          cfg.Errs,
 	}, nil
 }
@@ -220,6 +228,21 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.startEmailLim.Allow(emailAddr) {
+		h.render(w, r, "auth/start.html", startData{
+			Email: emailAddr,
+			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
+		})
+		return
+	}
+
+	// Circuit breaker global: un solo bucket para todo el envío de OTP. Es la
+	// última línea antes de mandar y la única que acota un flood distribuido
+	// (muchos IPs / emails random) — los límites por-IP y por-email no lo
+	// hacen porque cada combinación estrena su propio bucket. Mostramos el
+	// mismo error genérico (no revela que es un tope global) y logueamos a
+	// WARN para enterarnos del abuso sin SSH a logs de envío.
+	if !h.startGlobalLim.Allow("global") {
+		h.logger.Warn("circuit breaker global de OTP abierto: envío frenado", "ip", ip)
 		h.render(w, r, "auth/start.html", startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",

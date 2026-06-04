@@ -5,15 +5,22 @@ import (
 	"database/sql"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/smtp"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
+	"golang.org/x/time/rate"
 
 	"git.odin.do/kengru/mokuji/internal/code"
+	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
+	"git.odin.do/kengru/mokuji/internal/session"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -231,6 +238,78 @@ func TestFindOrCreateUserPreservesDigestOnLogin(t *testing.T) {
 	}
 	if got != 0 {
 		t.Errorf("login no debe alterar digest existente; esperado 0, obtenido %d", got)
+	}
+}
+
+// newStartHandler arma un Handler real (templates de disco + sender SMTP
+// fake que cuenta envíos) para ejercitar el POST /auth/start end-to-end.
+// globalLim se inyecta como circuit breaker global; sent acumula los envíos.
+func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sent *int) *Handler {
+	t.Helper()
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ec, err := email.New(email.Config{
+		Host: "localhost", Port: 1025, From: "mokuji <auth@mokuji.org>", Logger: discard,
+	})
+	if err != nil {
+		t.Fatalf("email.New: %v", err)
+	}
+	ec.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		*sent++
+		return nil
+	})
+	h, err := New(Config{
+		DB:                 db,
+		Sessions:           session.New(db, false, discard),
+		Email:              ec,
+		HTMLTemplates:      os.DirFS("../../web/templates"),
+		EmailTemplates:     os.DirFS("../../web/emails"),
+		Logger:             discard,
+		StartGlobalLimiter: globalLim,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
+}
+
+func postStart(h *Handler, email string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/auth/start", strings.NewReader("email="+email))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.start(w, req)
+	return w
+}
+
+func TestStartGlobalLimiterStopsSendingWhenExhausted(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	// burst 0 => el bucket nunca tiene token => siempre denegado.
+	globalLim := ratelimit.New(rate.Every(time.Hour), 0)
+	h := newStartHandler(t, db, globalLim, &sent)
+
+	w := postStart(h, "alice@example.com")
+
+	if sent != 0 {
+		t.Errorf("se envió email pese al circuit breaker global agotado (sent=%d)", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Errorf("redirigió a /auth/verify (%d); debía mostrar error sin enviar", w.Code)
+	}
+}
+
+func TestStartSendsWhenGlobalLimiterHasBudget(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	globalLim := ratelimit.New(rate.Every(time.Minute), 5)
+	h := newStartHandler(t, db, globalLim, &sent)
+
+	w := postStart(h, "alice@example.com")
+
+	if sent != 1 {
+		t.Errorf("esperaba 1 envío con presupuesto global disponible, sent=%d", sent)
+	}
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba redirect a verify (303), got %d", w.Code)
 	}
 }
 

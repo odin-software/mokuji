@@ -5,19 +5,20 @@
     <p class="eyebrow">Index · {{len .Entries}} {{if eq (len .Entries) 1}}entry{{else}}entries{{end}}</p>
     <h1>tu <span class="accent">biblioteca</span></h1>
   </div>
-  <a href="/library/search" class="action-link">+ agregar manga</a>
 </header>
 
 <form method="GET" action="/library" class="lib-filters" data-auto-submit>
-  <input type="search" name="q" placeholder="buscar en tu lista" value="{{.Query}}">
+  <input type="search" name="q" placeholder="buscar tu biblioteca o agregar manga nuevo" value="{{.Query}}">
   <select name="filter">
     <option value="all"{{if eq .Filter "all"}} selected{{end}}>todos</option>
     <option value="reading"{{if eq .Filter "reading"}} selected{{end}}>leyendo</option>
     <option value="planned"{{if eq .Filter "planned"}} selected{{end}}>por leer</option>
     <option value="completed"{{if eq .Filter "completed"}} selected{{end}}>completado</option>
   </select>
-  <noscript><button type="submit">filtrar</button></noscript>
+  <noscript><button type="submit">buscar</button></noscript>
 </form>
+
+{{if .Query}}<h2 class="lib-section">en tu biblioteca</h2>{{end}}
 
 {{if .Entries}}
 <ul class="manga-list">
@@ -71,26 +72,60 @@
   </li>
 {{end}}
 </ul>
-{{else if or (ne .Filter "all") .Query}}
+{{else if .Query}}
+<p class="muted lib-empty-inline">nada en tu biblioteca matchea "{{.Query}}".</p>
+{{else if ne .Filter "all"}}
 <div class="empty-state">
   <span class="kanji">無</span>
   <h2>0 coincidencias.</h2>
-  <p>nada en tu lista matchea estos filtros. prueba borrar la búsqueda o cambiar el estado.</p>
+  <p>nada en tu lista matchea este filtro. prueba cambiar el estado.</p>
 </div>
 {{else}}
 <div class="empty-state">
   <span class="kanji">白</span>
   <h2>tu índice está en blanco.</h2>
-  <p>agrega tu primer manga — busca por título y guárdalo con tu progreso.</p>
-  <a href="/library/search" class="action-link">+ agregar manga</a>
+  <p>busca un manga arriba y agrégalo con tu progreso.</p>
 </div>
+{{end}}
+
+{{if .Query}}
+<h2 class="lib-section">agregar nuevo · {{.Source}}</h2>
+{{if .CatalogError}}<p class="error">{{.CatalogError}}</p>{{end}}
+{{if .Catalog}}
+<ul class="search-results">
+{{range .Catalog}}
+  <li class="result">
+    {{if .CoverURL}}<img src="{{.CoverURL}}" alt="" class="cover" width="80" loading="lazy" referrerpolicy="no-referrer">{{end}}
+    <div class="info">
+      <strong>{{.Title}}</strong>
+      {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
+    </div>
+    {{if .InLibrary}}
+    <span class="muted result-owned">ya en tu biblioteca</span>
+    {{else}}
+    <form method="POST" action="/library/add">
+      {{ csrfInput $.Session }}
+      <input type="hidden" name="source" value="{{$.Source}}">
+      <input type="hidden" name="source_id" value="{{.SourceID}}">
+      <input type="hidden" name="title" value="{{.Title}}">
+      <input type="hidden" name="cover_url" value="{{.CoverURL}}">
+      <input type="hidden" name="q" value="{{$.Query}}">
+      <button type="submit">+ agregar</button>
+    </form>
+    {{end}}
+  </li>
+{{end}}
+</ul>
+{{else if not .CatalogError}}
+<div class="empty-state">
+  <span class="kanji">無</span>
+  <h2>nada en el catálogo.</h2>
+  <p>prueba kanji, romaji, o el título en inglés. AniList indexa con varios alias.</p>
+</div>
+{{end}}
 {{end}}
 
 <p class="user-links">
   <a href="/u/{{if .UserSlug}}{{.UserSlug}}{{else}}{{.Session.UserID}}{{end}}">tu vista pública</a>
 </p>
-<form method="POST" action="/auth/logout" class="logout-form">
-  {{ csrfInput .Session }}
-  <button type="submit">cerrar sesión</button>
-</form>
 {{end}}

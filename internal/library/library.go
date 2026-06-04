@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -172,7 +173,7 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	pages := map[string]*template.Template{}
-	for _, page := range []string{"library/list.html", "library/search.html", "library/entry.html"} {
+	for _, page := range []string{"library/list.html", "library/entry.html"} {
 		clone, err := base.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
@@ -253,6 +254,13 @@ type listData struct {
 	// para construir el link "tu vista pública" sin tirar al 301 cuando
 	// ya tiene username (cosmético: /u/alice se ve mejor que /u/12).
 	UserSlug string
+	// Source es el nombre de la fuente de catálogo (ej. "anilist"), usado en
+	// los hidden fields del form de agregar.
+	Source string
+	// Catalog son los resultados de catálogo para Query (vacío si Query=="").
+	Catalog []CatalogResult
+	// CatalogError es el mensaje suave si la búsqueda de catálogo falla.
+	CatalogError string
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -290,50 +298,45 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("cargar slug para list", "user_id", s.UserID, "err", err)
 	}
 
-	h.render(w, r, "library/list.html", listData{
+	data := listData{
 		Session:  s,
 		Entries:  entries,
 		Filter:   filter,
 		Query:    query,
 		UserSlug: slug.String,
-	})
-}
-
-type searchData struct {
-	Session *session.Session
-	Query   string
-	Source  string
-	Results []mangasource.SearchResult
-	Error   string
-}
-
-func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
-	s, ok := h.requireSession(w, r)
-	if !ok {
-		return
-	}
-
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if len(query) > maxQuery {
-		query = query[:maxQuery]
-	}
-
-	data := searchData{
-		Session: s,
-		Query:   query,
-		Source:  h.src.Name(),
 	}
 
 	if query != "" {
+		data.Source = h.src.Name()
 		results, err := h.src.Search(r.Context(), query)
 		if err != nil {
-			h.logger.Error("buscar en fuente externa", "err", err, "query", query)
-			data.Error = "no pudimos buscar en este momento. prueba de nuevo."
+			h.logger.Error("buscar en catálogo", "err", err, "query", query)
+			data.CatalogError = "no pudimos buscar en el catálogo. prueba de nuevo."
+		} else {
+			owned, err := h.ownedSourceIDs(r.Context(), s.UserID, h.src.Name())
+			if err != nil {
+				h.logger.Error("cargar source_ids del user", "err", err)
+				owned = map[string]bool{}
+			}
+			data.Catalog = dedupeCatalog(results, owned)
 		}
-		data.Results = results
 	}
 
-	h.render(w, r, "library/search.html", data)
+	h.render(w, r, "library/list.html", data)
+}
+
+// search es legacy: /library/search se unificó dentro de /library. Mantiene la
+// ruta viva redirigiendo, para bookmarks y links externos.
+func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireSession(w, r); !ok {
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	target := "/library"
+	if q != "" {
+		target = "/library?q=" + url.QueryEscape(q)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +379,11 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 	// "reintentar" desde el detail page más adelante).
 	h.tryMatchSources(r.Context(), mangaID, title)
 
-	http.Redirect(w, r, "/library", http.StatusSeeOther)
+	target := "/library"
+	if q := strings.TrimSpace(r.PostFormValue("q")); q != "" {
+		target = "/library?q=" + url.QueryEscape(q)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // tryMatchSources corre cada matcher configurado contra el manga en

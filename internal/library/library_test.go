@@ -374,52 +374,130 @@ func TestDeleteRejectsOtherUsersEntry(t *testing.T) {
 	}
 }
 
-func TestSearchRendersResults(t *testing.T) {
+func TestListWithQueryRendersCatalogAndDedup(t *testing.T) {
 	db := setupDB(t)
 	src := &fakeSource{
 		results: []mangasource.SearchResult{
-			{SourceID: "1", Title: "Berserk", CoverURL: "https://cdn/x.jpg", Description: "Dark fantasy"},
+			{SourceID: "1", Title: "Berserk", CoverURL: "https://cdn/b.jpg", Description: "Dark fantasy"},
+			{SourceID: "2", Title: "Vagabond", CoverURL: "https://cdn/v.jpg"},
 		},
 	}
 	h := newFullHandler(t, db, src)
-
 	userID := insertUser(t, db, "alice@example.com")
 
-	req := httptest.NewRequest(http.MethodGet, "/library/search?q=berserk", nil)
+	// El user ya tiene Berserk (source_id 1) en su biblioteca.
+	ctx := context.Background()
+	mangaID, _ := h.upsertManga(ctx, src.Name(), "1", "Berserk", "")
+	if err := h.createEntry(ctx, userID, mangaID); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/library?q=ber", nil)
 	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID, CSRFToken: "tok123"}))
 	rec := httptest.NewRecorder()
-	h.search(rec, req)
+	h.list(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
 	}
 	if src.calls != 1 {
-		t.Errorf("Search a la fuente: esperado 1 call, obtenido %d", src.calls)
+		t.Errorf("esperaba 1 call a la source, hubo %d", src.calls)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Berserk", "Dark fantasy", "csrf_token", `value="tok123"`, `value="fake"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("body no contiene %q", want)
-		}
+	if !strings.Contains(body, "agregar nuevo") {
+		t.Error("falta el header de la sección de catálogo")
+	}
+	if !strings.Contains(body, "Vagabond") {
+		t.Error("falta el resultado de catálogo no-poseído (Vagabond)")
+	}
+	if !strings.Contains(body, "ya en tu biblioteca") {
+		t.Error("Berserk (ya poseído) debería marcarse 'ya en tu biblioteca'")
 	}
 }
 
-func TestSearchEmptyQueryNoCall(t *testing.T) {
+func TestListCatalogErrorStillRendersLibrary(t *testing.T) {
+	db := setupDB(t)
+	src := &fakeSource{err: errors.New("anilist caído")}
+	h := newFullHandler(t, db, src)
+	userID := insertUser(t, db, "alice@example.com")
+
+	ctx := context.Background()
+	mangaID, _ := h.upsertManga(ctx, src.Name(), "1", "Berserk", "")
+	if err := h.createEntry(ctx, userID, mangaID); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/library?q=ber", nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID, CSRFToken: "tok"}))
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Berserk") {
+		t.Error("la lista de biblioteca debe renderizar pese al error de catálogo")
+	}
+	if !strings.Contains(body, "no pudimos buscar en el catálogo") {
+		t.Error("falta el mensaje de CatalogError cuando la búsqueda externa falla")
+	}
+}
+
+func TestListEmptyQueryNoCatalogCall(t *testing.T) {
 	db := setupDB(t)
 	src := &fakeSource{}
 	h := newFullHandler(t, db, src)
-
 	userID := insertUser(t, db, "alice@example.com")
-	req := httptest.NewRequest(http.MethodGet, "/library/search", nil)
-	req = session.WithUserID(req, userID)
+
+	req := httptest.NewRequest(http.MethodGet, "/library", nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	if src.calls != 0 {
+		t.Errorf("query vacía no debe llamar a la source; hubo %d calls", src.calls)
+	}
+}
+
+func TestSearchRedirectsToLibraryWithQuery(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	userID := insertUser(t, db, "alice@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/library/search?q=berserk", nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
 	rec := httptest.NewRecorder()
 	h.search(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("status: esperado 200, obtenido %d", rec.Code)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status: esperado 303, obtenido %d", rec.Code)
 	}
-	if src.calls != 0 {
-		t.Errorf("se esperaba 0 calls a la fuente para query vacía, hubo %d", src.calls)
+	if loc := rec.Header().Get("Location"); loc != "/library?q=berserk" {
+		t.Errorf("Location: esperado /library?q=berserk, obtenido %q", loc)
+	}
+}
+
+func TestAddRedirectsPreservingQuery(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	userID := insertUser(t, db, "alice@example.com")
+
+	form := "source=anilist&source_id=30002&title=Berserk&q=ber"
+	req := httptest.NewRequest(http.MethodPost, "/library/add", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	rec := httptest.NewRecorder()
+	h.add(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status: esperado 303, obtenido %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/library?q=ber" {
+		t.Errorf("Location: esperado /library?q=ber, obtenido %q", loc)
 	}
 }
 

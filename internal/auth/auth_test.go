@@ -724,6 +724,52 @@ func TestStartFalloDeEnvioNoCuentaParaColdList(t *testing.T) {
 	}
 }
 
+// TestStartRevierteConContextoCancelado cubre el defecto que sobrevivió a la
+// revisión anterior: deleteCode recibía r.Context(), y SendMail no tiene
+// deadline. Un proveedor que blackholea paquetes cuelga el handler el
+// timeout de conexión TCP del SO (un minuto o más); el usuario abandona el
+// login antes de eso, el cliente se desconecta, y Go cancela r.Context(). Con
+// ese contexto, database/sql se niega a entregar una conexión para el DELETE
+// — falla garantizado, no solo probable — y la fila sobrevive con
+// used_at IS NULL. Dos así cold-listean a un usuario real por 24h.
+//
+// El contexto se cancela desde DENTRO del sender fake, justo antes de que
+// devuelva el error: el trabajo de DB previo (unverifiedCount, storeCode)
+// corre con el contexto todavía vivo, y solo el envío lo encuentra
+// cancelado. Cancelar de entrada no sirve — el handler haría el DB work
+// antes del send y fallaría ahí, sin llegar nunca a probar el rollback.
+func TestStartRevierteConContextoCancelado(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	h.email.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		// El cliente se desconectó mientras el envío colgaba: esto es lo
+		// que Go hace a r.Context() en ese momento.
+		cancel()
+		return errors.New("smtp: conexión rechazada")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/start", strings.NewReader("email=abandonado@example.com"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.start(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("esperaba 500 por fallo de envío, got %d", w.Code)
+	}
+
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM otp_codes WHERE email = ?`, "abandonado@example.com").Scan(&rows); err != nil {
+		t.Fatalf("contar otp_codes: %v", err)
+	}
+	if rows != 0 {
+		t.Errorf("quedó %d fila(s) de otp_codes con el contexto del request ya cancelado; deleteCode debía sobrevivir a la cancelación", rows)
+	}
+}
+
 // TestStartColdListNoConsumeBucketConocido cubre el finding 2: el cold-list
 // tiene que rechazar antes de que el bucket de envío gaste un token. Si el
 // orden fuera al revés, una dirección quemada drenaría el bucket compartido

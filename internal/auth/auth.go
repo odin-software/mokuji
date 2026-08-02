@@ -334,6 +334,10 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	// que se gasta antes de generar el código y mandar el correo: todo lo
 	// que puede rechazar sin tocar el bucket ya corrió arriba. Ver el
 	// comentario de StartKnownLimiter en Config para el porqué del split.
+	// El token no se reembolsa si el envío falla después: x/time/rate no
+	// tiene un refund limpio, y el bucket se autorregenera solo. Es una
+	// consecuencia documentada, no un defecto — un outage del proveedor
+	// puede drenar el bucket compartido hasta que se recargue.
 	known, err := h.userExists(r.Context(), emailAddr)
 	if err != nil {
 		h.logger.Error("consultar existencia de user", "err", err)
@@ -360,16 +364,23 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 	ua := r.UserAgent()
 
-	codeID, err := h.storeCode(r.Context(), emailAddr, code, ip, ua)
+	// renderOTPEmail va antes de storeCode a propósito: no necesita el id de
+	// la fila, así que moverlo antes elimina la ventana en la que quedaría
+	// una fila insertada sin delete si el render fallara — en vez de agregar
+	// un segundo delete para cubrirla. En la práctica ese caso es casi
+	// imposible (las plantillas se parsean al arrancar y los datos son un
+	// struct estático), pero si fallara, fallaría igual para todos,
+	// cold-listeando a cualquiera en dos intentos.
+	plainBody, htmlBody, err := h.renderOTPEmail(code, emailAddr, ip, ua)
 	if err != nil {
-		h.logger.Error("guardar código", "err", err)
+		h.logger.Error("renderizar email otp", "err", err)
 		h.errs.InternalServerError(w, r)
 		return
 	}
 
-	plainBody, htmlBody, err := h.renderOTPEmail(code, emailAddr, ip, ua)
+	codeID, err := h.storeCode(r.Context(), emailAddr, code, ip, ua)
 	if err != nil {
-		h.logger.Error("renderizar email otp", "err", err)
+		h.logger.Error("guardar código", "err", err)
 		h.errs.InternalServerError(w, r)
 		return
 	}
@@ -386,7 +397,20 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		// 24h después de que el mail vuelva. Best-effort: si el delete
 		// también falla, lo logueamos y devolvemos el 500 igual — el
 		// hecho que le importa al usuario es que el envío falló.
-		if delErr := h.deleteCode(r.Context(), codeID); delErr != nil {
+		//
+		// El delete usa context.WithoutCancel a propósito, no r.Context():
+		// SendMail no tiene deadline, así que un proveedor que blackholea
+		// paquetes (en vez de rechazar la conexión) cuelga el handler el
+		// timeout de conexión TCP del SO — un minuto o más. El usuario
+		// abandona el login antes de eso, el cliente se desconecta, y Go
+		// cancela r.Context(). Con ese contexto, database/sql se niega a
+		// entregar una conexión (revisa ctx.Done() antes de dar una del
+		// pool) y el DELETE falla garantizado, no solo probablemente —
+		// justo el escenario que este rollback existe para evitar. El
+		// cleanup tiene que sobrevivir a la muerte del request precisamente
+		// porque la muerte del request es lo que dispara el caso: no
+		// "simplificar" esto de vuelta a r.Context().
+		if delErr := h.deleteCode(context.WithoutCancel(r.Context()), codeID); delErr != nil {
 			h.logger.Error("revertir código tras fallo de envío", "err", delErr, "to", emailAddr)
 		}
 		h.errs.InternalServerError(w, r)

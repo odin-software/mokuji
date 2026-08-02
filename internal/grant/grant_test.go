@@ -80,9 +80,14 @@ func TestConsumeRechazaVencido(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	// Envejecer el grant a mano en vez de esperar 5 minutos reales.
+	// Envejecer el grant a mano en vez de esperar 5 minutos reales. Scoped
+	// por token_hash, igual que en TestCleanupExpiredBorraSoloVencidos: un
+	// UPDATE sin WHERE envejece cualquier otro grant que exista en la
+	// tabla, aunque hoy solo haya uno.
 	past := time.Now().UTC().Add(-time.Minute).Unix()
-	if _, err := db.Exec(`UPDATE admin_grants SET expires_at = ?`, past); err != nil {
+	if _, err := db.Exec(
+		`UPDATE admin_grants SET expires_at = ? WHERE token_hash = ?`, past, hashToken(token),
+	); err != nil {
 		t.Fatalf("envejecer grant: %v", err)
 	}
 

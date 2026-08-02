@@ -279,6 +279,25 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cold-list: si a esta dirección ya se le mandaron códigos que nunca se
+	// verificaron, dejamos de mandarle. Acota el daño a una dirección
+	// quemada una vez, en vez de en bucle.
+	burned, err := h.unverifiedCount(r.Context(), emailAddr)
+	if err != nil {
+		h.logger.Error("consultar cold-list", "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	if burned >= coldListThreshold {
+		h.logger.Warn("dirección en cold-list: envío frenado",
+			"intentos_sin_verificar", burned, "ip", ip)
+		h.render(w, r, "auth/start.html", startData{
+			Email: emailAddr,
+			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
+		})
+		return
+	}
+
 	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("generar código", "err", err)
@@ -484,6 +503,31 @@ func CleanupExpiredCodes(ctx context.Context, db *sql.DB) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// coldListThreshold es cuántos códigos sin verificar en la ventana de
+// retención bastan para dejar de enviarle a una dirección.
+//
+// Es 2 y no 1 a propósito: al user legítimo cuyo primer correo cayó en spam
+// hay que dejarlo reintentar. A partir del tercero, el patrón ya no es
+// "no me llegó" sino "alguien está usando esta dirección como destino".
+const coldListThreshold = 2
+
+// unverifiedCount cuenta los códigos emitidos a emailAddr dentro de la
+// ventana de retención que nunca se verificaron.
+//
+// Es la firma exacta del email bombing: al atacante le mandan códigos a
+// direcciones que no controla, así que jamás se consumen. A diferencia de
+// los limiters in-memory —que se resetean en cada systemd restart, o sea en
+// cada deploy del CD— esta señal vive en DB y sobrevive reinicios.
+func (h *Handler) unverifiedCount(ctx context.Context, emailAddr string) (int, error) {
+	cutoff := time.Now().UTC().Add(-codeRetention).Unix()
+	var n int
+	err := h.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM otp_codes
+		WHERE email = ? AND used_at IS NULL AND created_at >= ?
+	`, emailAddr, cutoff).Scan(&n)
+	return n, err
 }
 
 // userExists dice si el email ya tiene cuenta. Decide contra cuál bucket de

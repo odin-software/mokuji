@@ -544,3 +544,99 @@ func TestCleanupExpiredCodesRespetaRetencion(t *testing.T) {
 		t.Error("el reaper borró una fila dentro de la ventana de 24h que usa la cold-list")
 	}
 }
+
+func TestStartColdListBloqueaDireccionQuemada(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+	now := time.Now().UTC()
+
+	// Dos códigos recientes sin verificar: la firma del bombing.
+	for range 2 {
+		if _, err := db.Exec(`
+			INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
+			VALUES ('quemada@example.com', 'hash', ?, ?)
+		`, now.Unix(), now.Add(-time.Minute).Unix()); err != nil {
+			t.Fatalf("sembrar código: %v", err)
+		}
+	}
+
+	w := postStart(h, "quemada@example.com")
+
+	if sent != 0 {
+		t.Errorf("se envió a una dirección en cold-list, sent=%d", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Error("redirigió a verify; debía frenar sin enviar")
+	}
+}
+
+func TestStartColdListPermiteUnReintento(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+	now := time.Now().UTC()
+
+	// Un solo código sin verificar: el caso del user legítimo cuyo primer
+	// correo cayó en spam. El umbral es 2 justamente para no castigarlo.
+	if _, err := db.Exec(`
+		INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
+		VALUES ('legitima@example.com', 'hash', ?, ?)
+	`, now.Unix(), now.Add(-time.Minute).Unix()); err != nil {
+		t.Fatalf("sembrar código: %v", err)
+	}
+
+	postStart(h, "legitima@example.com")
+
+	if sent != 1 {
+		t.Errorf("un solo código previo debió permitir reintento, sent=%d", sent)
+	}
+}
+
+func TestStartColdListIgnoraCodigosViejos(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+	now := time.Now().UTC()
+
+	// Dos códigos sin verificar pero de hace 48h: fuera de la ventana. El
+	// rastro de un ataque viejo no puede dejar una dirección bloqueada.
+	for range 2 {
+		if _, err := db.Exec(`
+			INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
+			VALUES ('vieja@example.com', 'hash', ?, ?)
+		`, now.Add(-48*time.Hour).Unix(), now.Add(-48*time.Hour).Unix()); err != nil {
+			t.Fatalf("sembrar código: %v", err)
+		}
+	}
+
+	postStart(h, "vieja@example.com")
+
+	if sent != 1 {
+		t.Errorf("códigos de hace 48h no debían bloquear, sent=%d", sent)
+	}
+}
+
+func TestStartColdListIgnoraCodigosVerificados(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+	now := time.Now().UTC()
+
+	// Dos códigos recientes, ambos verificados: es un user activo, no una
+	// víctima de bombing.
+	for range 2 {
+		if _, err := db.Exec(`
+			INSERT INTO otp_codes (email, code_hash, created_at, expires_at, used_at)
+			VALUES ('activa@example.com', 'hash', ?, ?, ?)
+		`, now.Unix(), now.Add(-time.Minute).Unix(), now.Unix()); err != nil {
+			t.Fatalf("sembrar código: %v", err)
+		}
+	}
+
+	postStart(h, "activa@example.com")
+
+	if sent != 1 {
+		t.Errorf("códigos ya verificados no debían bloquear, sent=%d", sent)
+	}
+}

@@ -178,6 +178,11 @@ func main() {
 			log.Fatal("TURNSTILE_SITE_KEY y TURNSTILE_SECRET_KEY requeridos en producción")
 		}
 		logger.Warn("Turnstile no configurado: /auth/start sin reto (solo dev)")
+		// Si solo una de las dos vino seteada, tsVerifier queda nil (Verify
+		// retorna true siempre) pero sin esto tsSiteKey seguiría no-vacía: el
+		// widget se renderizaría y el usuario tendría que resolverlo, para un
+		// reto que en realidad no valida nada. Peor que no tener reto.
+		tsSiteKey = ""
 	} else {
 		tsVerifier = turnstile.New(tsSecret)
 	}

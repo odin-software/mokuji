@@ -248,9 +248,7 @@ func (h *Handler) startForm(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
 	if !h.startIPLim.Allow(ip) {
-		h.render(w, r, "auth/start.html", h.startDataFor(startData{
-			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		}))
+		h.rejectGeneric(w, r, "")
 		return
 	}
 
@@ -269,10 +267,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !h.startEmailLim.Allow(emailAddr) {
-		h.render(w, r, "auth/start.html", h.startDataFor(startData{
-			Email: emailAddr,
-			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		}))
+		h.rejectGeneric(w, r, emailAddr)
 		return
 	}
 
@@ -315,10 +310,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if !bucket.Allow("global") {
 		h.logger.Warn("presupuesto de OTP agotado: envío frenado",
 			"bucket", label, "ip", ip)
-		h.render(w, r, "auth/start.html", h.startDataFor(startData{
-			Email: emailAddr,
-			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		}))
+		h.rejectGeneric(w, r, emailAddr)
 		return
 	}
 
@@ -334,10 +326,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if burned >= coldListThreshold {
 		h.logger.Warn("dirección en cold-list: envío frenado",
 			"intentos_sin_verificar", burned, "ip", ip)
-		h.render(w, r, "auth/start.html", h.startDataFor(startData{
-			Email: emailAddr,
-			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		}))
+		h.rejectGeneric(w, r, emailAddr)
 		return
 	}
 
@@ -477,6 +466,26 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 func (h *Handler) startDataFor(d startData) startData {
 	d.TurnstileSiteKey = h.turnstileSiteKey
 	return d
+}
+
+// rejectGeneric renderiza el rechazo compartido por los gates de rate-limit
+// y cold-list de start (IP, email, bucket known/unknown, cold-list). El
+// texto es a propósito palabra por palabra el mismo en los cuatro: si uno
+// dijera algo distinto, filtraría cuál gate disparó, y de rebote si esa
+// dirección tiene cuenta. Centralizarlo en un solo call site lo vuelve
+// estructural en vez de una convención que cuatro lugares tienen que
+// recordar mantener.
+//
+// Los rechazos de Turnstile NO pasan por acá: usan su propio texto, distinto
+// entre sí (Cloudflare caído vs reto fallido) y distinto de este. Meterlos
+// en este helper forzaría a unificar o parametrizar el mensaje, justo lo que
+// hay que evitar para no correr el riesgo de que alguien lo colapse en el
+// texto genérico sin darse cuenta.
+func (h *Handler) rejectGeneric(w http.ResponseWriter, r *http.Request, emailAddr string) {
+	h.render(w, r, "auth/start.html", h.startDataFor(startData{
+		Email: emailAddr,
+		Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
+	}))
 }
 
 // renderOTPEmail produce las dos versiones del email: texto plano (siempre)

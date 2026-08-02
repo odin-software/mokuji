@@ -81,6 +81,8 @@ escala según las features que actives.
 | `TRUST_PROXY` | `false` | `true` si hay reverse proxy delante. mokuji lee `X-Forwarded-For` para rate limiting y logs. NO actives sin proxy — un cliente podría spoofear el IP. |
 | `UNSUBSCRIBE_SECRET` | — | HMAC para firmar links de unsubscribe. Mínimo 32 bytes. Genera con: `openssl rand -base64 32`. Rotarlo invalida los links pendientes. |
 | `DELETION_LOG_PEPPER` | — | Pepper para hashear user_id en el audit log de borrado de cuentas. Genera igual que arriba. |
+| `TURNSTILE_SITE_KEY` | — | Site key de Cloudflare Turnstile para tu dominio (dashboard de Cloudflare, sección Turnstile). Es el reto anti-bot que se muestra antes de mandar un OTP en `/auth/start` (entró en v1.0.5 tras un incidente de email bombing). |
+| `TURNSTILE_SECRET_KEY` | — | Secret key del mismo widget de Turnstile. Con `TURNSTILE_SITE_KEY` vacía en dev no se muestra ningún reto — útil si corres mokuji privado sin exponerlo. |
 
 ### Opcionales por feature
 

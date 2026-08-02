@@ -87,7 +87,7 @@ SMTP_PORT=2587
 SMTP_USERNAME=resend
 SMTP_PASSWORD=re_<api_key_de_resend>
 SMTP_FROM=mokuji <auth@mokuji.org>
-SMTP_FROM_PRODUCT=mokuji <releases@mokuji.org>   # opcional; vacío = usa SMTP_FROM. Separa product emails (digest) de auth (OTP) para deliverability independiente.
+SMTP_FROM_PRODUCT=mokuji <releases@mokuji.org>   # opcional; vacío = usa SMTP_FROM. Separa el From de product (digest) del de auth (OTP). OJO: NO da deliverability independiente — mismo dominio, misma alineación SPF/DKIM, misma reputación. La separación real exige subdominios verificados aparte (auth.mokuji.org / mail.mokuji.org); pendiente.
 
 # Fase 2 — required en prod (SECURE_COOKIES=true hace fail-fast si faltan)
 UNSUBSCRIBE_SECRET=<openssl rand -base64 32>
@@ -95,6 +95,10 @@ DELETION_LOG_PEPPER=<openssl rand -base64 32>
 
 # Fase 2 — opcional (vacío = endpoints admin deshabilitados)
 ADMIN_TOKEN=<openssl rand -base64 32>
+
+# v1.0.5 — required en prod (SECURE_COOKIES=true hace fail-fast si faltan)
+TURNSTILE_SITE_KEY=<site key de Cloudflare Turnstile>
+TURNSTILE_SECRET_KEY=<secret key de Cloudflare Turnstile>
 
 # Fase 3 — sources opt-in (default on)
 ASURA_ENABLED=true        # bajar a false para self-hosters conservadores
@@ -133,7 +137,7 @@ ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
 
 - Rate limit en `/auth/start` (por IP y por email), `/auth/verify` (por IP). IP real detrás de nginx vía `TRUST_PROXY=true` + `X-Forwarded-For`.
 - Session cleanup goroutine cada hora.
-- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP estricta — `script-src 'self'`).
+- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP estricta — `script-src 'self' https://challenges.cloudflare.com` y `frame-src 'self' https://challenges.cloudflare.com`, única excepción de origen externo, agregada en v1.0.5 para el widget de Turnstile).
 - Cookies con Secure (en prod), HttpOnly, SameSite=Lax.
 - CSRF protection en todos los POST autenticados.
 - Hash de session IDs server-side (defense-in-depth contra DB leak).
@@ -242,6 +246,37 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - **Cleanup goroutine** para el limiter global (TTL 2h), igual que los demás.
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
+
+### v1.0.5 — hardening de OTP + break-glass
+
+Cierra lo que v1.0.4 dejó abierto. El circuit breaker acotaba el volumen a
+~92 envíos/día, pero no la raíz: esos 92 seguían yendo a extraños (bounces,
+reputación), y el bucket único dejaba que el atacante bloqueara el login de
+todos, operador incluido.
+
+- **Break-glass** (`internal/grant`, migración `0013_admin_grants`):
+  `POST /admin/grant-session` emite un token single-use de 256 bits (TTL 5
+  min, solo el SHA-256 en DB, 404 si el user no existe) y `GET /auth/grant`
+  lo canjea por sesión. Rompe la dependencia total del flow de auth con el
+  email. `WARN` en emisión y canje.
+- **Turnstile** (`internal/turnstile`): reto obligatorio antes del envío, en
+  **todo** `/auth/start` — no solo en emails desconocidos, porque la
+  presencia del widget sería un oráculo de enumeración. Fail-closed si
+  Cloudflare no responde. Requerido con `SECURE_COOKIES=true`.
+- **Buckets partidos**: `StartGlobalLimiter` se reemplaza por
+  `StartKnownLimiter` (~3/h, burst 10, techo ~72/día) y
+  `StartUnknownLimiter` (~1/h, burst 3, techo ~24/día). Un flood de
+  direcciones random ya no puede tocar el presupuesto de login de la gente
+  con cuenta.
+- **Cold-list**: 2+ códigos sin verificar en 24h y se deja de enviar a esa
+  dirección. DB-backed, así que sobrevive los reinicios que resetean los
+  limiters in-memory — o sea, cada deploy del CD.
+- **Reaper de `otp_codes`** (hueco preexistente, no del ataque): nada
+  drenaba la tabla salvo `HardDeleteUser`. Goroutine horaria con retención
+  de 24h, que es la ventana que necesita la cold-list. Borra también
+  `admin_grants` vencidos.
+- **Pendiente operativo**: `limit_req` de nginx en `/auth/start`, y
+  subdominios de sending separados.
 
 ### Backlog post-v1.0.3
 

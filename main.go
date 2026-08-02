@@ -152,11 +152,13 @@ func main() {
 	startGlobalLim := ratelimit.New(rate.Every(20*time.Minute), 20)
 	verifyIPLim := ratelimit.New(rate.Every(6*time.Second), 10)
 	unsubIPLim := ratelimit.New(rate.Every(time.Second), 20)
+	grantLim := ratelimit.New(rate.Every(time.Minute), 5)
 	go startIPLim.Cleanup(rootCtx, 1*time.Hour)
 	go startEmailLim.Cleanup(rootCtx, 2*time.Hour)
 	go startGlobalLim.Cleanup(rootCtx, 2*time.Hour)
 	go verifyIPLim.Cleanup(rootCtx, 30*time.Minute)
 	go unsubIPLim.Cleanup(rootCtx, 30*time.Minute)
+	go grantLim.Cleanup(rootCtx, 30*time.Minute)
 
 	authHandler, err := auth.New(auth.Config{
 		DB:                 db,
@@ -421,11 +423,14 @@ func main() {
 	}
 
 	adminHandler, err := admin.New(admin.Config{
-		DB:     db,
-		Token:  os.Getenv("ADMIN_TOKEN"),
-		Digest: digestSender,
-		Health: releasesWorker,
-		Logger: logger,
+		DB:           db,
+		Token:        os.Getenv("ADMIN_TOKEN"),
+		Digest:       digestSender,
+		Health:       releasesWorker,
+		Logger:       logger,
+		BaseURL:      envOr("BASE_URL", "http://localhost:8080"),
+		GrantLimiter: grantLim,
+		TrustProxy:   envBool("TRUST_PROXY", false),
 	})
 	if err != nil {
 		log.Fatalf("configurar admin: %v", err)

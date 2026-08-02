@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"log/slog"
@@ -15,12 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/time/rate"
 	_ "modernc.org/sqlite"
 
 	"encoding/json"
 
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/releases/digest"
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
@@ -331,5 +335,135 @@ func TestSourcesHealthNotMountedWithoutHealth(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status: %d (esperaba 404 sin Health cableado)", w.Code)
+	}
+}
+
+// --- grant-session endpoint ---
+
+// setupDB monta una DB en memoria con las migraciones aplicadas y un user
+// sembrado (id 1, alice@example.com), igual que internal/grant/grant_test.go.
+// A diferencia de setup(), no arma un Handler completo — grantSession no
+// necesita Digest ni email client.
+func setupDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if _, err := migrations.Run(db, os.DirFS("../../migrations")); err != nil {
+		t.Fatalf("aplicar migrations: %v", err)
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+	return db
+}
+
+func newGrantTestHandler(t *testing.T, db *sql.DB) *Handler {
+	t.Helper()
+	return &Handler{
+		db:      db,
+		token:   "test-token",
+		baseURL: "https://test.local",
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func TestGrantSessionRechazaSinToken(t *testing.T) {
+	h := newGrantTestHandler(t, setupDB(t))
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/grant-session?email=alice@example.com", nil)
+	w := httptest.NewRecorder()
+	h.grantSession(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("esperaba 401 sin Authorization, got %d", w.Code)
+	}
+}
+
+func TestGrantSessionRechazaUserInexistente(t *testing.T) {
+	h := newGrantTestHandler(t, setupDB(t))
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/grant-session?email=nadie@example.com", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	h.grantSession(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("esperaba 404 para user inexistente, got %d", w.Code)
+	}
+}
+
+func TestGrantSessionNoCreaUsers(t *testing.T) {
+	db := setupDB(t)
+	h := newGrantTestHandler(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/grant-session?email=nadie@example.com", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	h.grantSession(httptest.NewRecorder(), req)
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		t.Fatalf("contar users: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("el endpoint creó un user; esperaba 1 (el sembrado), got %d", n)
+	}
+}
+
+func TestGrantSessionDevuelveURLCanjeable(t *testing.T) {
+	db := setupDB(t)
+	h := newGrantTestHandler(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/grant-session?email=alice@example.com", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	h.grantSession(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("esperaba 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("parsear respuesta: %v", err)
+	}
+	if !strings.HasPrefix(resp.URL, "https://test.local/auth/grant?t=") {
+		t.Fatalf("URL inesperada: %q", resp.URL)
+	}
+
+	parsed, err := url.Parse(resp.URL)
+	if err != nil {
+		t.Fatalf("parsear URL: %v", err)
+	}
+	userID, err := grant.Consume(context.Background(), db, parsed.Query().Get("t"))
+	if err != nil {
+		t.Fatalf("el token emitido no es canjeable: %v", err)
+	}
+	if userID != 1 {
+		t.Errorf("esperaba user_id 1, got %d", userID)
+	}
+}
+
+func TestGrantSessionRespetaRateLimit(t *testing.T) {
+	h := newGrantTestHandler(t, setupDB(t))
+	// burst 0 => nunca hay token => siempre denegado.
+	h.grantLim = ratelimit.New(rate.Every(time.Hour), 0)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/grant-session?email=alice@example.com", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	h.grantSession(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("esperaba 429 con el limiter agotado, got %d", w.Code)
 	}
 }

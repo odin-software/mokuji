@@ -15,9 +15,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"git.odin.do/kengru/mokuji/internal/grant"
+	"git.odin.do/kengru/mokuji/internal/httpx"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/releases/digest"
 	"git.odin.do/kengru/mokuji/internal/releases/worker"
 )
@@ -37,15 +41,26 @@ type Config struct {
 	// con el snapshot. Si es nil, ese endpoint no se monta.
 	Health HealthReporter
 	Logger *slog.Logger
+	// BaseURL es el origen público (ej: https://mokuji.org). Se usa para
+	// construir la URL de canje que devuelve /admin/grant-session.
+	BaseURL string
+	// GrantLimiter acota /admin/grant-session por IP. nil = sin límite.
+	GrantLimiter *ratelimit.Limiter
+	// TrustProxy=true hace que el limiter lea X-Forwarded-For para
+	// identificar al cliente. Solo seguro detrás de un proxy de confianza.
+	TrustProxy bool
 }
 
 // Handler sirve los endpoints /admin/*.
 type Handler struct {
-	db     *sql.DB
-	token  string
-	digest *digest.Sender
-	health HealthReporter
-	logger *slog.Logger
+	db         *sql.DB
+	token      string
+	digest     *digest.Sender
+	health     HealthReporter
+	logger     *slog.Logger
+	baseURL    string
+	grantLim   *ratelimit.Limiter
+	trustProxy bool
 }
 
 // New construye un Handler. Falla si Digest es nil (no hay nada útil que
@@ -61,17 +76,21 @@ func New(cfg Config) (*Handler, error) {
 		cfg.Logger = slog.Default()
 	}
 	return &Handler{
-		db:     cfg.DB,
-		token:  cfg.Token,
-		digest: cfg.Digest,
-		health: cfg.Health,
-		logger: cfg.Logger,
+		db:         cfg.DB,
+		token:      cfg.Token,
+		digest:     cfg.Digest,
+		health:     cfg.Health,
+		logger:     cfg.Logger,
+		baseURL:    cfg.BaseURL,
+		grantLim:   cfg.GrantLimiter,
+		trustProxy: cfg.TrustProxy,
 	}, nil
 }
 
 // Mount registra los endpoints.
 func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/trigger-digest", h.triggerDigest)
+	mux.HandleFunc("POST /admin/grant-session", h.grantSession)
 	if h.health != nil {
 		mux.HandleFunc("GET /admin/sources-health", h.sourcesHealth)
 	}
@@ -129,6 +148,70 @@ func (h *Handler) triggerDigest(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("admin trigger-digest", "user_id", userID, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
+}
+
+// grantSession emite un token de un solo uso que canjea GET /auth/grant por
+// una sesión. Es el break-glass para cuando el envío de email está caído y
+// nadie —ni el operador— puede completar el flow de OTP.
+//
+// Es un bypass de auth completo, así que está apretado a propósito:
+//   - solo emite para users que YA existen; un ADMIN_TOKEN filtrado permite
+//     impersonar cuentas existentes, no fabricar cuentas nuevas
+//   - rate limit por IP encima del bearer token
+//   - WARN en cada emisión, con IP y email, para que quede rastro
+func (h *Handler) grantSession(w http.ResponseWriter, r *http.Request) {
+	if !h.authorized(r) {
+		http.Error(w, "no autorizado", http.StatusUnauthorized)
+		return
+	}
+	if !h.grantLim.Allow(h.clientIP(r)) {
+		http.Error(w, "demasiados intentos", http.StatusTooManyRequests)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	emailAddr := strings.TrimSpace(r.FormValue("email"))
+	if emailAddr == "" {
+		http.Error(w, "email requerido", http.StatusBadRequest)
+		return
+	}
+
+	var userID int64
+	err := h.db.QueryRowContext(r.Context(),
+		`SELECT id FROM users WHERE email = ?`, emailAddr,
+	).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "user no existe", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.logger.Error("admin grant-session: buscar user", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	token, err := grant.Issue(r.Context(), h.db, userID)
+	if err != nil {
+		h.logger.Error("admin grant-session: emitir grant", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Warn("grant de sesión emitido",
+		"user_id", userID, "email", emailAddr, "ip", h.clientIP(r))
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"url":        h.baseURL + "/auth/grant?t=" + url.QueryEscape(token),
+		"expires_in": grant.TTL.String(),
+	})
+}
+
+// clientIP identifica al cliente para el rate limiter.
+func (h *Handler) clientIP(r *http.Request) string {
+	return httpx.ClientIP(r, h.trustProxy)
 }
 
 // authorized chequea el header Authorization: Bearer <token>. Tiempo constante.

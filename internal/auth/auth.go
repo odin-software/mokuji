@@ -86,7 +86,16 @@ type Config struct {
 	// El reto aplica a TODO /auth/start, no solo a emails sin cuenta. Si el
 	// widget apareciera únicamente para desconocidos, su sola presencia
 	// diría si una dirección está registrada — un oráculo de enumeración
-	// gratis. Un solo camino, sin oráculo.
+	// gratis. Un solo camino evita ese oráculo obvio.
+	//
+	// Queda un oráculo acotado: los buckets known/unknown se agotan por
+	// separado, así que cuando el de desconocidos está en cero pero el de
+	// conocidos tiene presupuesto, una dirección sin cuenta cae en 200 con
+	// error y una con cuenta sigue a 303. Es autolimitado —cada sondeo
+	// positivo gasta presupuesto del bucket known y le manda un correo real
+	// a esa cuenta— y cuesta resolver Turnstile por intento, así que no
+	// amerita rediseño. Pero existe, y toca nombrarlo en vez de asumir que
+	// no hay ninguno.
 	Turnstile *turnstile.Verifier
 	// TurnstileSiteKey es la clave pública que se renderiza en el widget.
 	// Vacía = no se renderiza nada.
@@ -266,14 +275,12 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.startEmailLim.Allow(emailAddr) {
-		h.rejectGeneric(w, r, emailAddr)
-		return
-	}
-
-	// Reto antes de gastar presupuesto de envío. Va después de los limiters
-	// baratos (in-memory) y antes de todo lo que toque DB o red, para que un
-	// flood se coma lo menos posible por request.
+	// Reto antes de gastar cualquier presupuesto atado al email (limiter
+	// por-email, buckets de envío). Va después de los limiters baratos
+	// in-memory por IP y antes de todo lo que toque DB o red, para que un
+	// flood se coma lo menos posible por request. token vacío corta en seco
+	// dentro de Verify sin llamar a Cloudflare, así que esto no le regala
+	// I/O a un flood sin token.
 	tsOK, err := h.turnstile.Verify(r.Context(),
 		r.PostFormValue("cf-turnstile-response"), ip)
 	if err != nil {
@@ -295,8 +302,38 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Presupuesto de envío partido por tipo de destinatario. Ver el
-	// comentario de StartKnownLimiter en Config para el porqué.
+	// Limiter por-email después del reto: si corriera antes, cualquier POST
+	// con una dirección ajena —sin resolver el challenge— gastaría un token
+	// de esa víctima sin costo para quien ataca. Con el reto de por medio,
+	// vaciar el bucket de alguien exige resolver Turnstile en cada intento.
+	if !h.startEmailLim.Allow(emailAddr) {
+		h.rejectGeneric(w, r, emailAddr)
+		return
+	}
+
+	// Cold-list antes del presupuesto de envío: si fuera al revés, una
+	// dirección quemada seguiría cobrando un token del bucket compartido
+	// (known o unknown) en cada intento posterior, sin mandar nada — el
+	// mismo DoS de acceso de v1.0.4 reconstruido adentro del bucket que
+	// se partió justamente para no repetirlo. Ver el comentario de
+	// StartKnownLimiter en Config.
+	burned, err := h.unverifiedCount(r.Context(), emailAddr)
+	if err != nil {
+		h.logger.Error("consultar cold-list", "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	if burned >= coldListThreshold {
+		h.logger.Warn("dirección en cold-list: envío frenado",
+			"intentos_sin_verificar", burned, "ip", ip, "email", emailAddr)
+		h.rejectGeneric(w, r, emailAddr)
+		return
+	}
+
+	// Presupuesto de envío partido por tipo de destinatario. Es lo último
+	// que se gasta antes de generar el código y mandar el correo: todo lo
+	// que puede rechazar sin tocar el bucket ya corrió arriba. Ver el
+	// comentario de StartKnownLimiter en Config para el porqué del split.
 	known, err := h.userExists(r.Context(), emailAddr)
 	if err != nil {
 		h.logger.Error("consultar existencia de user", "err", err)
@@ -314,22 +351,6 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cold-list: si a esta dirección ya se le mandaron códigos que nunca se
-	// verificaron, dejamos de mandarle. Acota el daño a una dirección
-	// quemada una vez, en vez de en bucle.
-	burned, err := h.unverifiedCount(r.Context(), emailAddr)
-	if err != nil {
-		h.logger.Error("consultar cold-list", "err", err)
-		h.errs.InternalServerError(w, r)
-		return
-	}
-	if burned >= coldListThreshold {
-		h.logger.Warn("dirección en cold-list: envío frenado",
-			"intentos_sin_verificar", burned, "ip", ip)
-		h.rejectGeneric(w, r, emailAddr)
-		return
-	}
-
 	code, err := code.Generate()
 	if err != nil {
 		h.logger.Error("generar código", "err", err)
@@ -339,7 +360,8 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 	ua := r.UserAgent()
 
-	if err := h.storeCode(r.Context(), emailAddr, code, ip, ua); err != nil {
+	codeID, err := h.storeCode(r.Context(), emailAddr, code, ip, ua)
+	if err != nil {
 		h.logger.Error("guardar código", "err", err)
 		h.errs.InternalServerError(w, r)
 		return
@@ -359,6 +381,14 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		HTMLBody:  htmlBody,
 	}); err != nil {
 		h.logger.Error("enviar email", "err", err, "to", emailAddr)
+		// El código ya quedó insertado, pero nunca salió: si se cuenta
+		// igual, un outage del proveedor cold-listea usuarios reales por
+		// 24h después de que el mail vuelva. Best-effort: si el delete
+		// también falla, lo logueamos y devolvemos el 500 igual — el
+		// hecho que le importa al usuario es que el envío falló.
+		if delErr := h.deleteCode(r.Context(), codeID); delErr != nil {
+			h.logger.Error("revertir código tras fallo de envío", "err", delErr, "to", emailAddr)
+		}
 		h.errs.InternalServerError(w, r)
 		return
 	}
@@ -484,7 +514,11 @@ func (h *Handler) startDataFor(d startData) startData {
 func (h *Handler) rejectGeneric(w http.ResponseWriter, r *http.Request, emailAddr string) {
 	h.render(w, r, "auth/start.html", h.startDataFor(startData{
 		Email: emailAddr,
-		Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
+		// A propósito vago sobre el tiempo: esto también es lo que ve un
+		// email en cold-list, y ahí la espera real es hasta 24h, no
+		// "minutos". "espera un poco" prometía algo corto que no siempre
+		// es cierto.
+		Error: "demasiados intentos. espera antes de volver a intentar.",
 	}))
 }
 
@@ -515,13 +549,28 @@ func (h *Handler) renderOTPEmail(otp, to, ip, ua string) (plainBody, htmlBody st
 	return txtBuf.String(), htmlBuf.String(), nil
 }
 
-func (h *Handler) storeCode(ctx context.Context, email, otp, ip, ua string) error {
+// storeCode inserta el código y retorna el id de la fila, para que el
+// caller pueda revertirla con deleteCode si el envío falla después.
+func (h *Handler) storeCode(ctx context.Context, email, otp, ip, ua string) (int64, error) {
 	now := time.Now().UTC()
 	expires := now.Add(codeDuration)
-	_, err := h.db.ExecContext(ctx, `
+	res, err := h.db.ExecContext(ctx, `
 		INSERT INTO otp_codes (email, code_hash, created_at, expires_at, ip_address, user_agent)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, email, code.Hash(otp), now.Unix(), expires.Unix(), ip, ua)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// deleteCode borra por id la fila que insertó storeCode. Existe para cuando
+// SendMessage falla: un código que nunca llegó al proveedor de correo no
+// puede quedar contando como intento quemado para la cold-list (ver
+// unverifiedCount) — si quedara, un outage del proveedor deja a usuarios
+// reales cold-listeados por 24h después de que el envío se restablezca.
+func (h *Handler) deleteCode(ctx context.Context, id int64) error {
+	_, err := h.db.ExecContext(ctx, `DELETE FROM otp_codes WHERE id = ?`, id)
 	return err
 }
 
@@ -644,6 +693,7 @@ func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string, digest
 func (h *Handler) grant(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("t")
 	if token == "" {
+		h.logger.Warn("canje de grant sin token", "ip", h.clientIP(r))
 		http.Redirect(w, r, "/auth", http.StatusSeeOther)
 		return
 	}

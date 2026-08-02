@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -56,7 +57,7 @@ func TestStoreAndConsumeCode(t *testing.T) {
 	h := newTestHandler(t, db)
 	ctx := context.Background()
 
-	if err := h.storeCode(ctx, "alice@example.com", "123456", "1.2.3.4", "UA"); err != nil {
+	if _, err := h.storeCode(ctx, "alice@example.com", "123456", "1.2.3.4", "UA"); err != nil {
 		t.Fatalf("storeCode: %v", err)
 	}
 
@@ -83,7 +84,7 @@ func TestConsumeWrongCode(t *testing.T) {
 	h := newTestHandler(t, db)
 	ctx := context.Background()
 
-	if err := h.storeCode(ctx, "alice@example.com", "123456", "", ""); err != nil {
+	if _, err := h.storeCode(ctx, "alice@example.com", "123456", "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,7 +102,7 @@ func TestConsumeWrongEmail(t *testing.T) {
 	h := newTestHandler(t, db)
 	ctx := context.Background()
 
-	if err := h.storeCode(ctx, "alice@example.com", "123456", "", ""); err != nil {
+	if _, err := h.storeCode(ctx, "alice@example.com", "123456", "", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -352,6 +353,37 @@ func TestStartDesconocidoNoConsumeBucketConocidos(t *testing.T) {
 	}
 }
 
+// TestStartBucketConocidoAgotadoNoEnvia cubre el espejo de
+// TestStartDesconocidoNoConsumeBucketConocidos: hasta ahora solo estaba
+// probado el agotamiento del bucket de desconocidos. Es el bucket que los
+// findings 2 y 3 de la revisión final atacan (una dirección conocida
+// quemada podía drenarlo sin resolver Turnstile ni llegar al cold-list), así
+// que el agotamiento del lado known necesita su propio test.
+func TestStartBucketConocidoAgotadoNoEnvia(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+
+	sent := 0
+	// Conocidos agotado, desconocidos con presupuesto de sobra.
+	known := ratelimit.New(rate.Every(time.Hour), 0)
+	unknown := ratelimit.New(rate.Every(time.Minute), 5)
+	h := newBucketHandler(t, db, known, unknown, &sent)
+
+	w := postStart(h, "alice@example.com")
+
+	if sent != 0 {
+		t.Errorf("un user conocido se envió con su bucket agotado, sent=%d", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Error("redirigió a verify; debía mostrar error sin enviar")
+	}
+}
+
 func TestStartFloodDeDesconocidosNoBloqueaAlConocido(t *testing.T) {
 	db := setupDB(t)
 	if _, err := db.Exec(
@@ -442,6 +474,9 @@ func TestGrantRechazaTokenInvalido(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.grant(w, req)
 
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba 303, got %d", w.Code)
+	}
 	if loc := w.Header().Get("Location"); loc != "/auth" {
 		t.Errorf("esperaba redirect a /auth con token inválido, got %q", loc)
 	}
@@ -475,6 +510,9 @@ func TestGrantNoReusableTrasCanje(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.grant(w, httptest.NewRequest(http.MethodGet, "/auth/grant?t="+token, nil))
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba 303, got %d", w.Code)
+	}
 	if loc := w.Header().Get("Location"); loc != "/auth" {
 		t.Errorf("el token se canjeó dos veces (redirect=%q)", loc)
 	}
@@ -636,6 +674,103 @@ func TestStartColdListIgnoraCodigosVerificados(t *testing.T) {
 	}
 }
 
+// TestStartFalloDeEnvioNoCuentaParaColdList cubre el finding 1 de la
+// revisión final: si SendMessage falla (proveedor caído, quota agotada, key
+// revocada), la fila que storeCode insertó no puede quedar contando como
+// intento quemado. Si quedara, un outage cold-listea usuarios reales por 24h
+// después de que el envío se restablezca — justo lo que iba a pasarle a
+// producción con la key de Resend revocada.
+func TestStartFalloDeEnvioNoCuentaParaColdList(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 20), &sent)
+
+	// El proveedor está caído: todo intento de envío falla.
+	h.email.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		return errors.New("smtp: conexión rechazada")
+	})
+
+	for i := range coldListThreshold + 1 {
+		w := postStart(h, "victima@example.com")
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("intento %d: esperaba 500 por fallo de envío, got %d", i, w.Code)
+		}
+	}
+	if sent != 0 {
+		t.Errorf("sent=%d, el sender fake siempre falla", sent)
+	}
+
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM otp_codes WHERE email = ?`, "victima@example.com").Scan(&rows); err != nil {
+		t.Fatalf("contar otp_codes: %v", err)
+	}
+	if rows != 0 {
+		t.Errorf("quedaron %d filas de otp_codes tras fallos de envío; storeCode debía revertirse", rows)
+	}
+
+	// El proveedor se recupera: el próximo intento debe mandar el correo,
+	// sin que los fallos previos (más que coldListThreshold) hayan
+	// cold-listeado la dirección.
+	h.email.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		sent++
+		return nil
+	})
+	w := postStart(h, "victima@example.com")
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("tras restaurar el envío esperaba 303, got %d", w.Code)
+	}
+	if sent != 1 {
+		t.Errorf("esperaba 1 envío tras restaurar el proveedor, sent=%d", sent)
+	}
+}
+
+// TestStartColdListNoConsumeBucketConocido cubre el finding 2: el cold-list
+// tiene que rechazar antes de que el bucket de envío gaste un token. Si el
+// orden fuera al revés, una dirección quemada drenaría el bucket compartido
+// (known/unknown) sin mandar nada, dejando sin presupuesto a cualquier otra
+// dirección del mismo tipo — el DoS de acceso de v1.0.4 reconstruido adentro
+// del bucket partido.
+func TestStartColdListNoConsumeBucketConocido(t *testing.T) {
+	db := setupDB(t)
+	for _, addr := range []string{"quemada@example.com", "sana@example.com"} {
+		if _, err := db.Exec(
+			`INSERT INTO users (email, created_at) VALUES (?, ?)`, addr, time.Now().UTC().Unix(),
+		); err != nil {
+			t.Fatalf("sembrar user %s: %v", addr, err)
+		}
+	}
+	now := time.Now().UTC()
+	for range 2 {
+		if _, err := db.Exec(`
+			INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
+			VALUES ('quemada@example.com', 'hash', ?, ?)
+		`, now.Unix(), now.Add(-time.Minute).Unix()); err != nil {
+			t.Fatalf("sembrar código: %v", err)
+		}
+	}
+
+	sent := 0
+	// Bucket known con un solo token disponible: si quemada@ lo gastara al
+	// pasar por el bucket antes de que el cold-list la frene, no quedaría
+	// nada para sana@.
+	known := ratelimit.New(rate.Every(time.Hour), 1)
+	unknown := ratelimit.New(rate.Every(time.Hour), 0)
+	h := newBucketHandler(t, db, known, unknown, &sent)
+
+	w1 := postStart(h, "quemada@example.com")
+	if w1.Code == http.StatusSeeOther {
+		t.Error("la dirección en cold-list se envió")
+	}
+
+	w2 := postStart(h, "sana@example.com")
+	if w2.Code != http.StatusSeeOther {
+		t.Errorf("el cold-list de quemada@ drenó el bucket de conocidos; sana@ no recibió su código, got %d", w2.Code)
+	}
+	if sent != 1 {
+		t.Errorf("esperaba exactamente 1 envío (a sana@), sent=%d", sent)
+	}
+}
+
 func newTurnstileHandler(t *testing.T, db *sql.DB, v *turnstile.Verifier, sent *int) *Handler {
 	t.Helper()
 	return newAuthTestHandler(t, db, sent, func(cfg *Config) {
@@ -669,10 +804,10 @@ func turnstileFake(t *testing.T, success bool) *turnstile.Verifier {
 func turnstileFakeInalcanzable(t *testing.T) *turnstile.Verifier {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	url := srv.URL
+	endpoint := srv.URL
 	srv.Close()
 	v := turnstile.New("secreto")
-	v.SetEndpointForTesting(url)
+	v.SetEndpointForTesting(endpoint)
 	return v
 }
 
@@ -776,5 +911,35 @@ func TestStartSinVerifierNoExigeReto(t *testing.T) {
 	}
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("esperaba 303, got %d", w.Code)
+	}
+}
+
+// TestStartSinTurnstileNoConsumeLimiterPorEmail cubre el finding 3: el
+// limiter por-email tiene que correr después de Turnstile. Si corriera
+// antes, tres POSTs con el email de una víctima y sin resolver el reto
+// vaciarían su bucket (burst 1 acá) sin costo de red para quien ataca —
+// turnstile.Verify corta en seco un token vacío sin llamar a Cloudflare.
+func TestStartSinTurnstileNoConsumeLimiterPorEmail(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newAuthTestHandler(t, db, &sent, func(cfg *Config) {
+		cfg.StartUnknownLimiter = ratelimit.New(rate.Every(time.Minute), 20)
+		cfg.StartEmailLimiter = ratelimit.New(rate.Every(time.Hour), 1)
+		cfg.Turnstile = turnstileFake(t, true)
+		cfg.TurnstileSiteKey = "site-key-de-prueba"
+	})
+
+	// Flood sin token de Turnstile: no debe tocar el bucket por-email de la
+	// víctima, sin importar cuántas veces se repita.
+	for range 3 {
+		postStartConTurnstile(h, "victima@example.com", "")
+	}
+
+	w := postStartConTurnstile(h, "victima@example.com", "token-bueno")
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("el flood sin turnstile agotó el limiter por-email de la víctima, got %d", w.Code)
+	}
+	if sent != 1 {
+		t.Errorf("esperaba 1 envío tras resolver el reto, sent=%d", sent)
 	}
 }

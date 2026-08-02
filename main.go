@@ -137,17 +137,25 @@ func main() {
 	//   /auth/start por IP:     ~5/min sostenido, burst 3
 	//   /auth/start por email:  ~3/hora sostenido, burst 3
 	//   /auth/start conocidos/desconocidos: presupuesto de envío partido por
-	//                           destinatario. Suman ~96 correos/día en el
-	//                           peor caso, debajo del free tier de Resend
-	//                           (100/día).
+	//                           destinatario.
 	//                             conocidos:    ~3/hora sostenido, burst 10
-	//                                           -> techo ~72/día
+	//                                           -> techo ~72/día en régimen
 	//                             desconocidos: ~1/hora sostenido, burst 3
-	//                                           -> techo ~24/día
-	//                           Lo que importa no es el total sino el
-	//                           aislamiento: un flood de direcciones random
-	//                           no puede tocar el presupuesto de login de la
-	//                           gente que ya tiene cuenta.
+	//                                           -> techo ~24/día en régimen
+	//                           Los ~96/día de arriba son solo el sostenido
+	//                           de OTP, no un techo real: los burst (10+3)
+	//                           se sirven aparte de esa cuenta y se
+	//                           rellenan en cada restart del proceso — o
+	//                           sea, en cada deploy del CD —, así que las
+	//                           primeras 24h tras un start pueden llegar a
+	//                           ~109. Tampoco cuentan el digest semanal ni
+	//                           el form de feedback: mandan por la misma
+	//                           cuenta y la misma quota del proveedor, sin
+	//                           límite propio acá. Lo que importa no es el
+	//                           total sino el aislamiento: un flood de
+	//                           direcciones random no puede tocar el
+	//                           presupuesto de login de la gente que ya
+	//                           tiene cuenta.
 	//   /auth/verify por IP:    ~10/min sostenido, burst 10
 	//   /unsubscribe por IP:    ~60/min sostenido, burst 20 (más permisivo
 	//                           porque users legítimos pueden refrescar y

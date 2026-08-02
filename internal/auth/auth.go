@@ -36,7 +36,16 @@ import (
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
-const codeDuration = 10 * time.Minute
+const (
+	codeDuration = 10 * time.Minute
+
+	// codeRetention es cuánto se conservan los códigos ya vencidos.
+	//
+	// No es arbitrario: la cold-list de start consulta los códigos no
+	// verificados de las últimas 24h para detectar direcciones quemadas.
+	// Borrar más agresivo la desarma en silencio.
+	codeRetention = 24 * time.Hour
+)
 
 // Config agrupa las dependencias del handler.
 type Config struct {
@@ -439,6 +448,24 @@ func (h *Handler) consumeCode(ctx context.Context, email, otp string) (bool, err
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+// CleanupExpiredCodes borra los códigos vencidos fuera de la ventana de
+// retención y retorna cuántas filas eliminó.
+//
+// Existe porque hasta v1.0.5 nada drenaba otp_codes: la única limpieza
+// vivía dentro de HardDeleteUser, atada al borrado de cuenta. La tabla
+// crecía indefinidamente, y el email bombing del 2026-06-04 la infló lo
+// suficiente para que el problema saliera a la luz.
+func CleanupExpiredCodes(ctx context.Context, db *sql.DB) (int64, error) {
+	cutoff := time.Now().UTC().Add(-codeRetention).Unix()
+	res, err := db.ExecContext(ctx,
+		`DELETE FROM otp_codes WHERE expires_at < ?`, cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // findOrCreateUser retorna el id del usuario con el email dado, creando uno

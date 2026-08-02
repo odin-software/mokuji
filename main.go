@@ -28,6 +28,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/asura"
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/comick"
+	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
@@ -456,6 +457,7 @@ func main() {
 	}
 
 	go cleanupSessions(rootCtx, sessions, logger)
+	go cleanupAuthArtifacts(rootCtx, db, logger)
 	if releasesWorker != nil {
 		go releasesWorker.Run(rootCtx)
 	}
@@ -512,6 +514,29 @@ func cleanupSessions(ctx context.Context, m *session.Manager, logger *slog.Logge
 		case <-ticker.C:
 			if err := m.CleanupExpired(ctx); err != nil {
 				logger.Error("session cleanup", "err", err)
+			}
+		}
+	}
+}
+
+// cleanupAuthArtifacts drena periódicamente los códigos OTP vencidos y los
+// grants de break-glass vencidos. Un solo tick para ambos: son dos DELETEs
+// baratos sobre tablas chicas y no hay razón para dos goroutines.
+func cleanupAuthArtifacts(ctx context.Context, db *sql.DB, logger *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if n, err := auth.CleanupExpiredCodes(ctx, db); err != nil {
+				logger.Error("cleanup otp_codes", "err", err)
+			} else if n > 0 {
+				logger.Info("otp_codes vencidos borrados", "filas", n)
+			}
+			if err := grant.CleanupExpired(ctx, db); err != nil {
+				logger.Error("cleanup admin_grants", "err", err)
 			}
 		}
 	}

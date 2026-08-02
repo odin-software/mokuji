@@ -417,3 +417,55 @@ func TestGrantNoReusableTrasCanje(t *testing.T) {
 		t.Errorf("esperaba exactamente 1 sesión tras dos canjes, got %d", n)
 	}
 }
+
+func TestCleanupExpiredCodesRespetaRetencion(t *testing.T) {
+	db := setupDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Tres filas: vigente, vencida hace 1h (dentro de la retención de 24h),
+	// y vencida hace 48h (fuera).
+	rows := []struct {
+		email   string
+		expires int64
+	}{
+		{"vigente@example.com", now.Add(10 * time.Minute).Unix()},
+		{"reciente@example.com", now.Add(-time.Hour).Unix()},
+		{"vieja@example.com", now.Add(-48 * time.Hour).Unix()},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`
+			INSERT INTO otp_codes (email, code_hash, created_at, expires_at)
+			VALUES (?, 'hash', ?, ?)
+		`, row.email, now.Unix(), row.expires); err != nil {
+			t.Fatalf("sembrar %s: %v", row.email, err)
+		}
+	}
+
+	deleted, err := CleanupExpiredCodes(ctx, db)
+	if err != nil {
+		t.Fatalf("CleanupExpiredCodes: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("esperaba 1 fila borrada (solo la de 48h), got %d", deleted)
+	}
+
+	var remaining int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM otp_codes`).Scan(&remaining); err != nil {
+		t.Fatalf("contar: %v", err)
+	}
+	if remaining != 2 {
+		t.Errorf("esperaba 2 filas restantes, got %d", remaining)
+	}
+
+	// La fila reciente tiene que sobrevivir: la cold-list la necesita.
+	var n int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM otp_codes WHERE email = 'reciente@example.com'`,
+	).Scan(&n); err != nil {
+		t.Fatalf("contar reciente: %v", err)
+	}
+	if n != 1 {
+		t.Error("el reaper borró una fila dentro de la ventana de 24h que usa la cold-list")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/smtp"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -243,12 +244,13 @@ func TestFindOrCreateUserPreservesDigestOnLogin(t *testing.T) {
 	}
 }
 
-// newStartHandler arma un Handler real (templates de disco + sender SMTP
+// newAuthTestHandler arma un Handler real (templates de disco + sender SMTP
 // fake que cuenta envíos) para ejercitar el POST /auth/start end-to-end.
-// globalLim se cablea como StartUnknownLimiter: los tests que usan este
-// helper mandan direcciones sin cuenta, así que el bucket de desconocidos es
-// el que corresponde. sent acumula los envíos.
-func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sent *int) *Handler {
+// sent acumula los envíos. opts recibe la Config con los defaults ya
+// puestos y puede pisar los campos que le interesen a cada test; es la base
+// común de newStartHandler, newBucketHandler y newTurnstileHandler, que
+// antes repetían este mismo armado con solo la Config final distinta.
+func newAuthTestHandler(t *testing.T, db *sql.DB, sent *int, opts func(*Config)) *Handler {
 	t.Helper()
 	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ec, err := email.New(email.Config{
@@ -261,19 +263,32 @@ func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sen
 		*sent++
 		return nil
 	})
-	h, err := New(Config{
-		DB:                  db,
-		Sessions:            session.New(db, false, discard),
-		Email:               ec,
-		HTMLTemplates:       os.DirFS("../../web/templates"),
-		EmailTemplates:      os.DirFS("../../web/emails"),
-		Logger:              discard,
-		StartUnknownLimiter: globalLim,
-	})
+	cfg := Config{
+		DB:             db,
+		Sessions:       session.New(db, false, discard),
+		Email:          ec,
+		HTMLTemplates:  os.DirFS("../../web/templates"),
+		EmailTemplates: os.DirFS("../../web/emails"),
+		Logger:         discard,
+	}
+	if opts != nil {
+		opts(&cfg)
+	}
+	h, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	return h
+}
+
+// newStartHandler cablea globalLim como StartUnknownLimiter: los tests que
+// usan este helper mandan direcciones sin cuenta, así que el bucket de
+// desconocidos es el que corresponde.
+func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sent *int) *Handler {
+	t.Helper()
+	return newAuthTestHandler(t, db, sent, func(cfg *Config) {
+		cfg.StartUnknownLimiter = globalLim
+	})
 }
 
 func postStart(h *Handler, email string) *httptest.ResponseRecorder {
@@ -288,31 +303,10 @@ func postStart(h *Handler, email string) *httptest.ResponseRecorder {
 // separado, para los tests que necesitan controlarlos de forma independiente.
 func newBucketHandler(t *testing.T, db *sql.DB, known, unknown *ratelimit.Limiter, sent *int) *Handler {
 	t.Helper()
-	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ec, err := email.New(email.Config{
-		Host: "localhost", Port: 1025, From: "mokuji <auth@mokuji.org>", Logger: discard,
+	return newAuthTestHandler(t, db, sent, func(cfg *Config) {
+		cfg.StartKnownLimiter = known
+		cfg.StartUnknownLimiter = unknown
 	})
-	if err != nil {
-		t.Fatalf("email.New: %v", err)
-	}
-	ec.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
-		*sent++
-		return nil
-	})
-	h, err := New(Config{
-		DB:                  db,
-		Sessions:            session.New(db, false, discard),
-		Email:               ec,
-		HTMLTemplates:       os.DirFS("../../web/templates"),
-		EmailTemplates:      os.DirFS("../../web/emails"),
-		Logger:              discard,
-		StartKnownLimiter:   known,
-		StartUnknownLimiter: unknown,
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return h
 }
 
 func TestStartUsuarioConocidoNoConsumeBucketDesconocidos(t *testing.T) {
@@ -644,32 +638,11 @@ func TestStartColdListIgnoraCodigosVerificados(t *testing.T) {
 
 func newTurnstileHandler(t *testing.T, db *sql.DB, v *turnstile.Verifier, sent *int) *Handler {
 	t.Helper()
-	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ec, err := email.New(email.Config{
-		Host: "localhost", Port: 1025, From: "mokuji <auth@mokuji.org>", Logger: discard,
+	return newAuthTestHandler(t, db, sent, func(cfg *Config) {
+		cfg.StartUnknownLimiter = ratelimit.New(rate.Every(time.Minute), 20)
+		cfg.Turnstile = v
+		cfg.TurnstileSiteKey = "site-key-de-prueba"
 	})
-	if err != nil {
-		t.Fatalf("email.New: %v", err)
-	}
-	ec.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
-		*sent++
-		return nil
-	})
-	h, err := New(Config{
-		DB:                  db,
-		Sessions:            session.New(db, false, discard),
-		Email:               ec,
-		HTMLTemplates:       os.DirFS("../../web/templates"),
-		EmailTemplates:      os.DirFS("../../web/emails"),
-		Logger:              discard,
-		StartUnknownLimiter: ratelimit.New(rate.Every(time.Minute), 20),
-		Turnstile:           v,
-		TurnstileSiteKey:    "site-key-de-prueba",
-	})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return h
 }
 
 func turnstileFake(t *testing.T, success bool) *turnstile.Verifier {
@@ -687,9 +660,27 @@ func turnstileFake(t *testing.T, success bool) *turnstile.Verifier {
 	return v
 }
 
+// turnstileFakeInalcanzable arma un Verifier que apunta a un endpoint donde
+// no hay nada escuchando, para forzar el camino de error de red de Verify
+// (Cloudflare caído/inalcanzable) en vez del camino de {"success":false}.
+// Arranca un httptest.Server real y lo cierra antes de devolver el
+// Verifier: la URL queda apuntando a un puerto ya liberado, así que
+// cualquier request choca con connection refused.
+func turnstileFakeInalcanzable(t *testing.T) *turnstile.Verifier {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+	v := turnstile.New("secreto")
+	v.SetEndpointForTesting(url)
+	return v
+}
+
 func postStartConTurnstile(h *Handler, emailAddr, tsToken string) *httptest.ResponseRecorder {
-	form := "email=" + emailAddr + "&cf-turnstile-response=" + tsToken
-	req := httptest.NewRequest(http.MethodPost, "/auth/start", strings.NewReader(form))
+	form := url.Values{}
+	form.Set("email", emailAddr)
+	form.Set("cf-turnstile-response", tsToken)
+	req := httptest.NewRequest(http.MethodPost, "/auth/start", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	h.start(w, req)
@@ -706,8 +697,11 @@ func TestStartRechazaSinTurnstile(t *testing.T) {
 	if sent != 0 {
 		t.Errorf("se envió sin resolver el reto, sent=%d", sent)
 	}
-	if w.Code == http.StatusSeeOther {
-		t.Error("redirigió a verify sin reto resuelto")
+	if w.Code != http.StatusOK {
+		t.Errorf("esperaba 200 con el form de vuelta, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "data-sitekey") {
+		t.Error("el render no incluye data-sitekey; el widget no aparece")
 	}
 }
 
@@ -721,8 +715,36 @@ func TestStartRechazaTurnstileInvalido(t *testing.T) {
 	if sent != 0 {
 		t.Errorf("se envió con reto inválido, sent=%d", sent)
 	}
+	if w.Code != http.StatusOK {
+		t.Errorf("esperaba 200 con el form de vuelta, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "data-sitekey") {
+		t.Error("el render no incluye data-sitekey; el widget no aparece")
+	}
+}
+
+// TestStartFailCierraSiCloudflareInalcanzable cubre la rama de error de
+// Verify (Cloudflare caído/inalcanzable), no solo el veredicto false.
+// turnstileFake nunca produce un error de transporte, así que sin este test
+// esa rama de start —el `if err != nil { ... }` que loguea y rechaza— corre
+// sin ningún test encima. Si alguien la reescribiera para tratar el error
+// como fail-open (dejar pasar en vez de rechazar cuando Cloudflare no
+// responde, para "no romper el login"), toda la suite existente seguiría en
+// verde y reabriría el agujero del incidente de bombing. Este test sí lo
+// agarra: verificado apagando el fail-closed a mano y viendo el test fallar
+// antes de dejarlo como estaba (detalle en el reporte).
+func TestStartFailCierraSiCloudflareInalcanzable(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newTurnstileHandler(t, db, turnstileFakeInalcanzable(t), &sent)
+
+	w := postStartConTurnstile(h, "alice@example.com", "token-cualquiera")
+
+	if sent != 0 {
+		t.Errorf("se envió con Cloudflare inalcanzable, sent=%d", sent)
+	}
 	if w.Code == http.StatusSeeOther {
-		t.Error("redirigió a verify con reto inválido")
+		t.Error("redirigió a verify con Cloudflare inalcanzable; el fail-closed no cerró")
 	}
 }
 

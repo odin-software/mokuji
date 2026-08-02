@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/time/rate"
+	_ "modernc.org/sqlite"
 
 	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/email"
@@ -244,7 +244,9 @@ func TestFindOrCreateUserPreservesDigestOnLogin(t *testing.T) {
 
 // newStartHandler arma un Handler real (templates de disco + sender SMTP
 // fake que cuenta envíos) para ejercitar el POST /auth/start end-to-end.
-// globalLim se inyecta como circuit breaker global; sent acumula los envíos.
+// globalLim se cablea como StartUnknownLimiter: los tests que usan este
+// helper mandan direcciones sin cuenta, así que el bucket de desconocidos es
+// el que corresponde. sent acumula los envíos.
 func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sent *int) *Handler {
 	t.Helper()
 	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -259,13 +261,13 @@ func newStartHandler(t *testing.T, db *sql.DB, globalLim *ratelimit.Limiter, sen
 		return nil
 	})
 	h, err := New(Config{
-		DB:                 db,
-		Sessions:           session.New(db, false, discard),
-		Email:              ec,
-		HTMLTemplates:      os.DirFS("../../web/templates"),
-		EmailTemplates:     os.DirFS("../../web/emails"),
-		Logger:             discard,
-		StartGlobalLimiter: globalLim,
+		DB:                  db,
+		Sessions:            session.New(db, false, discard),
+		Email:               ec,
+		HTMLTemplates:       os.DirFS("../../web/templates"),
+		EmailTemplates:      os.DirFS("../../web/emails"),
+		Logger:              discard,
+		StartUnknownLimiter: globalLim,
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -281,36 +283,109 @@ func postStart(h *Handler, email string) *httptest.ResponseRecorder {
 	return w
 }
 
-func TestStartGlobalLimiterStopsSendingWhenExhausted(t *testing.T) {
-	db := setupDB(t)
-	sent := 0
-	// burst 0 => el bucket nunca tiene token => siempre denegado.
-	globalLim := ratelimit.New(rate.Every(time.Hour), 0)
-	h := newStartHandler(t, db, globalLim, &sent)
-
-	w := postStart(h, "alice@example.com")
-
-	if sent != 0 {
-		t.Errorf("se envió email pese al circuit breaker global agotado (sent=%d)", sent)
+// newBucketHandler es como newStartHandler pero cablea known/unknown por
+// separado, para los tests que necesitan controlarlos de forma independiente.
+func newBucketHandler(t *testing.T, db *sql.DB, known, unknown *ratelimit.Limiter, sent *int) *Handler {
+	t.Helper()
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ec, err := email.New(email.Config{
+		Host: "localhost", Port: 1025, From: "mokuji <auth@mokuji.org>", Logger: discard,
+	})
+	if err != nil {
+		t.Fatalf("email.New: %v", err)
 	}
-	if w.Code == http.StatusSeeOther {
-		t.Errorf("redirigió a /auth/verify (%d); debía mostrar error sin enviar", w.Code)
+	ec.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		*sent++
+		return nil
+	})
+	h, err := New(Config{
+		DB:                  db,
+		Sessions:            session.New(db, false, discard),
+		Email:               ec,
+		HTMLTemplates:       os.DirFS("../../web/templates"),
+		EmailTemplates:      os.DirFS("../../web/emails"),
+		Logger:              discard,
+		StartKnownLimiter:   known,
+		StartUnknownLimiter: unknown,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
+	return h
 }
 
-func TestStartSendsWhenGlobalLimiterHasBudget(t *testing.T) {
+func TestStartUsuarioConocidoNoConsumeBucketDesconocidos(t *testing.T) {
 	db := setupDB(t)
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+
 	sent := 0
-	globalLim := ratelimit.New(rate.Every(time.Minute), 5)
-	h := newStartHandler(t, db, globalLim, &sent)
+	known := ratelimit.New(rate.Every(time.Minute), 5)
+	// Desconocidos agotado: si alice cayera en este bucket, no se enviaría.
+	unknown := ratelimit.New(rate.Every(time.Hour), 0)
+	h := newBucketHandler(t, db, known, unknown, &sent)
 
 	w := postStart(h, "alice@example.com")
 
 	if sent != 1 {
-		t.Errorf("esperaba 1 envío con presupuesto global disponible, sent=%d", sent)
+		t.Errorf("un user conocido debió enviarse pese al bucket de desconocidos agotado, sent=%d", sent)
 	}
 	if w.Code != http.StatusSeeOther {
-		t.Errorf("esperaba redirect a verify (303), got %d", w.Code)
+		t.Errorf("esperaba 303, got %d", w.Code)
+	}
+}
+
+func TestStartDesconocidoNoConsumeBucketConocidos(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	// Conocidos con presupuesto, desconocidos agotado.
+	known := ratelimit.New(rate.Every(time.Minute), 5)
+	unknown := ratelimit.New(rate.Every(time.Hour), 0)
+	h := newBucketHandler(t, db, known, unknown, &sent)
+
+	w := postStart(h, "random@example.com")
+
+	if sent != 0 {
+		t.Errorf("un email desconocido se envió con su bucket agotado, sent=%d", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Error("redirigió a verify; debía mostrar error sin enviar")
+	}
+}
+
+func TestStartFloodDeDesconocidosNoBloqueaAlConocido(t *testing.T) {
+	db := setupDB(t)
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+
+	sent := 0
+	known := ratelimit.New(rate.Every(time.Minute), 5)
+	unknown := ratelimit.New(rate.Every(time.Hour), 2)
+	h := newBucketHandler(t, db, known, unknown, &sent)
+
+	// Vaciar el bucket de desconocidos con direcciones distintas, como haría
+	// el atacante. Los limiters por-email no lo frenan porque cada dirección
+	// estrena bucket propio.
+	for _, addr := range []string{"a@x.com", "b@x.com", "c@x.com", "d@x.com"} {
+		postStart(h, addr)
+	}
+	sentTrasFlood := sent
+
+	w := postStart(h, "alice@example.com")
+
+	if sent != sentTrasFlood+1 {
+		t.Errorf("el flood de desconocidos bloqueó al user conocido (sent %d -> %d)", sentTrasFlood, sent)
+	}
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba 303 para el conocido, got %d", w.Code)
 	}
 }
 

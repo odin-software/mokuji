@@ -28,17 +28,17 @@ import (
 	"git.odin.do/kengru/mokuji/internal/asura"
 	"git.odin.do/kengru/mokuji/internal/auth"
 	"git.odin.do/kengru/mokuji/internal/comick"
-	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
+	"git.odin.do/kengru/mokuji/internal/flash"
+	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/home"
 	"git.odin.do/kengru/mokuji/internal/library"
-	"git.odin.do/kengru/mokuji/internal/onboarding"
 	"git.odin.do/kengru/mokuji/internal/mangadex"
-	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/mangasource/anilist"
 	"git.odin.do/kengru/mokuji/internal/migrations"
+	"git.odin.do/kengru/mokuji/internal/onboarding"
 	"git.odin.do/kengru/mokuji/internal/profile"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/releases/digest"
@@ -135,14 +135,18 @@ func main() {
 	// Rate limiters para auth + unsubscribe.
 	//   /auth/start por IP:     ~5/min sostenido, burst 3
 	//   /auth/start por email:  ~3/hora sostenido, burst 3
-	//   /auth/start GLOBAL:     ~3/hora sostenido, burst 20 (circuit breaker
-	//                           de OTP: un solo bucket para todo el envío.
-	//                           Peor caso ~92 envíos/día, cómodo bajo el free
-	//                           tier de Resend (100/día). Es lo único que
-	//                           acota un flood distribuido — muchos IPs/emails
-	//                           random no comparten los buckets por-IP/email,
-	//                           pero sí comparten este. Subir post-launch +
-	//                           Resend pago.)
+	//   /auth/start conocidos/desconocidos: presupuesto de envío partido por
+	//                           destinatario. Suman ~96 correos/día en el
+	//                           peor caso, debajo del free tier de Resend
+	//                           (100/día).
+	//                             conocidos:    ~3/hora sostenido, burst 10
+	//                                           -> techo ~72/día
+	//                             desconocidos: ~1/hora sostenido, burst 3
+	//                                           -> techo ~24/día
+	//                           Lo que importa no es el total sino el
+	//                           aislamiento: un flood de direcciones random
+	//                           no puede tocar el presupuesto de login de la
+	//                           gente que ya tiene cuenta.
 	//   /auth/verify por IP:    ~10/min sostenido, burst 10
 	//   /unsubscribe por IP:    ~60/min sostenido, burst 20 (más permisivo
 	//                           porque users legítimos pueden refrescar y
@@ -150,31 +154,34 @@ func main() {
 	//                           HMAC se topa con el cap igual).
 	startIPLim := ratelimit.New(rate.Every(12*time.Second), 3)
 	startEmailLim := ratelimit.New(rate.Every(20*time.Minute), 3)
-	startGlobalLim := ratelimit.New(rate.Every(20*time.Minute), 20)
+	startKnownLim := ratelimit.New(rate.Every(20*time.Minute), 10)
+	startUnknownLim := ratelimit.New(rate.Every(60*time.Minute), 3)
 	verifyIPLim := ratelimit.New(rate.Every(6*time.Second), 10)
 	unsubIPLim := ratelimit.New(rate.Every(time.Second), 20)
 	grantLim := ratelimit.New(rate.Every(time.Minute), 5)
 	go startIPLim.Cleanup(rootCtx, 1*time.Hour)
 	go startEmailLim.Cleanup(rootCtx, 2*time.Hour)
-	go startGlobalLim.Cleanup(rootCtx, 2*time.Hour)
+	go startKnownLim.Cleanup(rootCtx, 2*time.Hour)
+	go startUnknownLim.Cleanup(rootCtx, 2*time.Hour)
 	go verifyIPLim.Cleanup(rootCtx, 30*time.Minute)
 	go unsubIPLim.Cleanup(rootCtx, 30*time.Minute)
 	go grantLim.Cleanup(rootCtx, 30*time.Minute)
 
 	authHandler, err := auth.New(auth.Config{
-		DB:                 db,
-		Sessions:           sessions,
-		Email:              emailClient,
-		HTMLTemplates:      htmlFS,
-		EmailTemplates:     emailFS,
-		BaseURL:            envOr("BASE_URL", "http://localhost:8080"),
-		Logger:             logger,
-		TrustProxy:         envBool("TRUST_PROXY", false),
-		StartIPLimiter:     startIPLim,
-		StartEmailLimiter:  startEmailLim,
-		StartGlobalLimiter: startGlobalLim,
-		VerifyIPLimiter:    verifyIPLim,
-		Errs:               errs,
+		DB:                  db,
+		Sessions:            sessions,
+		Email:               emailClient,
+		HTMLTemplates:       htmlFS,
+		EmailTemplates:      emailFS,
+		BaseURL:             envOr("BASE_URL", "http://localhost:8080"),
+		Logger:              logger,
+		TrustProxy:          envBool("TRUST_PROXY", false),
+		StartIPLimiter:      startIPLim,
+		StartEmailLimiter:   startEmailLim,
+		StartKnownLimiter:   startKnownLim,
+		StartUnknownLimiter: startUnknownLim,
+		VerifyIPLimiter:     verifyIPLim,
+		Errs:                errs,
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)

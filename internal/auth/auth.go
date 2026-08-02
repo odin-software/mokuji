@@ -1,11 +1,12 @@
 // Package auth implementa el flow de autenticación con email OTP (ADR 0004).
 //
 // Endpoints:
-//   GET  /auth         -> form de email
-//   POST /auth/start   -> recibir email, generar código, enviar por email
-//   GET  /auth/verify  -> form de código
-//   POST /auth/verify  -> validar código, crear/buscar usuario, crear sesión
-//   POST /auth/logout  -> destruir sesión
+//
+//	GET  /auth         -> form de email
+//	POST /auth/start   -> recibir email, generar código, enviar por email
+//	GET  /auth/verify  -> form de código
+//	POST /auth/verify  -> validar código, crear/buscar usuario, crear sesión
+//	POST /auth/logout  -> destruir sesión
 package auth
 
 import (
@@ -49,47 +50,56 @@ const (
 
 // Config agrupa las dependencias del handler.
 type Config struct {
-	DB              *sql.DB
-	Sessions        *session.Manager
-	Email           *email.Client
-	HTMLTemplates   fs.FS // contiene layout.html y auth/*.html
-	EmailTemplates  fs.FS // contiene otp.txt
-	BaseURL         string
-	Logger          *slog.Logger
+	DB             *sql.DB
+	Sessions       *session.Manager
+	Email          *email.Client
+	HTMLTemplates  fs.FS // contiene layout.html y auth/*.html
+	EmailTemplates fs.FS // contiene otp.txt
+	BaseURL        string
+	Logger         *slog.Logger
 	// TrustProxy=true hace que clientIP lea X-Forwarded-For. Solo seguro si
 	// mokuji corre detrás de un reverse proxy de confianza (ej: nginx).
 	TrustProxy        bool
 	StartIPLimiter    *ratelimit.Limiter // limita /auth/start por IP; nil = sin límite
 	StartEmailLimiter *ratelimit.Limiter // limita /auth/start por email; nil = sin límite
-	// StartGlobalLimiter es el circuit breaker global de envíos de OTP: un
-	// solo bucket para todo /auth/start, chequeado justo antes de mandar el
-	// email. Acota el daño de un flood (quota + reputación de sender) sin
-	// importar cuántos IPs o emails random rote el atacante, que es el hueco
-	// que los límites por-IP y por-email no cubren. nil = sin límite.
-	StartGlobalLimiter *ratelimit.Limiter
-	VerifyIPLimiter    *ratelimit.Limiter // limita /auth/verify por IP; nil = sin límite
-	Errs              *errrender.ErrorRenderer // nil en tests sin assets
+	// StartKnownLimiter y StartUnknownLimiter parten en dos el presupuesto
+	// de envío de OTP, según si el email ya tiene cuenta.
+	//
+	// v1.0.4 tenía un solo bucket global, y ese era el problema: el atacante
+	// se lo comía con direcciones random y dejaba sin presupuesto a los
+	// users reales — incluido el operador. Convertía un DoS de quota en un
+	// DoS de acceso.
+	//
+	// Partido, un flood de desconocidos solo agota su propio bucket. El
+	// login de la gente con cuenta queda intacto, y el correo hacia extraños
+	// —que es lo que genera bounces y quema reputación— tiene un techo
+	// propio y bajo. nil = sin límite.
+	StartKnownLimiter   *ratelimit.Limiter
+	StartUnknownLimiter *ratelimit.Limiter
+	VerifyIPLimiter     *ratelimit.Limiter       // limita /auth/verify por IP; nil = sin límite
+	Errs                *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler agrupa endpoints de /auth/*.
 type Handler struct {
-	db            *sql.DB
-	sessions      *session.Manager
-	email         *email.Client
-	pages         map[string]*htmltmpl.Template
-	emailT        *texttmpl.Template
+	db       *sql.DB
+	sessions *session.Manager
+	email    *email.Client
+	pages    map[string]*htmltmpl.Template
+	emailT   *texttmpl.Template
 	// emailHTMLT es el render HTML de otp.html para multipart/alternative.
 	// nil si la plantilla no existe (deploys más viejos / tests sin assets);
 	// en ese caso se manda solo texto.
-	emailHTMLT    *htmltmpl.Template
-	baseURL       string
-	logger        *slog.Logger
-	trustProxy    bool
-	startIPLim     *ratelimit.Limiter
-	startEmailLim  *ratelimit.Limiter
-	startGlobalLim *ratelimit.Limiter
-	verifyIPLim    *ratelimit.Limiter
-	errs          *errrender.ErrorRenderer
+	emailHTMLT      *htmltmpl.Template
+	baseURL         string
+	logger          *slog.Logger
+	trustProxy      bool
+	startIPLim      *ratelimit.Limiter
+	startEmailLim   *ratelimit.Limiter
+	startKnownLim   *ratelimit.Limiter
+	startUnknownLim *ratelimit.Limiter
+	verifyIPLim     *ratelimit.Limiter
+	errs            *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -148,20 +158,21 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:            cfg.DB,
-		sessions:      cfg.Sessions,
-		email:         cfg.Email,
-		pages:         pages,
-		emailT:        emailT,
-		emailHTMLT:    emailHTMLT,
-		baseURL:       cfg.BaseURL,
-		logger:        cfg.Logger,
-		trustProxy:    cfg.TrustProxy,
-		startIPLim:     cfg.StartIPLimiter,
-		startEmailLim:  cfg.StartEmailLimiter,
-		startGlobalLim: cfg.StartGlobalLimiter,
-		verifyIPLim:    cfg.VerifyIPLimiter,
-		errs:          cfg.Errs,
+		db:              cfg.DB,
+		sessions:        cfg.Sessions,
+		email:           cfg.Email,
+		pages:           pages,
+		emailT:          emailT,
+		emailHTMLT:      emailHTMLT,
+		baseURL:         cfg.BaseURL,
+		logger:          cfg.Logger,
+		trustProxy:      cfg.TrustProxy,
+		startIPLim:      cfg.StartIPLimiter,
+		startEmailLim:   cfg.StartEmailLimiter,
+		startKnownLim:   cfg.StartKnownLimiter,
+		startUnknownLim: cfg.StartUnknownLimiter,
+		verifyIPLim:     cfg.VerifyIPLimiter,
+		errs:            cfg.Errs,
 	}, nil
 }
 
@@ -246,14 +257,21 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Circuit breaker global: un solo bucket para todo el envío de OTP. Es la
-	// última línea antes de mandar y la única que acota un flood distribuido
-	// (muchos IPs / emails random) — los límites por-IP y por-email no lo
-	// hacen porque cada combinación estrena su propio bucket. Mostramos el
-	// mismo error genérico (no revela que es un tope global) y logueamos a
-	// WARN para enterarnos del abuso sin SSH a logs de envío.
-	if !h.startGlobalLim.Allow("global") {
-		h.logger.Warn("circuit breaker global de OTP abierto: envío frenado", "ip", ip)
+	// Presupuesto de envío partido por tipo de destinatario. Ver el
+	// comentario de StartKnownLimiter en Config para el porqué.
+	known, err := h.userExists(r.Context(), emailAddr)
+	if err != nil {
+		h.logger.Error("consultar existencia de user", "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+	bucket, label := h.startUnknownLim, "desconocido"
+	if known {
+		bucket, label = h.startKnownLim, "conocido"
+	}
+	if !bucket.Allow("global") {
+		h.logger.Warn("presupuesto de OTP agotado: envío frenado",
+			"bucket", label, "ip", ip)
 		h.render(w, r, "auth/start.html", startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
@@ -466,6 +484,22 @@ func CleanupExpiredCodes(ctx context.Context, db *sql.DB) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// userExists dice si el email ya tiene cuenta. Decide contra cuál bucket de
+// envío se cobra el OTP.
+func (h *Handler) userExists(ctx context.Context, emailAddr string) (bool, error) {
+	var one int
+	err := h.db.QueryRowContext(ctx,
+		`SELECT 1 FROM users WHERE email = ?`, emailAddr,
+	).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // findOrCreateUser retorna el id del usuario con el email dado, creando uno

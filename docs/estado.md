@@ -277,6 +277,14 @@ todos, operador incluido.
   `admin_grants` vencidos.
 - **Pendiente operativo**: `limit_req` de nginx en `/auth/start`, y
   subdominios de sending separados.
+- **Sequencing operativo**: `main.go` hace `log.Fatal` al arrancar si
+  `SECURE_COOKIES=true` y faltan `TURNSTILE_SITE_KEY` o
+  `TURNSTILE_SECRET_KEY` — y el merge a `main` dispara deploy automático. Si
+  el env del server no se actualiza primero, el binario nuevo no levanta.
+  Poné las dos keys de Turnstile en el env de prod **antes** de mergear esta
+  branch. La migración `0013_admin_grants` es puramente aditiva (tabla
+  nueva, no toca nada existente), así que un rollback al binario anterior
+  es limpio si algo sale mal.
 
 ### Backlog post-v1.0.3
 

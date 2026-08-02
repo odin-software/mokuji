@@ -89,7 +89,7 @@ escala según las features que actives.
 | Variable | Default | Activa |
 |----------|---------|--------|
 | `SMTP_FROM_PRODUCT` | comparte `SMTP_FROM` | "From" separado para emails de producto (digest). Útil para que la deliverability de auth y producto sean independientes. |
-| `ADMIN_TOKEN` | (vacío = endpoints deshabilitados) | Bearer token para `POST /admin/trigger-digest` y `GET /admin/sources-health`. |
+| `ADMIN_TOKEN` | (vacío = endpoints deshabilitados) | Bearer token para `POST /admin/trigger-digest`, `GET /admin/sources-health` y `POST /admin/grant-session`. Este último es el break-glass de login (ver Troubleshooting) — con `ADMIN_TOKEN` vacío, ese break-glass no existe. Configuralo aunque no uses los otros dos endpoints. |
 | `FEEDBACK_EMAIL_TO` | (vacío = feature desactivado) | Destino del form `/feedback` in-app. Solo users autenticados; rate-limit 5/hora por user_id. Si vacío, la ruta y el link en el footer no existen. |
 | `MANGADEX_ENABLED` | `true` | Source primaria. Apaga con `false` si prefieres solo Asura/Comick. **Si las 3 sources están apagadas**, mokuji arranca pero el worker no se construye — la biblioteca funciona como catálogo manual sin tracking automático. |
 | `ASURA_ENABLED` | `true` | Source [Asura Scans](https://asurascans.com). Zona gris legal (scanlation no oficial); bájalo a `false` si prefieres solo MangaDex. |
@@ -234,6 +234,19 @@ intentar de nuevo.
 - **Salud de las sources**: `GET /admin/sources-health` con `Authorization:
   Bearer $ADMIN_TOKEN` devuelve estado por source. Útil cuando una source
   cambia su API.
+- **Break-glass: nadie puede loguearse (envío de email caído)**: si el
+  proveedor SMTP está caído, sin quota o con la key revocada, nadie —ni el
+  operador— puede completar el flow de OTP. `POST /admin/grant-session`
+  emite una sesión sin pasar por email:
+  ```bash
+  curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -d email=vos@tu-dominio.com \
+    https://tu-instancia/admin/grant-session
+  ```
+  Devuelve `{"url": "...", "expires_in": "5m0s"}`. Abrí esa URL dentro de
+  los 5 minutos — es de un solo uso, y el segundo intento de canje falla.
+  Solo emite para emails que ya tienen cuenta (no crea usuarios nuevos), y
+  queda `WARN` en los logs tanto la emisión como el canje.
 
 ## Otros entornos no documentados aquí
 

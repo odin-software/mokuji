@@ -17,7 +17,6 @@ import (
 	htmltmpl "html/template"
 	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -30,6 +29,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
+	"git.odin.do/kengru/mokuji/internal/httpx"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
@@ -469,22 +469,7 @@ func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string, digest
 }
 
 
-// clientIP retorna el IP real del cliente. Si trustProxy está activo, lee
-// X-Forwarded-For (asume que el primer IP es el del cliente real, lo cual
-// es estándar cuando hay un único proxy delante). En otro caso, usa
-// RemoteAddr stripping el puerto.
+// clientIP identifica al cliente para rate limiting y logs.
 func (h *Handler) clientIP(r *http.Request) string {
-	if h.trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.Index(xff, ","); i != -1 {
-				xff = xff[:i]
-			}
-			return strings.TrimSpace(xff)
-		}
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return httpx.ClientIP(r, h.trustProxy)
 }

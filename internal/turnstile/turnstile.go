@@ -31,12 +31,14 @@ type Verifier struct {
 
 // New construye un Verifier. El timeout es corto a propósito: esto está en
 // el camino crítico de un login, y un Cloudflare lento no puede colgar la
-// request del usuario.
+// request del usuario. Con el fail-closed de arriba (Verify propaga el
+// error y start rechaza), un brownout de Cloudflare cuelga *todo* el login
+// del sitio hasta que el timeout dispare, así que 4s y no 10s.
 func New(secretKey string) *Verifier {
 	return &Verifier{
 		secret:   secretKey,
 		endpoint: defaultEndpoint,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   &http.Client{Timeout: 4 * time.Second},
 	}
 }
 

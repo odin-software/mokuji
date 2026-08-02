@@ -103,3 +103,54 @@ func TestVerifyPropagaErrorDeRed(t *testing.T) {
 		t.Error("esperaba error de red, got nil")
 	}
 }
+
+// TestVerifyFallaSiSiteverifyRespondeNo200 cubre un Cloudflare que responde
+// (sin error de transporte) pero con un status distinto de 200 — un 5xx de
+// brownout, o un balanceador devolviendo una página de error. Es una rama
+// fail-closed sin test previo: si alguien la reescribiera para ignorar el
+// status y decodificar igual, un 503 de Cloudflare con body vacío pasaría
+// silenciosamente como (false, nil) en vez de propagar el error, y el
+// caller (start) no tendría forma de distinguir "reto no resuelto" de
+// "Cloudflare no puede responder".
+func TestVerifyFallaSiSiteverifyRespondeNo200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	v := New("secreto")
+	v.SetEndpointForTesting(srv.URL)
+
+	ok, err := v.Verify(context.Background(), "token", "1.2.3.4")
+	if err == nil {
+		t.Error("esperaba error por status no-200, got nil")
+	}
+	if ok {
+		t.Error("un status no-200 no puede resultar en verificación exitosa")
+	}
+}
+
+// TestVerifyFallaSiSiteverifyRespondeJSONMalformado cubre un 200 con body
+// que no es el JSON esperado — por ejemplo la página HTML de error de un
+// proxy delante de Cloudflare. Misma razón que el test de arriba: es la otra
+// rama fail-closed sin cobertura, y silenciarla en vez de propagar el error
+// convertiría un problema de infraestructura en un rechazo silencioso
+// indistinguible de un reto real fallido.
+func TestVerifyFallaSiSiteverifyRespondeJSONMalformado(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html>not json</html>"))
+	}))
+	t.Cleanup(srv.Close)
+
+	v := New("secreto")
+	v.SetEndpointForTesting(srv.URL)
+
+	ok, err := v.Verify(context.Background(), "token", "1.2.3.4")
+	if err == nil {
+		t.Error("esperaba error por JSON malformado, got nil")
+	}
+	if ok {
+		t.Error("un body malformado no puede resultar en verificación exitosa")
+	}
+}

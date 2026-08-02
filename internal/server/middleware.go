@@ -104,7 +104,11 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 //     Turnstile carga su script desde ahí y se renderiza en un iframe. Es la
 //     única excepción de origen externo en scripts; entró con v1.0.5 como
 //     costo del reto anti-bombing. style-src ya tenía 'unsafe-inline', que es
-//     lo otro que el widget necesita.
+//     lo otro que el widget necesita. frame-src lleva 'self' explícito
+//     además del origen de Cloudflare porque, a diferencia de default-src,
+//     declarar frame-src reemplaza el fallback en vez de sumarse a él; sin
+//     el 'self' un iframe same-origin futuro quedaría bloqueado en
+//     silencio (hoy no hay ninguno en web/, pero no cuesta dejarlo listo).
 //   - style-src 'self' 'unsafe-inline': layout.html todavía tiene un <style>
 //     embedido; cuando se extraiga ese CSS a /static/app.css se puede
 //     remover 'unsafe-inline'.
@@ -117,7 +121,7 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' https: data:; " +
 	"connect-src 'self'; " +
-	"frame-src https://challenges.cloudflare.com; " +
+	"frame-src 'self' https://challenges.cloudflare.com; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +

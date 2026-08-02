@@ -71,6 +71,18 @@ func TestSecurityHeaders(t *testing.T) {
 			t.Errorf("%s: esperado contener %q, obtenido %q", name, wantContains, got)
 		}
 	}
+
+	// Directivas de Turnstile: sin esto, borrar script-src/frame-src no lo
+	// nota ningún test y rompe el login en producción con la suite en verde.
+	csp := rec.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"script-src 'self' https://challenges.cloudflare.com",
+		"frame-src 'self' https://challenges.cloudflare.com",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("Content-Security-Policy: esperado contener %q, obtenido %q", want, csp)
+		}
+	}
 }
 
 func TestSecurityHeadersIncludeSubDomains(t *testing.T) {

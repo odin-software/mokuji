@@ -18,6 +18,7 @@ import (
 
 	"git.odin.do/kengru/mokuji/internal/code"
 	"git.odin.do/kengru/mokuji/internal/email"
+	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -324,4 +325,95 @@ func TestRenderOTPEmail(t *testing.T) {
 	}
 	// El render real se prueba indirectamente vía test del handler en commits
 	// futuros cuando agreguemos integración end-to-end.
+}
+
+func TestGrantCanjeaTokenYCreaSesion(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 5), &sent)
+
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+	token, err := grant.Issue(context.Background(), db, 1)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/grant?t="+token, nil)
+	w := httptest.NewRecorder()
+	h.grant(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("esperaba 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("esperaba redirect a /, got %q", loc)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = 1`).Scan(&n); err != nil {
+		t.Fatalf("contar sesiones: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("esperaba 1 sesión creada, got %d", n)
+	}
+}
+
+func TestGrantRechazaTokenInvalido(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 5), &sent)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/grant?t=basura", nil)
+	w := httptest.NewRecorder()
+	h.grant(w, req)
+
+	if loc := w.Header().Get("Location"); loc != "/auth" {
+		t.Errorf("esperaba redirect a /auth con token inválido, got %q", loc)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n); err != nil {
+		t.Fatalf("contar sesiones: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("se creó sesión con token inválido (n=%d)", n)
+	}
+}
+
+func TestGrantNoReusableTrasCanje(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newStartHandler(t, db, ratelimit.New(rate.Every(time.Minute), 5), &sent)
+
+	if _, err := db.Exec(
+		`INSERT INTO users (id, email, created_at) VALUES (1, 'alice@example.com', ?)`,
+		time.Now().UTC().Unix(),
+	); err != nil {
+		t.Fatalf("sembrar user: %v", err)
+	}
+	token, err := grant.Issue(context.Background(), db, 1)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	h.grant(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/auth/grant?t="+token, nil))
+
+	w := httptest.NewRecorder()
+	h.grant(w, httptest.NewRequest(http.MethodGet, "/auth/grant?t="+token, nil))
+	if loc := w.Header().Get("Location"); loc != "/auth" {
+		t.Errorf("el token se canjeó dos veces (redirect=%q)", loc)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n); err != nil {
+		t.Fatalf("contar sesiones: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("esperaba exactamente 1 sesión tras dos canjes, got %d", n)
+	}
 }

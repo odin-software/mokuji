@@ -29,6 +29,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/email"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
+	"git.odin.do/kengru/mokuji/internal/grant"
 	"git.odin.do/kengru/mokuji/internal/httpx"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
@@ -162,6 +163,7 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/verify", h.verifyForm)
 	mux.HandleFunc("POST /auth/verify", h.verify)
 	mux.HandleFunc("POST /auth/logout", h.logout)
+	mux.HandleFunc("GET /auth/grant", h.grant)
 }
 
 // startData es el modelo de datos para auth/start.html.
@@ -468,6 +470,47 @@ func (h *Handler) findOrCreateUser(ctx context.Context, emailAddr string, digest
 	return res.LastInsertId()
 }
 
+// grant canjea un token emitido por POST /admin/grant-session por una
+// sesión real. Es la mitad pública del break-glass: sin esto, un envío de
+// email caído deja el sitio inaccesible hasta para el operador.
+//
+// No lleva rate limit propio: el token es de 256 bits y single-use, así que
+// adivinarlo no es un ataque viable, y el emisor ya está limitado.
+func (h *Handler) grant(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("t")
+	if token == "" {
+		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		return
+	}
+
+	userID, err := grant.Consume(r.Context(), h.db, token)
+	if errors.Is(err, grant.ErrInvalid) {
+		// Inválido, vencido o ya usado: los tres al mismo lugar, sin decir
+		// cuál fue. WARN igual, porque un canje fallido en producción es
+		// señal de que alguien está probando tokens.
+		h.logger.Warn("canje de grant rechazado", "ip", h.clientIP(r))
+		http.Redirect(w, r, "/auth", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		h.logger.Error("canjear grant", "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+
+	if err := h.sessions.Create(w, r, userID); err != nil {
+		// El grant ya quedó marcado como usado — Consume lo consumió de
+		// forma atómica. Se pierde, y hay que emitir otro. Preferimos eso
+		// a dejar vivo un token cuyo canje ya arrancó.
+		h.logger.Error("crear sesión desde grant", "user_id", userID, "err", err)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+
+	h.logger.Warn("sesión creada vía grant de break-glass",
+		"user_id", userID, "ip", h.clientIP(r))
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
 
 // clientIP identifica al cliente para rate limiting y logs.
 func (h *Handler) clientIP(r *http.Request) string {

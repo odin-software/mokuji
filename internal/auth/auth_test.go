@@ -22,6 +22,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/migrations"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/turnstile"
 )
 
 func setupDB(t *testing.T) *sql.DB {
@@ -638,5 +639,120 @@ func TestStartColdListIgnoraCodigosVerificados(t *testing.T) {
 
 	if sent != 1 {
 		t.Errorf("códigos ya verificados no debían bloquear, sent=%d", sent)
+	}
+}
+
+func newTurnstileHandler(t *testing.T, db *sql.DB, v *turnstile.Verifier, sent *int) *Handler {
+	t.Helper()
+	discard := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ec, err := email.New(email.Config{
+		Host: "localhost", Port: 1025, From: "mokuji <auth@mokuji.org>", Logger: discard,
+	})
+	if err != nil {
+		t.Fatalf("email.New: %v", err)
+	}
+	ec.SetSendMailForTesting(func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		*sent++
+		return nil
+	})
+	h, err := New(Config{
+		DB:                  db,
+		Sessions:            session.New(db, false, discard),
+		Email:               ec,
+		HTMLTemplates:       os.DirFS("../../web/templates"),
+		EmailTemplates:      os.DirFS("../../web/emails"),
+		Logger:              discard,
+		StartUnknownLimiter: ratelimit.New(rate.Every(time.Minute), 20),
+		Turnstile:           v,
+		TurnstileSiteKey:    "site-key-de-prueba",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return h
+}
+
+func turnstileFake(t *testing.T, success bool) *turnstile.Verifier {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if success {
+			_, _ = w.Write([]byte(`{"success":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":false}`))
+	}))
+	t.Cleanup(srv.Close)
+	v := turnstile.New("secreto")
+	v.SetEndpointForTesting(srv.URL)
+	return v
+}
+
+func postStartConTurnstile(h *Handler, emailAddr, tsToken string) *httptest.ResponseRecorder {
+	form := "email=" + emailAddr + "&cf-turnstile-response=" + tsToken
+	req := httptest.NewRequest(http.MethodPost, "/auth/start", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.start(w, req)
+	return w
+}
+
+func TestStartRechazaSinTurnstile(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newTurnstileHandler(t, db, turnstileFake(t, true), &sent)
+
+	w := postStartConTurnstile(h, "alice@example.com", "")
+
+	if sent != 0 {
+		t.Errorf("se envió sin resolver el reto, sent=%d", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Error("redirigió a verify sin reto resuelto")
+	}
+}
+
+func TestStartRechazaTurnstileInvalido(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newTurnstileHandler(t, db, turnstileFake(t, false), &sent)
+
+	w := postStartConTurnstile(h, "alice@example.com", "token-falso")
+
+	if sent != 0 {
+		t.Errorf("se envió con reto inválido, sent=%d", sent)
+	}
+	if w.Code == http.StatusSeeOther {
+		t.Error("redirigió a verify con reto inválido")
+	}
+}
+
+func TestStartEnviaConTurnstileValido(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	h := newTurnstileHandler(t, db, turnstileFake(t, true), &sent)
+
+	w := postStartConTurnstile(h, "alice@example.com", "token-bueno")
+
+	if sent != 1 {
+		t.Errorf("esperaba 1 envío con reto resuelto, sent=%d", sent)
+	}
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba 303, got %d", w.Code)
+	}
+}
+
+func TestStartSinVerifierNoExigeReto(t *testing.T) {
+	db := setupDB(t)
+	sent := 0
+	// Verifier nil = dev sin keys. El flow tiene que seguir andando.
+	h := newTurnstileHandler(t, db, nil, &sent)
+
+	w := postStartConTurnstile(h, "alice@example.com", "")
+
+	if sent != 1 {
+		t.Errorf("sin Verifier el envío debía proceder, sent=%d", sent)
+	}
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("esperaba 303, got %d", w.Code)
 	}
 }

@@ -100,6 +100,11 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 //   - script-src 'self': solo scripts desde nuestro propio origen. Los
 //     inline scripts ya no se permiten (extraímos el registro del SW a
 //     /static/app.js para que pase).
+//   - challenges.cloudflare.com en script-src y frame-src: el widget de
+//     Turnstile carga su script desde ahí y se renderiza en un iframe. Es la
+//     única excepción de origen externo en scripts; entró con v1.0.5 como
+//     costo del reto anti-bombing. style-src ya tenía 'unsafe-inline', que es
+//     lo otro que el widget necesita.
 //   - style-src 'self' 'unsafe-inline': layout.html todavía tiene un <style>
 //     embedido; cuando se extraiga ese CSS a /static/app.css se puede
 //     remover 'unsafe-inline'.
@@ -108,10 +113,11 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 //   - frame-ancestors 'none': equivalente moderno de X-Frame-Options DENY.
 //   - form-action 'self': los forms solo postean a mokuji.
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self'; " +
+	"script-src 'self' https://challenges.cloudflare.com; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' https: data:; " +
 	"connect-src 'self'; " +
+	"frame-src https://challenges.cloudflare.com; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +

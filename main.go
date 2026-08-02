@@ -48,6 +48,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/releasesource"
 	"git.odin.do/kengru/mokuji/internal/server"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/turnstile"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -167,6 +168,20 @@ func main() {
 	go unsubIPLim.Cleanup(rootCtx, 30*time.Minute)
 	go grantLim.Cleanup(rootCtx, 30*time.Minute)
 
+	// Turnstile: requerido en prod, opcional en dev. Mismo patrón que
+	// UNSUBSCRIBE_SECRET — SECURE_COOKIES es el discriminante.
+	tsSiteKey := os.Getenv("TURNSTILE_SITE_KEY")
+	tsSecret := os.Getenv("TURNSTILE_SECRET_KEY")
+	var tsVerifier *turnstile.Verifier
+	if tsSiteKey == "" || tsSecret == "" {
+		if envBool("SECURE_COOKIES", false) {
+			log.Fatal("TURNSTILE_SITE_KEY y TURNSTILE_SECRET_KEY requeridos en producción")
+		}
+		logger.Warn("Turnstile no configurado: /auth/start sin reto (solo dev)")
+	} else {
+		tsVerifier = turnstile.New(tsSecret)
+	}
+
 	authHandler, err := auth.New(auth.Config{
 		DB:                  db,
 		Sessions:            sessions,
@@ -182,6 +197,8 @@ func main() {
 		StartUnknownLimiter: startUnknownLim,
 		VerifyIPLimiter:     verifyIPLim,
 		Errs:                errs,
+		Turnstile:           tsVerifier,
+		TurnstileSiteKey:    tsSiteKey,
 	})
 	if err != nil {
 		log.Fatalf("configurar auth: %v", err)

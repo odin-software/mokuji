@@ -15,6 +15,9 @@
       email
       <input type="email" name="email" required autofocus value="{{.Email}}" inputmode="email" autocomplete="email">
     </label>
+    {{if .TurnstileSiteKey}}
+    <div class="cf-turnstile" data-sitekey="{{.TurnstileSiteKey}}"></div>
+    {{end}}
     <button type="submit">mandarme el código →</button>
   </form>
 
@@ -24,4 +27,7 @@
     <a href="/">← volver al landing</a>
   </p>
 </div>
+{{if .TurnstileSiteKey}}
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+{{end}}
 {{end}}

@@ -34,6 +34,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/httpx"
 	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/session"
+	"git.odin.do/kengru/mokuji/internal/turnstile"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
@@ -78,6 +79,18 @@ type Config struct {
 	StartUnknownLimiter *ratelimit.Limiter
 	VerifyIPLimiter     *ratelimit.Limiter       // limita /auth/verify por IP; nil = sin límite
 	Errs                *errrender.ErrorRenderer // nil en tests sin assets
+
+	// Turnstile verifica el reto previo al envío de OTP. nil = sin reto
+	// (dev local sin keys).
+	//
+	// El reto aplica a TODO /auth/start, no solo a emails sin cuenta. Si el
+	// widget apareciera únicamente para desconocidos, su sola presencia
+	// diría si una dirección está registrada — un oráculo de enumeración
+	// gratis. Un solo camino, sin oráculo.
+	Turnstile *turnstile.Verifier
+	// TurnstileSiteKey es la clave pública que se renderiza en el widget.
+	// Vacía = no se renderiza nada.
+	TurnstileSiteKey string
 }
 
 // Handler agrupa endpoints de /auth/*.
@@ -90,16 +103,18 @@ type Handler struct {
 	// emailHTMLT es el render HTML de otp.html para multipart/alternative.
 	// nil si la plantilla no existe (deploys más viejos / tests sin assets);
 	// en ese caso se manda solo texto.
-	emailHTMLT      *htmltmpl.Template
-	baseURL         string
-	logger          *slog.Logger
-	trustProxy      bool
-	startIPLim      *ratelimit.Limiter
-	startEmailLim   *ratelimit.Limiter
-	startKnownLim   *ratelimit.Limiter
-	startUnknownLim *ratelimit.Limiter
-	verifyIPLim     *ratelimit.Limiter
-	errs            *errrender.ErrorRenderer
+	emailHTMLT       *htmltmpl.Template
+	baseURL          string
+	logger           *slog.Logger
+	trustProxy       bool
+	startIPLim       *ratelimit.Limiter
+	startEmailLim    *ratelimit.Limiter
+	startKnownLim    *ratelimit.Limiter
+	startUnknownLim  *ratelimit.Limiter
+	verifyIPLim      *ratelimit.Limiter
+	errs             *errrender.ErrorRenderer
+	turnstile        *turnstile.Verifier
+	turnstileSiteKey string
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -158,21 +173,23 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:              cfg.DB,
-		sessions:        cfg.Sessions,
-		email:           cfg.Email,
-		pages:           pages,
-		emailT:          emailT,
-		emailHTMLT:      emailHTMLT,
-		baseURL:         cfg.BaseURL,
-		logger:          cfg.Logger,
-		trustProxy:      cfg.TrustProxy,
-		startIPLim:      cfg.StartIPLimiter,
-		startEmailLim:   cfg.StartEmailLimiter,
-		startKnownLim:   cfg.StartKnownLimiter,
-		startUnknownLim: cfg.StartUnknownLimiter,
-		verifyIPLim:     cfg.VerifyIPLimiter,
-		errs:            cfg.Errs,
+		db:               cfg.DB,
+		sessions:         cfg.Sessions,
+		email:            cfg.Email,
+		pages:            pages,
+		emailT:           emailT,
+		emailHTMLT:       emailHTMLT,
+		baseURL:          cfg.BaseURL,
+		logger:           cfg.Logger,
+		trustProxy:       cfg.TrustProxy,
+		startIPLim:       cfg.StartIPLimiter,
+		startEmailLim:    cfg.StartEmailLimiter,
+		startKnownLim:    cfg.StartKnownLimiter,
+		startUnknownLim:  cfg.StartUnknownLimiter,
+		verifyIPLim:      cfg.VerifyIPLimiter,
+		errs:             cfg.Errs,
+		turnstile:        cfg.Turnstile,
+		turnstileSiteKey: cfg.TurnstileSiteKey,
 	}, nil
 }
 
@@ -193,6 +210,8 @@ type startData struct {
 	Session *session.Session
 	Email   string
 	Error   string
+	// TurnstileSiteKey vacía hace que la plantilla omita el widget.
+	TurnstileSiteKey string
 }
 
 // verifyData es el modelo de datos para auth/verify.html.
@@ -223,15 +242,15 @@ func (h *Handler) startForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	h.render(w, r, "auth/start.html", startData{Email: r.URL.Query().Get("email")})
+	h.render(w, r, "auth/start.html", h.startDataFor(startData{Email: r.URL.Query().Get("email")}))
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	ip := h.clientIP(r)
 	if !h.startIPLim.Allow(ip) {
-		h.render(w, r, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		})
+		}))
 		return
 	}
 
@@ -242,18 +261,42 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 	emailAddr := strings.TrimSpace(r.PostFormValue("email"))
 	if _, err := mail.ParseAddress(emailAddr); err != nil {
-		h.render(w, r, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
 			Email: emailAddr,
 			Error: "ingresa un email válido",
-		})
+		}))
 		return
 	}
 
 	if !h.startEmailLim.Allow(emailAddr) {
-		h.render(w, r, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		})
+		}))
+		return
+	}
+
+	// Reto antes de gastar presupuesto de envío. Va después de los limiters
+	// baratos (in-memory) y antes de todo lo que toque DB o red, para que un
+	// flood se coma lo menos posible por request.
+	tsOK, err := h.turnstile.Verify(r.Context(),
+		r.PostFormValue("cf-turnstile-response"), ip)
+	if err != nil {
+		// Cloudflare caído o inalcanzable. Fail-closed: preferimos un login
+		// roto y ruidoso a reabrir el agujero que causó el incidente.
+		h.logger.Error("verificar turnstile", "err", err, "ip", ip)
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
+			Email: emailAddr,
+			Error: "no pudimos verificar el reto. intenta de nuevo en un momento.",
+		}))
+		return
+	}
+	if !tsOK {
+		h.logger.Warn("reto de turnstile fallido", "ip", ip)
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
+			Email: emailAddr,
+			Error: "no pudimos verificar que eres humano. recarga la página e intenta de nuevo.",
+		}))
 		return
 	}
 
@@ -272,10 +315,10 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if !bucket.Allow("global") {
 		h.logger.Warn("presupuesto de OTP agotado: envío frenado",
 			"bucket", label, "ip", ip)
-		h.render(w, r, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		})
+		}))
 		return
 	}
 
@@ -291,10 +334,10 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if burned >= coldListThreshold {
 		h.logger.Warn("dirección en cold-list: envío frenado",
 			"intentos_sin_verificar", burned, "ip", ip)
-		h.render(w, r, "auth/start.html", startData{
+		h.render(w, r, "auth/start.html", h.startDataFor(startData{
 			Email: emailAddr,
 			Error: "demasiados intentos en pocos minutos. espera un poco y vuelve a intentar.",
-		})
+		}))
 		return
 	}
 
@@ -426,6 +469,14 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		h.logger.Error("ejecutar plantilla", "page", page, "err", err)
 	}
+}
+
+// startDataFor completa los campos de startData que salen de la config y no
+// del request. Centralizarlo evita que un render nuevo se olvide de la site
+// key y renderice la página sin widget.
+func (h *Handler) startDataFor(d startData) startData {
+	d.TurnstileSiteKey = h.turnstileSiteKey
+	return d
 }
 
 // renderOTPEmail produce las dos versiones del email: texto plano (siempre)

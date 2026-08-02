@@ -360,15 +360,143 @@ git commit -m "grant: tokens single-use para break-glass de acceso"
 El emisor. Va en `internal/admin`, que ya tiene el chequeo de `ADMIN_TOKEN` en tiempo constante y el helper `respondJSON`.
 
 **Files:**
+- Create: `internal/httpx/httpx.go`
+- Test: `internal/httpx/httpx_test.go`
+- Modify: `internal/auth/auth.go:476-490` (`clientIP` delega en `httpx`)
 - Modify: `internal/admin/admin.go` (Config, Handler, Mount, handler nuevo)
 - Modify: `main.go:423-431` (pasar `BaseURL` y `GrantLimiter`)
 - Test: `internal/admin/admin_test.go`
 
 **Interfaces:**
 - Consumes: `grant.Issue` de la Task 1.
-- Produces: endpoint `POST /admin/grant-session`, body `email=<addr>` (form o query, igual que `triggerDigest`), respuesta `{"url": "<BaseURL>/auth/grant?t=<token>"}`. Campos nuevos en `admin.Config`: `BaseURL string`, `GrantLimiter *ratelimit.Limiter`, `TrustProxy bool`.
+- Produces:
+  - `httpx.ClientIP(r *http.Request, trustProxy bool) string` — extraído del método privado de `auth`, que pasa a delegar en él.
+  - Endpoint `POST /admin/grant-session`, body `email=<addr>` (form o query, igual que `triggerDigest`), respuesta `{"url": "<BaseURL>/auth/grant?t=<token>", "expires_in": "5m0s"}`.
+  - Campos nuevos en `admin.Config`: `BaseURL string`, `GrantLimiter *ratelimit.Limiter`, `TrustProxy bool`.
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [ ] **Step 1: Extraer `clientIP` a `internal/httpx`**
+
+`auth.Handler.clientIP` ya resuelve identificar al cliente y `admin` necesita
+exactamente lo mismo para su rate limiter. En vez de duplicar el bloque, se
+extrae a una función pura que ambos consumen.
+
+Crear `internal/httpx/httpx.go`:
+
+```go
+// Package httpx agrupa helpers de HTTP compartidos entre handlers.
+package httpx
+
+import (
+	"net"
+	"net/http"
+	"strings"
+)
+
+// ClientIP identifica al cliente de r, para rate limiting y logs.
+//
+// trustProxy=true hace que lea X-Forwarded-For y tome la primera entrada —
+// el cliente original; el resto de la cadena son proxies intermedios. Solo
+// es seguro detrás de un reverse proxy de confianza: cualquiera puede mandar
+// ese header, así que leerlo sin un proxy que lo sobreescriba permite evadir
+// cualquier rate limit rotando el valor.
+func ClientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.Index(xff, ","); i != -1 {
+				xff = xff[:i]
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
+}
+```
+
+Crear `internal/httpx/httpx_test.go`:
+
+```go
+package httpx
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestClientIPSinProxyIgnoraXFF(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.9:54321"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	if got := ClientIP(req, false); got != "203.0.113.9" {
+		t.Errorf("con trustProxy=false esperaba 203.0.113.9, got %q", got)
+	}
+}
+
+func TestClientIPConProxyLeeXFF(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	if got := ClientIP(req, true); got != "1.2.3.4" {
+		t.Errorf("esperaba 1.2.3.4, got %q", got)
+	}
+}
+
+func TestClientIPTomaElPrimeroDeLaCadena(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.2, 10.0.0.3")
+
+	if got := ClientIP(req, true); got != "1.2.3.4" {
+		t.Errorf("esperaba el primer IP de la cadena, got %q", got)
+	}
+}
+
+func TestClientIPCaeARemoteAddrSinXFF(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.9:54321"
+
+	if got := ClientIP(req, true); got != "203.0.113.9" {
+		t.Errorf("sin XFF esperaba RemoteAddr, got %q", got)
+	}
+}
+
+func TestClientIPRemoteAddrSinPuerto(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.9"
+
+	if got := ClientIP(req, false); got != "203.0.113.9" {
+		t.Errorf("RemoteAddr sin puerto debía pasar tal cual, got %q", got)
+	}
+}
+```
+
+Run: `go test ./internal/httpx/ -v`
+Expected: PASS — 5 tests.
+
+- [ ] **Step 2: Hacer que `auth` delegue en el helper**
+
+En `internal/auth/auth.go:476-490`, sustituir el cuerpo de `clientIP`:
+
+```go
+// clientIP identifica al cliente para rate limiting y logs.
+func (h *Handler) clientIP(r *http.Request) string {
+	return httpx.ClientIP(r, h.trustProxy)
+}
+```
+
+Añadir `"git.odin.do/kengru/mokuji/internal/httpx"` a los imports de `auth.go`, y
+quitar `"net"` si no queda otro uso en el archivo.
+
+Run: `go build ./... && go test ./internal/auth/ ./internal/httpx/`
+Expected: PASS. El comportamiento no cambia — los tests existentes de auth lo confirman.
+
+- [ ] **Step 3: Escribir los tests que fallan**
 
 Añadir a `internal/admin/admin_test.go` (crear el archivo si no existe, con el mismo `setupDB` que usa `internal/grant`):
 
@@ -481,12 +609,12 @@ func newGrantTestHandler(t *testing.T, db *sql.DB) *Handler {
 }
 ```
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [ ] **Step 4: Correr los tests y verificar que fallan**
 
 Run: `go test ./internal/admin/ -run TestGrantSession -v`
 Expected: FAIL — `h.grantSession undefined`, `h.baseURL undefined`, `h.grantLim undefined`.
 
-- [ ] **Step 3: Añadir los campos a Config y Handler**
+- [ ] **Step 5: Añadir los campos a Config y Handler**
 
 En `internal/admin/admin.go`, dentro de `type Config struct`:
 
@@ -517,9 +645,9 @@ Y en `New`, dentro del `return &Handler{...}`:
 		trustProxy: cfg.TrustProxy,
 ```
 
-Añadir los imports que faltan: `"net"`, `"net/url"`, `"git.odin.do/kengru/mokuji/internal/grant"`, `"git.odin.do/kengru/mokuji/internal/ratelimit"`.
+Añadir los imports que faltan: `"net/url"`, `"git.odin.do/kengru/mokuji/internal/grant"`, `"git.odin.do/kengru/mokuji/internal/httpx"`, `"git.odin.do/kengru/mokuji/internal/ratelimit"`.
 
-- [ ] **Step 4: Registrar la ruta**
+- [ ] **Step 6: Registrar la ruta**
 
 En `Mount`, después de la línea de `trigger-digest`:
 
@@ -527,7 +655,7 @@ En `Mount`, después de la línea de `trigger-digest`:
 	mux.HandleFunc("POST /admin/grant-session", h.grantSession)
 ```
 
-- [ ] **Step 5: Escribir el handler**
+- [ ] **Step 7: Escribir el handler**
 
 Añadir a `internal/admin/admin.go`:
 
@@ -591,32 +719,22 @@ func (h *Handler) grantSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clientIP replica la lógica de auth.Handler.clientIP. Duplicada y no
-// extraída a un paquete compartido porque son 12 líneas y un helper nuevo
-// para dos callers no paga su costo de indirección.
+// clientIP identifica al cliente para el rate limiter.
 func (h *Handler) clientIP(r *http.Request) string {
-	if h.trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.Index(xff, ","); i != -1 {
-				xff = xff[:i]
-			}
-			return strings.TrimSpace(xff)
-		}
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return httpx.ClientIP(r, h.trustProxy)
 }
 ```
 
-- [ ] **Step 6: Correr los tests y verificar que pasan**
+Los imports de `admin.go` quedan: `"net/url"`, `"git.odin.do/kengru/mokuji/internal/grant"`,
+`"git.odin.do/kengru/mokuji/internal/httpx"`, `"git.odin.do/kengru/mokuji/internal/ratelimit"`.
+No hace falta `"net"` — vive ahora en `httpx`.
+
+- [ ] **Step 8: Correr los tests y verificar que pasan**
 
 Run: `go test ./internal/admin/ -v`
 Expected: PASS — 5 tests nuevos más los que ya existían.
 
-- [ ] **Step 7: Cablear en main.go**
+- [ ] **Step 9: Cablear en main.go**
 
 En `main.go`, junto a los otros limiters (cerca de la línea 154):
 
@@ -633,14 +751,16 @@ Y en el `admin.New(admin.Config{...})` de la línea 423, añadir:
 		TrustProxy:   envBool("TRUST_PROXY", false),
 ```
 
-- [ ] **Step 8: Verificar que compila y pasa todo**
+- [ ] **Step 10: Verificar que compila y pasa todo**
 
 Run: `go build ./... && go test ./...`
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
+git add internal/httpx/ internal/auth/
+git commit -m "httpx: extrae ClientIP compartido entre auth y admin"
 git add internal/admin/ main.go
 git commit -m "admin: POST /admin/grant-session emite grant de break-glass"
 ```

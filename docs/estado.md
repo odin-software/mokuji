@@ -247,6 +247,22 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
+### v1.0.7 — pattern de username y Permissions-Policy
+
+Dos arreglos que salieron de mirar la consola del browser en producción.
+
+- **`pattern` del username roto** (`web/templates/settings.html`): los browsers
+  compilan el atributo `pattern` con el flag `v`, donde un `-` literal dentro
+  de una clase de caracteres necesita backslash. `[a-z0-9][a-z0-9_-]*[a-z0-9]`
+  no compilaba, así que el browser descartaba el pattern y el campo quedaba
+  **sin validación de cliente**. No era un hueco de seguridad — `usernameRe`
+  en `internal/profile/username.go` lo rechazaba igual en el server — pero el
+  user se enteraba al enviar en vez de al escribir. Escapado a `_\-`.
+- **`interest-cohort=()` removido del Permissions-Policy**: era el opt-out de
+  FLoC, que Chrome retiró. La directiva ya no hace nada y genera un warning
+  "Unrecognized feature" en cada carga, que es como uno aprende a ignorar la
+  consola.
+
 ### v1.0.6 — fuentes self-hosteadas
 
 Arregla un bug que existía desde que se agregó la CSP: `layout.html` cargaba

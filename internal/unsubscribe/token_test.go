@@ -43,13 +43,13 @@ func TestVerifyRejectsTampered(t *testing.T) {
 
 	// Tamper en payload: cambia un byte del base64 del payload.
 	dot := strings.IndexByte(tok, '.')
-	tampered := flipChar(tok[:dot]) + tok[dot:]
+	tampered := flipSegment(t, tok[:dot]) + tok[dot:]
 	if _, err := s.Verify(tampered, ScopeReleasesDigest); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("payload tampered aceptado: %v", err)
 	}
 
 	// Tamper en signature: cambia un byte del base64 de la firma.
-	tampered = tok[:dot+1] + flipChar(tok[dot+1:])
+	tampered = tok[:dot+1] + flipSegment(t, tok[dot+1:])
 	if _, err := s.Verify(tampered, ScopeReleasesDigest); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("sig tampered aceptado: %v", err)
 	}
@@ -183,18 +183,29 @@ func flipByte(b byte) string {
 	return "A"
 }
 
-// flipChar cambia el último caracter del input por '_' (válido en base64url),
-// o por 'A' si ya era '_', garantizando que el output difiera del input.
-func flipChar(s string) string {
-	if s == "" {
-		return "A"
+// flipSegment decodifica un segmento base64url del token, invierte su primer
+// byte, y lo vuelve a codificar.
+//
+// Opera sobre los bytes y no sobre el texto base64 a propósito. La versión
+// anterior cambiaba el último caracter del base64, y eso no siempre altera
+// nada: RawURLEncoding deja bits sobrantes en el último caracter cuando la
+// longitud en bytes no es múltiplo de 3. Una firma HMAC-SHA256 son 32 bytes
+// -> 43 caracteres, y el caracter 43 solo carga 4 bits útiles, así que
+// sustituirlo por '_' decodificaba a los mismos bytes siempre que sus 4 bits
+// altos ya fueran 1111 ('8', '9', '-' o '_': 4 de 64 valores). En esos casos
+// el token no quedaba alterado, Verify lo aceptaba con razón, y el test
+// fallaba ~6% de las corridas por un tampering que nunca ocurrió.
+func flipSegment(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := decode(s)
+	if err != nil {
+		t.Fatalf("decodificar segmento %q: %v", s, err)
 	}
-	last := s[len(s)-1]
-	repl := byte('_')
-	if last == '_' {
-		repl = 'A'
+	if len(raw) == 0 {
+		t.Fatalf("segmento %q decodifica a cero bytes", s)
 	}
-	return s[:len(s)-1] + string(repl)
+	raw[0] ^= 0xFF
+	return encode(raw)
 }
 
 func bytes32(b byte) []byte {

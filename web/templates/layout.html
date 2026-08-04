@@ -31,12 +31,57 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="mokuji">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+JP:wght@700;900&display=swap">
-<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+JP:wght@700;900&display=swap" rel="stylesheet">
+<link rel="preload" as="font" type="font/woff2" href="/static/fonts/albert-sans-var.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/static/fonts/ibm-plex-mono-400.woff2" crossorigin>
 <script src="/static/app.js" defer></script>
 <style>
+/* Fuentes self-hosteadas desde /static/fonts. Antes venían de Google Fonts,
+   pero la CSP (style-src 'self') nunca permitió ese stylesheet, así que en
+   producción jamás cargaron y todo caía al fallback del sistema. Servirlas
+   nosotros arregla eso, quita un tercero del render de cada página, y evita
+   mandarle el IP de cada visitante a Google.
+
+   Albert Sans es variable (un solo archivo cubre 400-900). IBM Plex Mono son
+   instancias estáticas, una por peso. Noto Serif JP va subseteada a los 16
+   kanji que realmente usamos — completa serían megas; así son 7.8 KB. Si
+   agregas un kanji nuevo a una plantilla, hay que regenerar ese subset. */
+@font-face {
+  font-family: 'Albert Sans';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/static/fonts/albert-sans-var.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Noto Serif JP';
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url('/static/fonts/noto-serif-jp-subset.woff2') format('woff2');
+  unicode-range: U+4e86, U+59cb, U+5c01, U+5f85, U+65b0, U+671f, U+6731, U+6b21,
+                 U+7121, U+767b, U+767d, U+76ee, U+79d8, U+7a7a, U+8535, U+8ff7;
+}
 :root {
   color-scheme: light dark;
 

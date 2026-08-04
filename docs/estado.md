@@ -247,6 +247,34 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
+### v1.0.6 — fuentes self-hosteadas
+
+Arregla un bug que existía desde que se agregó la CSP: `layout.html` cargaba
+Albert Sans, IBM Plex Mono y Noto Serif JP desde Google Fonts, pero
+`style-src 'self' 'unsafe-inline'` nunca permitió ese stylesheet y `font-src`
+ni siquiera estaba declarado (heredaba `'self'`, bloqueando `gstatic`). O sea
+que **en producción las fuentes nunca cargaron** y toda la tipografía caía al
+fallback del sistema, para todos los visitantes, en todas las páginas. Salió a
+la luz por las violaciones de CSP en la consola del browser.
+
+- **Self-hosteadas en `web/static/fonts/`** (76 KB en total), servidas por el
+  handler de `/static/` que ya existía. La CSP no se toca: `'self'` ya las
+  permite. De paso se va un tercero del render de cada página y deja de
+  filtrársele a Google el IP de cada visitante.
+- **Albert Sans es variable**: los 5 pesos que pedíamos a Google eran el mismo
+  archivo (md5 idéntico), así que va uno solo con `font-weight: 400 900`.
+  Verificado que el eje funciona: el mismo texto mide 196.81px a 400 y
+  206.03px a 900.
+- **IBM Plex Mono** sí son instancias estáticas — tres archivos, uno por peso.
+- **Noto Serif JP subseteada a los 16 kanji** que usan las plantillas
+  (了始封待新期朱次無登白目秘空蔵迷): 7.8 KB en vez de los megas de la fuente
+  completa. El `unicode-range` del `@font-face` los lista explícitamente.
+  **Si agregas un kanji nuevo a una plantilla hay que regenerar ese subset**,
+  o cae al fallback en silencio.
+- Licencias OFL de las tres incluidas junto a los `.woff2`.
+- Los `preconnect` a Google se reemplazaron por `preload` de las dos fuentes
+  del above-the-fold (Albert Sans y IBM Plex Mono 400).
+
 ### v1.0.5 — hardening de OTP + break-glass
 
 Cierra lo que v1.0.4 dejó abierto. El circuit breaker acotaba el volumen a

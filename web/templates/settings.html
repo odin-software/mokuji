@@ -18,9 +18,15 @@
     {{end}}
     <label>
       {{if .Username}}cambiar a{{else}}elegir{{end}}
+      {{/* El guión del pattern va escapado (_\-): los browsers lo compilan con
+           el flag 'v', donde un '-' literal dentro de una clase necesita
+           backslash. Sin él la regex no compila, el browser descarta el
+           pattern entero y el campo se queda sin validación de cliente. El
+           server lo rechazaba igual (profile.usernameRe), pero el user se
+           enteraba al enviar en vez de al escribir. */}}
       <input type="text" name="username"
              value="{{if .UsernameDraft}}{{.UsernameDraft}}{{else}}{{.Username}}{{end}}"
-             minlength="3" maxlength="20" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]"
+             minlength="3" maxlength="20" pattern="[a-z0-9][a-z0-9_\-]*[a-z0-9]"
              placeholder="ej: alice, tu-nombre, otaku_42"
              autocomplete="off" autocapitalize="off" spellcheck="false">
       <span class="muted">3-20 caracteres. minúsculas, números, guión y guión bajo.</span>

@@ -140,6 +140,10 @@ const contentSecurityPolicy = "default-src 'self'; " +
 //     cross-site, full URL same-site, nada en downgrade HTTP/HTTPS.
 //   - Content-Security-Policy: ver contentSecurityPolicy arriba.
 //   - Permissions-Policy: bloquea explícitamente APIs sensibles que no usamos.
+//     Llevaba también interest-cohort=() (el opt-out de FLoC), pero Chrome
+//     retiró FLoC y ahora avisa "Unrecognized feature" por esa directiva. Se
+//     quitó: no hacía nada y ensuciaba la consola, que es como uno aprende a
+//     ignorarla.
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -148,7 +152,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Content-Security-Policy", contentSecurityPolicy)
-		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		next.ServeHTTP(w, r)
 	})
 }

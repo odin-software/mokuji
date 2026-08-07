@@ -247,6 +247,41 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
+### v1.0.8 — backoff del crawler y polleo en paralelo
+
+Tres arreglos en el worker de release tracking.
+
+- **Backoff persistente por fila** (`migración 0014`, `manga_sources.consecutive_failures`):
+  cuando `FetchChapters` fallaba con algo que no fuera rate limit, `pollSource`
+  registraba el error y volvía **sin reagendar**. `next_check_at` se quedaba
+  como estaba — y para una fila recién matcheada eso es `NULL`. Como
+  `dueSources` ordena `next_check_at IS NULL DESC, next_check_at ASC`, esa
+  fila quedaba en la primera posición de **todos** los batches, para siempre.
+  Una serie borrada upstream o una source con el HTML cambiado se volvía una
+  fila envenenada que le robaba el turno a las sanas; con `BatchSize=50`,
+  cincuenta de esas y nada vivo se vuelve a pollear. Ahora cada fallo
+  incrementa el contador y reagenda con backoff exponencial sobre el recheck
+  interval, topado en `MaxBackoff` (24h). Un éxito resetea y limpia
+  `last_error`. El rate limit no cuenta como fallo: sigue difiriendo 15 min.
+- **Polleo en paralelo por source**: `RunOnce` recorría las 50 filas en serie.
+  Con tres hosts independientes y timeouts de 15-20s, uno lento congelaba a
+  los otros dos (~16 min en el peor caso). Ahora las filas se agrupan por
+  source y cada grupo va en su goroutine; dentro del grupo sigue siendo
+  secuencial, que es lo que respeta el rate limit de esa source.
+- **Índice `(manga_id, source, published_at DESC)`** en `chapter`:
+  `latestPublishedAt` corre una vez por poll filtrando por manga **y** source,
+  pero el índice existente solo cubría `manga_id`. El viejo se conserva — lo
+  usan `/releases` y el digest.
+
+`setupDB` de los tests pasó de `":memory:"` a un archivo temporal: con
+`database/sql` cada conexión nueva a `":memory:"` abre una base vacía
+distinta, y con el polleo en paralelo el pool puede abrir más de una.
+
+**Pendiente**: `manga_sources.last_error` y `last_error_at` se escriben pero
+todavía no los lee ningún endpoint — hoy solo se consultan por SQL.
+Exponerlos en `/admin/sources-health` (que hoy solo muestra estado in-memory,
+y por lo tanto se resetea en cada deploy) es el paso natural.
+
 ### v1.0.7 — pattern de username y Permissions-Policy
 
 Dos arreglos que salieron de mirar la consola del browser en producción.

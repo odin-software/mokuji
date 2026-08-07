@@ -53,6 +53,14 @@ const (
 	// BatchSize es cuántas filas procesamos por tick. Cota para no
 	// bloquear demasiado tiempo en el loop si la cola creció.
 	BatchSize = 50
+	// MaxBackoff es el techo del backoff exponencial por fila.
+	//
+	// 24h no es arbitrario: una serie muerta upstream (404, delisted) nunca
+	// va a volver, y a este techo cuesta un slot de batch por día en vez de
+	// uno por hora. Más alto castigaría de más a una source que estuvo caída
+	// unas horas — sus series quedarían dormidas mucho después de que
+	// volviera.
+	MaxBackoff = 24 * time.Hour
 )
 
 // Config agrupa las dependencias.
@@ -314,6 +322,16 @@ func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releaseso
 			return w.scheduleNextCheck(ctx, mangaID, source, next)
 		}
 		w.recordError(source, err)
+		// Reagendar con backoff es obligatorio, no cortesía. Si volviéramos
+		// acá sin tocar next_check_at, la fila se quedaría vencida (o en
+		// NULL si nunca tuvo un poll exitoso) y la cola, que ordena
+		// `next_check_at IS NULL DESC, next_check_at ASC`, la devolvería en
+		// la primera posición de todos los batches para siempre. Cincuenta
+		// series muertas y BatchSize deja de alcanzar para las vivas.
+		if schedErr := w.scheduleFailure(ctx, mangaID, source, err); schedErr != nil {
+			w.logger.Error("reagendar fila tras fallo",
+				"manga_id", mangaID, "source", source, "err", schedErr)
+		}
 		return err
 	}
 
@@ -330,7 +348,7 @@ func (w *Worker) pollSource(ctx context.Context, mangaID int64, client releaseso
 	}
 
 	next := time.Now().Add(w.recheckInterval).UTC().Unix()
-	if err := w.scheduleNextCheck(ctx, mangaID, source, next); err != nil {
+	if err := w.scheduleSuccess(ctx, mangaID, source, next); err != nil {
 		w.recordError(source, err)
 		return fmt.Errorf("schedule next: %w", err)
 	}
@@ -395,6 +413,9 @@ func (w *Worker) insertChapter(ctx context.Context, mangaID int64, source string
 	return affected > 0, nil
 }
 
+// scheduleNextCheck agenda sin tocar el estado de fallos. Lo usa la rama de
+// rate limit, que es backpressure y no degradación: no debe contaminar el
+// contador ni resetearlo.
 func (w *Worker) scheduleNextCheck(ctx context.Context, mangaID int64, source string, nextTs int64) error {
 	now := time.Now().UTC().Unix()
 	_, err := w.db.ExecContext(ctx, `
@@ -402,6 +423,65 @@ func (w *Worker) scheduleNextCheck(ctx context.Context, mangaID int64, source st
 		WHERE manga_id = ? AND source = ?
 	`, nextTs, now, mangaID, source)
 	return err
+}
+
+// scheduleSuccess agenda el próximo poll y borra el rastro de fallos previos.
+func (w *Worker) scheduleSuccess(ctx context.Context, mangaID int64, source string, nextTs int64) error {
+	now := time.Now().UTC().Unix()
+	_, err := w.db.ExecContext(ctx, `
+		UPDATE manga_sources
+		SET next_check_at = ?, checked_at = ?,
+		    consecutive_failures = 0, last_error = NULL, last_error_at = NULL
+		WHERE manga_id = ? AND source = ?
+	`, nextTs, now, mangaID, source)
+	return err
+}
+
+// scheduleFailure incrementa el contador de fallos de la fila y la reagenda
+// con backoff exponencial sobre el nuevo contador.
+//
+// El UPDATE ... RETURNING deja el incremento y la lectura del nuevo valor en
+// una sola operación, así no hay que leer-luego-escribir.
+func (w *Worker) scheduleFailure(ctx context.Context, mangaID int64, source string, cause error) error {
+	msg := cause.Error()
+	if len(msg) > maxErrorMessage {
+		msg = msg[:maxErrorMessage] + "..."
+	}
+	now := time.Now().UTC().Unix()
+
+	var failures int
+	if err := w.db.QueryRowContext(ctx, `
+		UPDATE manga_sources
+		SET consecutive_failures = consecutive_failures + 1,
+		    last_error = ?, last_error_at = ?, checked_at = ?
+		WHERE manga_id = ? AND source = ?
+		RETURNING consecutive_failures
+	`, msg, now, now, mangaID, source).Scan(&failures); err != nil {
+		return err
+	}
+
+	next := time.Now().Add(w.backoffFor(failures)).UTC().Unix()
+	_, err := w.db.ExecContext(ctx,
+		`UPDATE manga_sources SET next_check_at = ? WHERE manga_id = ? AND source = ?`,
+		next, mangaID, source)
+	return err
+}
+
+// backoffFor duplica el intervalo de recheck por cada fallo consecutivo,
+// topado en MaxBackoff. Un fallo aislado apenas retrasa el próximo intento;
+// una fila muerta se degrada sola hasta el techo.
+func (w *Worker) backoffFor(failures int) time.Duration {
+	if failures < 1 {
+		failures = 1
+	}
+	d := w.recheckInterval
+	for i := 1; i < failures; i++ {
+		if d >= MaxBackoff {
+			break
+		}
+		d *= 2
+	}
+	return min(d, MaxBackoff)
 }
 
 // nullIfEmpty pasa nil al driver SQLite cuando el string es vacío, así

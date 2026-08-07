@@ -561,8 +561,15 @@ func TestHealthRecordsErrorAndIncrementsFailures(t *testing.T) {
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Forzar nuevo poll: marcar como vencido otra vez (el primer RunOnce
-	// no reagendó por el error genérico, pero el due query lo retoma).
+	// Hay que vencer la fila a mano: desde el backoff persistente, un fallo
+	// la reagenda hacia el futuro en vez de dejarla permanentemente vencida.
+	// Esto simula el siguiente tick una vez cumplido el backoff.
+	if _, err := db.Exec(
+		`UPDATE manga_sources SET next_check_at = ? WHERE manga_id = ?`,
+		time.Now().UTC().Unix()-1, mangaID,
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := w.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -599,5 +606,163 @@ func TestHealthDoesNotCountRateLimitAsFailure(t *testing.T) {
 	}
 	if h.LastError != "" {
 		t.Errorf("rate limit NO debería poblar LastError, got %q", h.LastError)
+	}
+}
+
+// --- Backoff persistente por fila (migración 0014) ---
+
+func sourceFailureState(t *testing.T, db *sql.DB, mangaID int64) (int, sql.NullString) {
+	t.Helper()
+	var n int
+	var lastErr sql.NullString
+	if err := db.QueryRow(`
+		SELECT consecutive_failures, last_error FROM manga_sources
+		WHERE manga_id = ? AND source = 'mangadex'
+	`, mangaID).Scan(&n, &lastErr); err != nil {
+		t.Fatal(err)
+	}
+	return n, lastErr
+}
+
+// TestFalloReagendaLaFila es el test central del bug: antes, un fallo que no
+// fuera rate limit volvía sin tocar next_check_at. Para una fila nueva eso
+// significaba dejarla en NULL, y como la cola ordena NULLs primero, quedaba
+// al frente de todos los batches para siempre.
+func TestFalloReagendaLaFila(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "a@example.com")
+	mangaID := insertMatchedManga(t, db, "md-roto", 0) // next_check_at NULL
+	addReadingEntry(t, db, userID, mangaID)
+
+	client := &fakeClient{errFor: map[string]error{"md-roto": errors.New("boom")}}
+	w := newTestWorker(t, db, client)
+
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	nextCheck, _ := nextCheckAt(t, db, mangaID)
+	if !nextCheck.Valid {
+		t.Fatal("next_check_at quedó NULL tras el fallo; la fila vuelve a la cabeza de cada batch")
+	}
+	if nextCheck.Int64 <= time.Now().UTC().Unix() {
+		t.Errorf("next_check_at quedó en el pasado (%d); la fila sigue vencida", nextCheck.Int64)
+	}
+
+	fails, lastErr := sourceFailureState(t, db, mangaID)
+	if fails != 1 {
+		t.Errorf("esperaba consecutive_failures=1, got %d", fails)
+	}
+	if !lastErr.Valid || !strings.Contains(lastErr.String, "boom") {
+		t.Errorf("last_error no guardó el motivo: %v", lastErr)
+	}
+}
+
+// TestFilaRotaNoMonopolizaElBatch es la regresión de la hambruna: tras una
+// pasada, ninguna fila debe seguir vencida — ni la que falló.
+func TestFilaRotaNoMonopolizaElBatch(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "a@example.com")
+	rota := insertMatchedManga(t, db, "md-roto", 0)
+	sana := insertMatchedManga(t, db, "md-sana", 0)
+	addReadingEntry(t, db, userID, rota)
+	addReadingEntry(t, db, userID, sana)
+
+	client := &fakeClient{errFor: map[string]error{"md-roto": errors.New("404 upstream")}}
+	w := newTestWorker(t, db, client)
+
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	pendientes, err := w.dueSources(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("dueSources: %v", err)
+	}
+	if len(pendientes) != 0 {
+		t.Errorf("quedaron %d filas vencidas tras la pasada; la rota reaparece en el próximo batch", len(pendientes))
+	}
+}
+
+func TestBackoffCreceYSeTopa(t *testing.T) {
+	db := setupDB(t)
+	w := newTestWorker(t, db, &fakeClient{})
+
+	casos := []struct {
+		fallos int
+		quiero time.Duration
+	}{
+		{1, DefaultRecheckInterval},
+		{2, 2 * DefaultRecheckInterval},
+		{3, 4 * DefaultRecheckInterval},
+		{4, MaxBackoff},
+		{50, MaxBackoff},
+	}
+	for _, c := range casos {
+		if got := w.backoffFor(c.fallos); got != c.quiero {
+			t.Errorf("backoffFor(%d) = %v, quiero %v", c.fallos, got, c.quiero)
+		}
+	}
+	if 4*DefaultRecheckInterval > MaxBackoff {
+		t.Fatal("el caso de 3 fallos ya excede el cap; ajusta la tabla")
+	}
+}
+
+func TestExitoResetealContadorDeFallos(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "a@example.com")
+	mangaID := insertMatchedManga(t, db, "md-1", 0)
+	addReadingEntry(t, db, userID, mangaID)
+
+	// Primero un fallo, para dejar el contador en 1.
+	client := &fakeClient{errFor: map[string]error{"md-1": errors.New("boom")}}
+	w := newTestWorker(t, db, client)
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce fallido: %v", err)
+	}
+	if fails, _ := sourceFailureState(t, db, mangaID); fails != 1 {
+		t.Fatalf("preparación: esperaba 1 fallo, got %d", fails)
+	}
+
+	// Ahora una pasada exitosa sobre la misma fila.
+	client.errFor = nil
+	if err := w.pollSource(context.Background(), mangaID, client, "md-1"); err != nil {
+		t.Fatalf("pollSource exitoso: %v", err)
+	}
+
+	fails, lastErr := sourceFailureState(t, db, mangaID)
+	if fails != 0 {
+		t.Errorf("el éxito no reseteó el contador: %d", fails)
+	}
+	if lastErr.Valid {
+		t.Errorf("el éxito no limpió last_error: %q", lastErr.String)
+	}
+}
+
+// TestRateLimitNoCuentaComoFallo: el rate limit es backpressure normal, no
+// degradación. Ya tenía su propio reagendado corto; lo que verificamos es
+// que no contamine el contador de fallos ni dispare el backoff largo.
+func TestRateLimitNoCuentaComoFallo(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "a@example.com")
+	mangaID := insertMatchedManga(t, db, "md-1", 0)
+	addReadingEntry(t, db, userID, mangaID)
+
+	client := &fakeClient{errFor: map[string]error{"md-1": releasesource.ErrRateLimited}}
+	w := newTestWorker(t, db, client)
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	if fails, _ := sourceFailureState(t, db, mangaID); fails != 0 {
+		t.Errorf("el rate limit incrementó consecutive_failures a %d", fails)
+	}
+	nextCheck, _ := nextCheckAt(t, db, mangaID)
+	if !nextCheck.Valid {
+		t.Fatal("el rate limit no reagendó la fila")
+	}
+	limite := time.Now().Add(RateLimitedDelay + time.Minute).UTC().Unix()
+	if nextCheck.Int64 > limite {
+		t.Errorf("el rate limit aplicó el backoff largo en vez de RateLimitedDelay")
 	}
 }

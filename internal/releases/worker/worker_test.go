@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ type fakeClient struct {
 	calls   []fetchCall
 	queries []string
 	results []releasesource.MangaResult
+	// onFetch corre al principio de FetchChapters. Sirve para sincronizar
+	// entre sources en el test de paralelismo. Cada source tiene su propia
+	// instancia de fakeClient y una sola goroutine la toca, así que los
+	// campos mutables de arriba no necesitan lock.
+	onFetch func()
 }
 
 type fetchCall struct {
@@ -48,6 +54,9 @@ func (f *fakeClient) Search(_ context.Context, q string) ([]releasesource.MangaR
 }
 
 func (f *fakeClient) FetchChapters(_ context.Context, id, lang string, since time.Time) ([]releasesource.Chapter, error) {
+	if f.onFetch != nil {
+		f.onFetch()
+	}
 	f.calls = append(f.calls, fetchCall{id, lang, since})
 	if e, ok := f.errFor[id]; ok {
 		return nil, e
@@ -58,9 +67,15 @@ func (f *fakeClient) FetchChapters(_ context.Context, id, lang string, since tim
 	return f.feed[id], nil
 }
 
+// setupDB usa un archivo temporal, no ":memory:". Con database/sql, cada
+// conexión nueva a ":memory:" abre una base vacía distinta — y desde que
+// RunOnce pollea las sources en paralelo, el pool puede abrir más de una.
+// WAL + busy_timeout replican la configuración de producción (main.go).
 func setupDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:?_pragma=foreign_keys(on)")
+	dsn := "file:" + t.TempDir() + "/test.db" +
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,5 +779,66 @@ func TestRateLimitNoCuentaComoFallo(t *testing.T) {
 	limite := time.Now().Add(RateLimitedDelay + time.Minute).UTC().Unix()
 	if nextCheck.Int64 > limite {
 		t.Errorf("el rate limit aplicó el backoff largo en vez de RateLimitedDelay")
+	}
+}
+
+// TestSourcesSePolleanEnParalelo verifica que dos sources no se serialicen
+// entre sí. Cada fake bloquea hasta que el otro llegó: si RunOnce los
+// corriera en serie, el primero esperaría para siempre y el test moriría por
+// timeout en vez de fallar con un mensaje.
+func TestSourcesSePolleanEnParalelo(t *testing.T) {
+	db := setupDB(t)
+	userID := insertUser(t, db, "a@example.com")
+
+	mdID := insertMatchedManga(t, db, "md-1", 0)
+	addReadingEntry(t, db, userID, mdID)
+
+	// Una segunda fila para la misma serie, pero en otra source.
+	asuraID := insertMatchedManga(t, db, "as-1", 0)
+	addReadingEntry(t, db, userID, asuraID)
+	if _, err := db.Exec(`
+		UPDATE manga_sources SET source = 'asura' WHERE manga_id = ?
+	`, asuraID); err != nil {
+		t.Fatal(err)
+	}
+
+	ambosLlegaron := make(chan struct{})
+	var una sync.Once
+	llegue := make(chan string, 2)
+
+	bloqueante := func(name string) *fakeClient {
+		return &fakeClient{name: name, onFetch: func() {
+			llegue <- name
+			if len(llegue) == 2 {
+				una.Do(func() { close(ambosLlegaron) })
+			}
+			select {
+			case <-ambosLlegaron:
+			case <-time.After(5 * time.Second):
+				t.Errorf("%s esperó 5s sin que la otra source arrancara: se están serializando", name)
+			}
+		}}
+	}
+
+	w, err := New(Config{
+		DB: db,
+		Clients: map[string]releasesource.Client{
+			"mangadex": bloqueante("mangadex"),
+			"asura":    bloqueante("asura"),
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	select {
+	case <-ambosLlegaron:
+	default:
+		t.Error("las dos sources nunca estuvieron en vuelo a la vez")
 	}
 }

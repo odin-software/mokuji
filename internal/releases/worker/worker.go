@@ -238,27 +238,46 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("query manga_sources: %w", err)
 	}
+	// Agrupamos por source antes de pollear. Dentro de una source vamos en
+	// serie, que es lo que respeta su rate limit; entre sources vamos en
+	// paralelo, porque son hosts independientes y serializarlos no compra
+	// nada. Antes todo el batch era secuencial: con BatchSize=50 y timeouts
+	// de 15-20s, un solo host lento congelaba el polleo de los otros dos.
+	bySource := make(map[string][]dueSourceRow, len(w.clients))
 	for _, r := range rows {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		client, ok := w.clients[r.source]
-		if !ok {
+		if _, ok := w.clients[r.source]; !ok {
 			// Source deshabilitada: sus filas siguen en DB pero no
 			// pollean. Lo logueamos como debug para no spamear.
 			w.logger.Debug("source sin cliente cableado; skip",
 				"manga_id", r.mangaID, "source", r.source)
 			continue
 		}
-		if err := w.pollSource(ctx, r.mangaID, client, r.sourceID); err != nil {
-			w.logger.Warn("poll source",
-				"manga_id", r.mangaID,
-				"source", r.source,
-				"source_id", r.sourceID,
-				"err", err)
-		}
+		bySource[r.source] = append(bySource[r.source], r)
 	}
-	return nil
+
+	var wg sync.WaitGroup
+	for source, srcRows := range bySource {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client := w.clients[source]
+			for _, r := range srcRows {
+				if ctx.Err() != nil {
+					return
+				}
+				if err := w.pollSource(ctx, r.mangaID, client, r.sourceID); err != nil {
+					w.logger.Warn("poll source",
+						"manga_id", r.mangaID,
+						"source", source,
+						"source_id", r.sourceID,
+						"err", err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	return ctx.Err()
 }
 
 type dueSourceRow struct {

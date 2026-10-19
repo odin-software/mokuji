@@ -1,0 +1,38 @@
+{{define "title"}}import de MyAnimeList — mokuji{{end}}
+{{define "content"}}
+<header class="page-head">
+  <p class="eyebrow">ajustes · importar de MyAnimeList</p>
+  <h1>import <span class="accent">listo.</span></h1>
+</header>
+
+{{with .Summary}}
+<ul class="import-summary">
+  <li><strong>{{.Imported}}</strong> importados
+    {{- if .Imported}} <span class="muted">({{.Reading}} leyendo · {{.Planned}} por leer · {{.Completed}} completados)</span>{{end}}</li>
+  {{if .Updated}}<li><strong>{{.Updated}}</strong> ya estaban y les subimos el progreso</li>{{end}}
+  {{if .Unchanged}}<li><strong>{{.Unchanged}}</strong> ya estaban, sin cambios</li>{{end}}
+  {{if .Dropped}}<li><strong>{{.Dropped}}</strong> abandonados en MAL, no los importamos</li>{{end}}
+  {{if .NotFound}}<li><strong>{{len .NotFound}}</strong> no están en nuestro catálogo</li>{{end}}
+</ul>
+
+<p class="muted">en lo que ya tenías solo subimos el progreso: tu estado, notas y favoritos quedaron igual.</p>
+
+{{if .Reading}}
+<p>los capítulos de lo que estás leyendo van a ir apareciendo en los próximos minutos.</p>
+{{end}}
+
+{{if .NotFound}}
+<section aria-labelledby="not-found-heading">
+  <h2 id="not-found-heading" class="lib-section">no encontrados en el catálogo</h2>
+  <p class="muted">búscalos en tu biblioteca por otro título para agregarlos a mano.</p>
+  <ul class="import-not-found">
+    {{range .NotFound}}<li>{{.}}</li>{{end}}
+  </ul>
+</section>
+{{end}}
+{{end}}
+
+<p class="user-links">
+  <a href="/library">ver tu biblioteca →</a>
+</p>
+{{end}}

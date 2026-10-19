@@ -24,11 +24,15 @@ import (
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
+	"git.odin.do/kengru/mokuji/internal/flash"
 	"git.odin.do/kengru/mokuji/internal/mangasource"
+	"git.odin.do/kengru/mokuji/internal/ratelimit"
 	"git.odin.do/kengru/mokuji/internal/releases/matcher"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/unsubscribe"
 	"git.odin.do/kengru/mokuji/internal/version"
+
+	"golang.org/x/time/rate"
 )
 
 // Matcher resuelve el vínculo entre un manga de la biblioteca y su
@@ -129,6 +133,16 @@ type Config struct {
 	BackgroundCtx context.Context
 	Logger        *slog.Logger
 	Errs          *errrender.ErrorRenderer // nil en tests sin assets
+	// MALResolver habilita POST /settings/import/mal. Nil = sin import.
+	MALResolver MALResolver
+	// Flasher lleva los errores del import de vuelta a /settings.
+	Flasher *flash.Flasher
+}
+
+// MALResolver traduce ids de MyAnimeList a mangas del catálogo. En prod es
+// el cliente de AniList (*anilist.Client).
+type MALResolver interface {
+	ByMALIDs(ctx context.Context, ids []int) (map[int]mangasource.SearchResult, error)
 }
 
 // Handler sirve los endpoints de /library/*.
@@ -142,6 +156,10 @@ type Handler struct {
 	logger    *slog.Logger
 	bgCtx     context.Context
 	errs      *errrender.ErrorRenderer
+
+	malResolver   MALResolver
+	flasher       *flash.Flasher
+	importLimiter *ratelimit.Limiter
 }
 
 // New construye un Handler. Falla si templates no parsean.
@@ -173,7 +191,7 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	pages := map[string]*template.Template{}
-	for _, page := range []string{"library/list.html", "library/entry.html"} {
+	for _, page := range []string{"library/list.html", "library/entry.html", "library/import-result.html"} {
 		clone, err := base.Clone()
 		if err != nil {
 			return nil, fmt.Errorf("clonar base para %s: %w", page, err)
@@ -198,6 +216,10 @@ func New(cfg Config) (*Handler, error) {
 		logger:   cfg.Logger,
 		bgCtx:    cfg.BackgroundCtx,
 		errs:     cfg.Errs,
+
+		malResolver:   cfg.MALResolver,
+		flasher:       cfg.Flasher,
+		importLimiter: ratelimit.New(rate.Every(importLimitEvery), importLimitBurst),
 	}, nil
 }
 
@@ -216,6 +238,9 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /library/entry/{id}/sources/{source}/unlink", h.entrySourceUnlink)
 	if h.signer != nil {
 		mux.HandleFunc("GET /r/{token}", h.emailRead)
+	}
+	if h.malResolver != nil {
+		mux.HandleFunc("POST /settings/import/mal", h.importMAL)
 	}
 }
 

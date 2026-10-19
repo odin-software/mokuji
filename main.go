@@ -298,9 +298,20 @@ func main() {
 		log.Fatalf("configurar unsubscribe signer: %v", err)
 	}
 
+	// Flasher: cookie one-shot para feedback post-redirect. Stateless.
+	// Comparte el flag SECURE_COOKIES con sessions — en prod (HTTPS)
+	// las cookies viajan con Secure, en dev local sin TLS no.
+	flasher := flash.New(envBool("SECURE_COOKIES", false))
+
+	// Un solo cliente de AniList: catálogo de búsqueda y resolver del import
+	// de MAL (idMal).
+	anilistClient := anilist.New()
+
 	libraryHandler, err := library.New(library.Config{
 		DB:             db,
-		MangaSource:    anilist.New(),
+		MangaSource:    anilistClient,
+		MALResolver:    anilistClient,
+		Flasher:        flasher,
 		SourceMatchers: sourceMatchers,
 		// Poller fire-and-forget: library.add lanza PollOne en goroutine
 		// con BackgroundCtx (no el del request) — mangas grandes como
@@ -316,11 +327,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("configurar library: %v", err)
 	}
-
-	// Flasher: cookie one-shot para feedback post-redirect. Stateless.
-	// Comparte el flag SECURE_COOKIES con sessions — en prod (HTTPS)
-	// las cookies viajan con Secure, en dev local sin TLS no.
-	flasher := flash.New(envBool("SECURE_COOKIES", false))
 
 	profileHandler, err := profile.New(profile.Config{
 		DB:             db,

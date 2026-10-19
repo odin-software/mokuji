@@ -5,7 +5,7 @@
   <h1>configuración</h1>
 </header>
 
-{{if .Flash}}<p class="{{if eq .Flash.Kind "error"}}error{{else}}success{{end}}">{{.Flash.Message}}</p>{{end}}
+{{if .Flash}}<p class="{{if eq .Flash.Kind "error"}}error{{else}}success{{end}}" role="{{if eq .Flash.Kind "error"}}alert{{else}}status{{end}}">{{.Flash.Message}}</p>{{end}}
 
 <form method="POST" action="/settings/username" class="settings-form">
   {{ csrfInput .Session }}
@@ -89,6 +89,20 @@
     </label>
   </fieldset>
   <button type="submit">guardar</button>
+</form>
+
+<form method="POST" action="/settings/import/mal" enctype="multipart/form-data">
+  {{ csrfInput .Session }}
+  <fieldset class="settings-section">
+    <legend>importar de MyAnimeList</legend>
+    <p class="muted">
+      descarga tu lista desde <a href="https://myanimelist.net/panel.php?go=export" target="_blank" rel="noopener noreferrer">el export de MAL</a>
+      (elige "Export My Manga List") y súbela aquí. si un manga ya está en tu biblioteca, solo le subimos el progreso.
+    </p>
+    <label for="mal-export-file">archivo del export (.xml o .xml.gz)</label>
+    <input type="file" id="mal-export-file" name="file" accept=".xml,.gz" required>
+    <button type="submit">importar</button>
+  </fieldset>
 </form>
 
 <p class="user-links">

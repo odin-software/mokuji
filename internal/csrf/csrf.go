@@ -51,14 +51,18 @@ func Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Todo POST multipart autenticado lleva tope, venga el token en el
+		// form o en el header: sin MaxBytesReader, leer el body (aquí o en
+		// el FormFile del handler) puede escribir a disco sin límite.
+		if isMultipart(r) {
+			r.Body = http.MaxBytesReader(w, r.Body, MaxMultipartBytes)
+		}
+
 		token := r.Header.Get(HeaderName)
 		if token == "" && isMultipart(r) {
 			// ParseForm no lee bodies multipart: deja PostForm vacío y el
-			// token llegaría como "". Lo parseamos acá, pero con tope: sin
-			// MaxBytesReader cualquier POST multipart autenticado obligaría
-			// al server a leer un body arbitrario antes de validar el token
-			// (agotar RAM o disco). El handler ve el form ya parseado.
-			r.Body = http.MaxBytesReader(w, r.Body, MaxMultipartBytes)
+			// token llegaría como "". Lo parseamos aquí (ya acotado); el
+			// handler ve el form parseado.
 			if err := r.ParseMultipartForm(multipartMemory); err != nil {
 				var tooLarge *http.MaxBytesError
 				if errors.As(err, &tooLarge) {

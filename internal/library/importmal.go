@@ -157,10 +157,6 @@ func (h *Handler) importMAL(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.importLimiter.Allow(strconv.FormatInt(s.UserID, 10)) {
-		h.importError(w, r, msgImportRateLimited)
-		return
-	}
 	// El default de 30 s no alcanza para una lista grande; si el writer no
 	// soporta deadlines (tests), seguimos igual.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(importWriteDeadline))
@@ -179,6 +175,13 @@ func (h *Handler) importMAL(w http.ResponseWriter, r *http.Request) {
 	entries, err := malimport.Parse(file)
 	if err != nil {
 		h.importError(w, r, parseErrorMessage(err))
+		return
+	}
+
+	// El límite cuida las llamadas a AniList, así que se cobra recién aquí:
+	// subir el archivo equivocado (el de anime, por ejemplo) no gasta cupo.
+	if !h.importLimiter.Allow(strconv.FormatInt(s.UserID, 10)) {
+		h.importError(w, r, msgImportRateLimited)
 		return
 	}
 

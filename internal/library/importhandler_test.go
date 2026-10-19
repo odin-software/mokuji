@@ -165,3 +165,17 @@ func TestImportRouteNotMountedWithoutResolver(t *testing.T) {
 		t.Errorf("la ruta no debería montarse sin MALResolver, matcheó %q", pattern)
 	}
 }
+
+func TestImportHandlerInvalidUploadsDoNotSpendQuota(t *testing.T) {
+	h, user, _ := newImportHandler(t, &fakeResolver{found: foundFor(2)})
+
+	for i := 0; i < 3; i++ {
+		rec := httptest.NewRecorder()
+		h.importMAL(rec, importReq(t, user, `<myanimelist><anime></anime></myanimelist>`))
+	}
+	rec := httptest.NewRecorder()
+	h.importMAL(rec, importReq(t, user, twoMangaExport))
+	if rec.Code != http.StatusOK {
+		t.Errorf("tras 3 archivos inválidos el import válido debería pasar; status %d, flash %q", rec.Code, flashMessage(t, rec))
+	}
+}

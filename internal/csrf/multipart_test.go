@@ -3,6 +3,7 @@ package csrf
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -93,5 +94,21 @@ func TestAuthenticatedMultipartTooLarge(t *testing.T) {
 	}
 	if called {
 		t.Error("handler no debería ser llamado con body excedido")
+	}
+}
+
+func TestAuthenticatedMultipartTooLargeWithHeaderToken(t *testing.T) {
+	var readErr error
+	h := Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _, readErr = r.FormFile("file")
+	}))
+
+	req := multipartReq(t, "", make([]byte, MaxMultipartBytes+1))
+	req.Header.Set(HeaderName, "valid-token")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	var tooLarge *http.MaxBytesError
+	if !errors.As(readErr, &tooLarge) {
+		t.Errorf("con token en header el body también debe estar acotado; FormFile err = %v", readErr)
 	}
 }

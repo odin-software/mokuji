@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+ Fixture con el formato SUPUESTO del export de manga de MyAnimeList
+ (panel.php?go=export → "Export My Manga List"). Los nombres de tags salen
+ de conocimiento general, no de documentación: validar contra un export
+ real antes del release (ver spec 2026-10-19-import-mal-design.md §2).
+-->
+<myanimelist>
+	<myinfo>
+		<user_id>0</user_id>
+		<user_name>fixture</user_name>
+		<user_export_type>2</user_export_type>
+	</myinfo>
+	<manga>
+		<manga_mangadb_id>2</manga_mangadb_id>
+		<manga_title><![CDATA[Berserk]]></manga_title>
+		<manga_volumes>0</manga_volumes>
+		<manga_chapters>0</manga_chapters>
+		<my_id>0</my_id>
+		<my_read_volumes>0</my_read_volumes>
+		<my_read_chapters>380</my_read_chapters>
+		<my_score>10</my_score>
+		<my_status>Reading</my_status>
+		<my_comments><![CDATA[]]></my_comments>
+	</manga>
+	<manga>
+		<manga_mangadb_id>13</manga_mangadb_id>
+		<manga_title><![CDATA[One Piece]]></manga_title>
+		<my_read_chapters>0</my_read_chapters>
+		<my_status>Plan to Read</my_status>
+	</manga>
+	<manga>
+		<manga_mangadb_id>1706</manga_mangadb_id>
+		<manga_title><![CDATA[JoJo no Kimyou na Bouken Part 7: Steel Ball Run]]></manga_title>
+		<my_read_chapters>95</my_read_chapters>
+		<my_status>Completed</my_status>
+	</manga>
+	<manga>
+		<manga_mangadb_id>656</manga_mangadb_id>
+		<manga_title><![CDATA[Vagabond]]></manga_title>
+		<my_read_chapters>120</my_read_chapters>
+		<my_status>On-Hold</my_status>
+	</manga>
+	<manga>
+		<manga_mangadb_id>11</manga_mangadb_id>
+		<manga_title><![CDATA[Naruto]]></manga_title>
+		<my_read_chapters>40</my_read_chapters>
+		<my_status>Dropped</my_status>
+	</manga>
+	<manga>
+		<manga_mangadb_id>2</manga_mangadb_id>
+		<manga_title><![CDATA[Berserk]]></manga_title>
+		<my_read_chapters>1</my_read_chapters>
+		<my_status>Dropped</my_status>
+	</manga>
+</myanimelist>

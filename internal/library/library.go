@@ -637,10 +637,21 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 	return entries, rows.Err()
 }
 
+// dbtx es lo común entre *sql.DB y *sql.Tx que usan los helpers que el
+// import de MAL corre dentro de una transacción.
+type dbtx interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 func (h *Handler) upsertManga(ctx context.Context, source, sourceID, title, coverURL string) (int64, error) {
+	return upsertMangaWith(ctx, h.db, source, sourceID, title, coverURL)
+}
+
+func upsertMangaWith(ctx context.Context, db dbtx, source, sourceID, title, coverURL string) (int64, error) {
 	now := time.Now().UTC().Unix()
 	var id int64
-	err := h.db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		INSERT INTO manga (source, source_id, title, cover_url, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (source, source_id) DO UPDATE

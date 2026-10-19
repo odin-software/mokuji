@@ -195,7 +195,7 @@ func (h *Handler) importMAL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sum, _, err := h.applyMALImport(r.Context(), s.UserID, entries, found)
+	sum, newReading, err := h.applyMALImport(r.Context(), s.UserID, entries, found)
 	if err != nil {
 		h.logger.Error("import MAL: aplicar", "user_id", s.UserID, "err", err)
 		h.errs.InternalServerError(w, r)
@@ -206,6 +206,10 @@ func (h *Handler) importMAL(w http.ResponseWriter, r *http.Request) {
 		"user_id", s.UserID, "entries", len(entries), "imported", sum.Imported(),
 		"updated", sum.Updated, "unchanged", sum.Unchanged,
 		"dropped", sum.Dropped, "not_found", len(sum.NotFound))
+
+	if len(newReading) > 0 {
+		go h.matchImported(h.bgCtx, newReading)
+	}
 
 	h.render(w, r, "library/import-result.html", importResultData{Session: s, Summary: sum})
 }
@@ -227,5 +231,28 @@ func parseErrorMessage(err error) string {
 		return msgImportTooMany
 	default:
 		return msgImportInvalid
+	}
+}
+
+// matchImported matchea y hace el primer poll de lo importado como
+// "leyendo", DE A UN MANGA y con el poll en línea (spec §7). Así las filas
+// nuevas salen con next_check_at seteado y no se cuelan al frente de la
+// cola del worker horario (50 filas/tick), que atrasaría los releases de
+// todos los usuarios. Si el server se reinicia a mitad, el Backfiller
+// recoge lo pendiente al arrancar.
+func (h *Handler) matchImported(ctx context.Context, mangas []ImportedManga) {
+	for _, m := range mangas {
+		if ctx.Err() != nil {
+			return
+		}
+		for _, sm := range h.matchAll(ctx, m.MangaID, m.Title) {
+			if h.poller == nil {
+				break
+			}
+			if err := h.poller.PollOne(ctx, m.MangaID, sm.source, sm.sourceID); err != nil {
+				h.logger.Warn("import MAL: primer poll (el worker retomará luego)",
+					"manga_id", m.MangaID, "source", sm.source, "err", err)
+			}
+		}
 	}
 }

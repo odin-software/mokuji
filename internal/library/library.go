@@ -427,21 +427,61 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 // "agregar manga". Sources que fallan quedan sin fila y el worker
 // periódico las retoma; el user puede reintentar desde el detail page.
 func (h *Handler) tryMatchSources(ctx context.Context, mangaID int64, title string) {
-	if len(h.matchers) == 0 {
-		return
+	for _, m := range h.matchAll(ctx, mangaID, title) {
+		// Poll fire-and-forget con el background context del handler — NO
+		// el del request — porque el poll puede tardar minutos (One Piece:
+		// ~1182 caps paginados con rate limit). El bgCtx se cancela en
+		// server shutdown, así que el goroutine no leakea más allá del
+		// proceso.
+		if h.poller == nil {
+			break
+		}
+		go func() {
+			if err := h.poller.PollOne(h.bgCtx, mangaID, m.source, m.sourceID); err != nil {
+				h.logger.Warn("poll async tras match (worker retomará luego)",
+					"manga_id", mangaID, "source", m.source, "source_id", m.sourceID, "err", err)
+			}
+		}()
 	}
-	var wg sync.WaitGroup
+}
+
+// sourceMatch es una source que matcheó el manga, lista para pollear.
+type sourceMatch struct {
+	source   string
+	sourceID string
+}
+
+// matchAll corre cada matcher configurado en PARALELO, persiste una fila
+// por source en manga_sources y devuelve las que matchearon. Bloquea hasta
+// que todos respondan o ctx expire. No pollea: cada caller decide cómo
+// (add en background, el import de MAL en línea).
+func (h *Handler) matchAll(ctx context.Context, mangaID int64, title string) []sourceMatch {
+	if len(h.matchers) == 0 {
+		return nil
+	}
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		matched []sourceMatch
+	)
 	for sourceName, m := range h.matchers {
 		wg.Add(1)
 		go func(name string, mc Matcher) {
 			defer wg.Done()
-			h.tryMatchOne(ctx, mangaID, name, mc, title)
+			if sourceID, ok := h.tryMatchOne(ctx, mangaID, name, mc, title); ok {
+				mu.Lock()
+				matched = append(matched, sourceMatch{source: name, sourceID: sourceID})
+				mu.Unlock()
+			}
 		}(sourceName, m)
 	}
 	wg.Wait()
+	return matched
 }
 
-func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName string, m Matcher, title string) {
+// tryMatchOne corre un matcher y persiste el resultado. Devuelve el
+// source_id y true si matcheó; los errores se loguean y no se propagan.
+func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName string, m Matcher, title string) (string, bool) {
 	result, err := m.Match(ctx, title)
 	if err != nil {
 		// Rate limit y errores transitorios: no insertamos fila para
@@ -449,7 +489,7 @@ func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName str
 		// retome cuando vuelva el servicio.
 		h.logger.Warn("matchear source (sin fila persistida)",
 			"manga_id", mangaID, "source", sourceName, "title", title, "err", err)
-		return
+		return "", false
 	}
 
 	var sourceID string
@@ -460,22 +500,9 @@ func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName str
 	if err := h.upsertMangaSource(ctx, mangaID, sourceName, string(result.Status), sourceID); err != nil {
 		h.logger.Error("persistir manga_source",
 			"manga_id", mangaID, "source", sourceName, "err", err)
-		return
+		return "", false
 	}
-
-	// Poll fire-and-forget si matchó y hay poller cableado. Usa el
-	// background context del handler — NO el del request — porque el
-	// poll puede tardar minutos (One Piece: ~1182 caps paginados con
-	// rate limit). El bgCtx se cancela en server shutdown, así que el
-	// goroutine no leakea más allá del proceso.
-	if h.poller != nil && result.Status == matcher.StatusMatched && sourceID != "" {
-		go func() {
-			if err := h.poller.PollOne(h.bgCtx, mangaID, sourceName, sourceID); err != nil {
-				h.logger.Warn("poll async tras match (worker retomará luego)",
-					"manga_id", mangaID, "source", sourceName, "source_id", sourceID, "err", err)
-			}
-		}()
-	}
+	return sourceID, result.Status == matcher.StatusMatched && sourceID != ""
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {

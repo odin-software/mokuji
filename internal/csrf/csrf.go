@@ -11,8 +11,10 @@ package csrf
 import (
 	"bytes"
 	"crypto/subtle"
+	"errors"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"git.odin.do/kengru/mokuji/internal/session"
 )
@@ -23,6 +25,13 @@ const (
 	// HeaderName es el header alternativo para clientes que mandan JSON o
 	// quieren enviar el token sin estar en un form.
 	HeaderName = "X-CSRF-Token"
+
+	// MaxMultipartBytes es el tope del body de un POST multipart autenticado.
+	// Cubre el import de MAL (5 MB de archivo) más el overhead del encoding.
+	MaxMultipartBytes = 6 << 20
+	// multipartMemory es cuánto del multipart se queda en RAM; el resto de
+	// los archivos va a disco temporal (mimir tiene 1 GB).
+	multipartMemory = 1 << 20
 )
 
 // Middleware valida el token CSRF en requests state-changing autenticados.
@@ -43,6 +52,24 @@ func Middleware(next http.Handler) http.Handler {
 		}
 
 		token := r.Header.Get(HeaderName)
+		if token == "" && isMultipart(r) {
+			// ParseForm no lee bodies multipart: deja PostForm vacío y el
+			// token llegaría como "". Lo parseamos acá, pero con tope: sin
+			// MaxBytesReader cualquier POST multipart autenticado obligaría
+			// al server a leer un body arbitrario antes de validar el token
+			// (agotar RAM o disco). El handler ve el form ya parseado.
+			r.Body = http.MaxBytesReader(w, r.Body, MaxMultipartBytes)
+			if err := r.ParseMultipartForm(multipartMemory); err != nil {
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+					return
+				}
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			token = r.PostFormValue(FormField)
+		}
 		if token == "" {
 			if err := r.ParseForm(); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
@@ -58,6 +85,10 @@ func Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isMultipart(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data")
 }
 
 func isSafeMethod(m string) bool {

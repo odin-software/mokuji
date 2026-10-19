@@ -201,3 +201,70 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
+
+// malBatchSize es el máximo de ids por request de ByMALIDs: el perPage tope
+// de AniList.
+const malBatchSize = 50
+
+const byMALIDsQuery = `query ($ids: [Int]) {
+  Page(perPage: 50) {
+    media(idMal_in: $ids, type: MANGA) {
+      id
+      idMal
+      title { romaji english native }
+      coverImage { large }
+    }
+  }
+}`
+
+type byMALIDsResponse struct {
+	Data struct {
+		Page struct {
+			Media []struct {
+				ID    int `json:"id"`
+				IDMal int `json:"idMal"`
+				Title struct {
+					Romaji  string `json:"romaji"`
+					English string `json:"english"`
+					Native  string `json:"native"`
+				} `json:"title"`
+				CoverImage struct {
+					Large string `json:"large"`
+				} `json:"coverImage"`
+			} `json:"media"`
+		} `json:"Page"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// ByMALIDs resuelve ids de MyAnimeList a mangas de AniList usando el campo
+// idMal, en lotes de 50. Es un mapeo exacto: los ids sin equivalente no
+// aparecen en el map (el import no adivina por título). Cualquier error en
+// cualquier lote aborta todo: el import no escribe nada a medias.
+func (c *Client) ByMALIDs(ctx context.Context, ids []int) (map[int]mangasource.SearchResult, error) {
+	out := make(map[int]mangasource.SearchResult, len(ids))
+	for start := 0; start < len(ids); start += malBatchSize {
+		batch := ids[start:min(start+malBatchSize, len(ids))]
+		var resp byMALIDsResponse
+		if err := c.do(ctx, byMALIDsQuery, map[string]any{"ids": batch}, &resp); err != nil {
+			return nil, err
+		}
+		if len(resp.Errors) > 0 {
+			return nil, fmt.Errorf("anilist: %s", resp.Errors[0].Message)
+		}
+		for _, m := range resp.Data.Page.Media {
+			title := preferTitle(m.Title.English, m.Title.Romaji, m.Title.Native)
+			if title == "" || m.IDMal == 0 {
+				continue
+			}
+			out[m.IDMal] = mangasource.SearchResult{
+				SourceID: strconv.Itoa(m.ID),
+				Title:    title,
+				CoverURL: m.CoverImage.Large,
+			}
+		}
+	}
+	return out, nil
+}

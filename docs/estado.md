@@ -247,6 +247,38 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
+### v1.1.0 — import de MyAnimeList
+
+Feature nueva: importar el export de manga de MAL desde `/settings`.
+Diseño en `docs/superpowers/specs/2026-10-19-import-mal-design.md`.
+
+- **Parser** (`internal/malimport`): `.xml` o `.xml.gz` (gzip por magic
+  bytes), lectura en streaming con tope de 20 MB descomprimido (gzip bomb) y
+  1000 entradas. Detecta el export de anime y lo rechaza con mensaje propio.
+- **Identidad exacta**: MAL id → AniList por `idMal_in`, en lotes de 50
+  (`anilist.ByMALIDs`). Lo que no mapea no se adivina por título: sale en el
+  resumen como "no encontrado".
+- **La biblioteca actual manda**: si el manga ya está, el import solo puede
+  subir el cursor; estado, notas, favorito y URL no se tocan. Reimportar el
+  mismo archivo no cambia nada. Todo va en una transacción. Estados:
+  Reading → leyendo, Plan to Read / On-Hold → por leer, Completed →
+  completado, Dropped → no se importa.
+- **Matching en carril propio**: lo nuevo en "leyendo" se matchea y se
+  pollea de a un manga y en línea (`matchImported`), así esas filas salen
+  con `next_check_at` seteado y no se cuelan al frente de la cola del
+  worker (50 filas/h), que habría atrasado los releases de todos.
+  `matchAll` quedó compartido entre `add` y el import.
+- **CSRF con multipart**: el middleware no leía el token de forms con
+  archivo (`ParseForm` ignora bodies multipart → 403). Ahora, si el body es
+  multipart, lo acota con `MaxBytesReader` (6 MB, 413 si se pasa) y lo
+  parsea antes de validar.
+- Límite de 3 imports por hora por usuario; el handler extiende su write
+  deadline a 55 s. En logs solo van conteos, nunca títulos.
+
+**Pendiente**: los nombres de tags del XML salen de conocimiento general,
+no de documentación de MAL. Hay que validar el parser contra un export
+real antes de anunciar la feature.
+
 ### v1.0.8 — backoff del crawler y polleo en paralelo
 
 Tres arreglos en el worker de release tracking.

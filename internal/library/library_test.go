@@ -1076,3 +1076,25 @@ func TestListEntriesUnreadFirstWithinStatus(t *testing.T) {
 		t.Errorf("la entry con caps sin leer (%d) debería ir primero; orden: %d, %d", oldID, entries[0].ID, entries[1].ID)
 	}
 }
+
+func TestCatalogResultsShowMetaAndNamedAdd(t *testing.T) {
+	db := setupDB(t)
+	src := &fakeSource{results: []mangasource.SearchResult{{
+		SourceID: "2", Title: "Haikyu!!", AltTitle: "Haikyuu!!",
+		Format: "MANGA", Country: "JP", Year: 2012, Chapters: 404, Status: "FINISHED",
+	}}}
+	h := newFullHandler(t, db, src)
+	uid := insertUser(t, db, "alice@example.com")
+	body := renderList(t, h, uid, "/library?q=haikyu")
+
+	for _, want := range []string{
+		"manga · 2012 · 404 caps · terminado",
+		"Haikyuu!!",
+		`agregar<span class="visually-hidden"> Haikyu!!</span>`,
+		">agregar nuevo<",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("falta %q en los resultados del catálogo", want)
+		}
+	}
+}

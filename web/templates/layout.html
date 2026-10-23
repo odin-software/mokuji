@@ -619,7 +619,9 @@ button.danger:hover { background: #8a2818; }
   align-items: start;
 }
 .search-results .result img { border: 1px solid var(--rule); }
-.search-results .info p { margin: 0.4rem 0 0; font-size: 0.875rem; line-height: 1.5; max-height: 6em; overflow: hidden; color: var(--text-soft); font-family: var(--font-sans); }
+.search-results .info p { margin: 0.4rem 0 0; font-size: 0.875rem; line-height: 1.5; overflow: hidden; color: var(--text-soft); font-family: var(--font-sans); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.search-results .info .muted { margin-left: 0.4rem; }
+.search-results .info .result-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); -webkit-line-clamp: unset; line-clamp: none; }
 .search-results .info strong { color: var(--text); font-weight: 700; }
 .lib-section { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin: 1.75rem 0 0.75rem; }
 .lib-empty-inline { margin: 0.5rem 0 0; }

@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -70,6 +71,11 @@ const searchQuery = `query ($search: String, $perPage: Int) {
       title { romaji english native }
       coverImage { large }
       description
+      format
+      countryOfOrigin
+      status
+      chapters
+      startDate { year }
     }
   }
 }`
@@ -87,7 +93,14 @@ type searchResponse struct {
 				CoverImage struct {
 					Large string `json:"large"`
 				} `json:"coverImage"`
-				Description string `json:"description"`
+				Description     string `json:"description"`
+				Format          string `json:"format"`
+				CountryOfOrigin string `json:"countryOfOrigin"`
+				Status          string `json:"status"`
+				Chapters        int    `json:"chapters"`
+				StartDate       struct {
+					Year int `json:"year"`
+				} `json:"startDate"`
 			} `json:"media"`
 		} `json:"Page"`
 	} `json:"data"`
@@ -122,14 +135,30 @@ func (c *Client) Search(ctx context.Context, query string) ([]mangasource.Search
 		if title == "" {
 			continue
 		}
+		var alt string
+		if title == m.Title.English && m.Title.Romaji != "" && m.Title.Romaji != title {
+			alt = m.Title.Romaji
+		}
 		out = append(out, mangasource.SearchResult{
 			SourceID:    strconv.Itoa(m.ID),
 			Title:       title,
 			CoverURL:    m.CoverImage.Large,
 			Description: cleanDescription(m.Description),
+			AltTitle:    alt,
+			Format:      m.Format,
+			Country:     m.CountryOfOrigin,
+			Year:        m.StartDate.Year,
+			Chapters:    m.Chapters,
+			Status:      m.Status,
 		})
 	}
 
+	// One-shots y novelas al final, sin ocultarlos (D7): con un título
+	// casi igual al del manga, aparecían primero y parecían duplicados.
+	// Partición estable para no romper el orden de relevancia de AniList.
+	sort.SliceStable(out, func(i, j int) bool {
+		return !demoted(out[i].Format) && demoted(out[j].Format)
+	})
 	return out, nil
 }
 
@@ -172,6 +201,8 @@ func (c *Client) do(ctx context.Context, query string, variables map[string]any,
 }
 
 // preferTitle retorna el primero no-vacío entre los candidatos.
+func demoted(format string) bool { return format == "ONE_SHOT" || format == "NOVEL" }
+
 func preferTitle(candidates ...string) string {
 	for _, s := range candidates {
 		if s != "" {

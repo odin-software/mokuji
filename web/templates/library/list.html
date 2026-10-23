@@ -55,7 +55,7 @@
 {{end}}
 
 {{if .Query}}
-<h2 class="lib-section">agregar nuevo · {{.Source}}</h2>
+<h2 class="lib-section">agregar nuevo</h2>
 {{if .CatalogError}}<p class="error" role="alert">{{.CatalogError}}</p>{{end}}
 {{if .Catalog}}
 <ul class="search-results">
@@ -64,6 +64,8 @@
     {{if .CoverURL}}<img src="{{.CoverURL}}" alt="" class="cover" width="80" loading="lazy" referrerpolicy="no-referrer">{{end}}
     <div class="info">
       <strong>{{.Title}}</strong>
+      {{with .AltTitle}}<span class="muted">{{.}}</span>{{end}}
+      {{with .MetaLine}}<p class="result-meta">{{.}}</p>{{end}}
       {{if .Description}}<p class="muted">{{.Description}}</p>{{end}}
     </div>
     {{if .InLibrary}}
@@ -75,7 +77,7 @@
       <input type="hidden" name="source_id" value="{{.SourceID}}">
       <input type="hidden" name="title" value="{{.Title}}">
       <input type="hidden" name="cover_url" value="{{.CoverURL}}">
-      <button type="submit">+ agregar</button>
+      <button type="submit"><span aria-hidden="true">+</span> agregar<span class="visually-hidden"> {{.Title}}</span></button>
     </form>
     {{end}}
   </li>

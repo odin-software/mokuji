@@ -40,6 +40,16 @@ type SearchResult struct {
 	CoverURL string
 	// Description ya limpia de HTML, lista para mostrar.
 	Description string
+	// AltTitle es el romaji cuando Title es el título en inglés y son
+	// distintos (D7): ayuda a reconocer el manga y a separar homónimos.
+	AltTitle string
+	// Metadata para distinguir resultados parecidos (D7, ver MetaLine).
+	// Valores crudos de la fuente; vacío o cero = no vino.
+	Format   string // MANGA, ONE_SHOT, NOVEL…
+	Country  string // JP, KR, CN, TW…
+	Year     int
+	Chapters int
+	Status   string // RELEASING, FINISHED, HIATUS, CANCELLED, NOT_YET_RELEASED
 }
 
 // ErrNotFound se retorna cuando la fuente confirma que no existe el manga

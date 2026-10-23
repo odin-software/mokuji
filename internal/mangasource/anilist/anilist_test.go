@@ -209,3 +209,33 @@ func TestClientName(t *testing.T) {
 		t.Errorf("Name: esperado anilist, obtenido %q", name)
 	}
 }
+
+func TestSearchParsesMetaAndDemotesOneShots(t *testing.T) {
+	srv := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		for _, field := range []string{"format", "countryOfOrigin", "startDate", "chapters", "status"} {
+			if !strings.Contains(string(body), field) {
+				t.Errorf("la query no pide %q", field)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":{"Page":{"media":[
+			{"id": 1, "title": {"romaji": "Haikyuu!!", "english": null}, "format": "ONE_SHOT", "countryOfOrigin": "JP",
+			 "status": "FINISHED", "chapters": 1, "startDate": {"year": 2011}},
+			{"id": 2, "title": {"romaji": "Haikyuu!!", "english": "Haikyu!!"}, "format": "MANGA", "countryOfOrigin": "JP",
+			 "status": "FINISHED", "chapters": 404, "startDate": {"year": 2012}}
+		]}}}`))
+	})
+	got, err := New(WithEndpoint(srv.URL)).Search(context.Background(), "haikyu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Title != "Haikyu!!" || got[1].Title != "Haikyuu!!" {
+		t.Fatalf("orden: esperado [Haikyu!!, Haikyuu!!], obtenido %+v", got)
+	}
+	if got[0].Year != 2012 || got[0].Chapters != 404 || got[0].AltTitle != "Haikyuu!!" {
+		t.Errorf("metadata del manga: %+v", got[0])
+	}
+	if got[1].AltTitle != "" {
+		t.Errorf("sin título en inglés no hay título alterno: %q", got[1].AltTitle)
+	}
+}

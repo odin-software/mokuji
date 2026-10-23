@@ -247,11 +247,14 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
-### (versión por definir) — UX y accesibilidad
+### v1.2.0 — UX y accesibilidad
 
 Implementa las decisiones D1–D8 y A1–A4 de `docs/ux-auditoria.md`
-(plan: `docs/superpowers/plans/2026-10-19-ux-v1.1.md`). Sin tag ni bump de
-`VERSION` todavía: el número lo decide el autor.
+(plan: `docs/superpowers/plans/2026-10-19-ux-v1.1.md`).
+
+**Antes del deploy**: la migración 0015 borra `library_entries.last_chapter`
+y no tiene vuelta atrás. Backup de la DB antes de subir, y después de migrar
+no se puede volver al binario de v1.1.0 (lee esa columna y da 500).
 
 - **Un solo progreso (D1)**: el cursor reemplaza a `last_chapter`. La
   migración 0015 sube el cursor con los valores numéricos, antepone los no

@@ -732,11 +732,7 @@ button.danger:hover { background: #8a2818; }
 }
 .md-badge-new { color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft); }
 .md-badge-ok { color: var(--text); border-color: var(--rule-strong); }
-.md-badge-warn { color: #8a6a00; border-color: #8a6a00; }
 .md-badge-muted { color: var(--text-muted); border-color: var(--rule); }
-@media (prefers-color-scheme: dark) {
-  .md-badge-warn { color: #f0c14a; border-color: #f0c14a; }
-}
 
 /* ── entry detail ────────────────────────────────────────────────── */
 .entry-detail-header {
@@ -791,14 +787,16 @@ button.danger:hover { background: #8a2818; }
 .chapter-mark-read { margin-left: auto; }
 
 /* ── sources panel (entry page) ──────────────────────────────────── */
-.sources-fieldset { margin: 1.5rem 0; padding: 0.75rem 0.875rem; border: 1px solid var(--rule); background: var(--bg); }
-.sources-fieldset h2 { margin: 0 0 0.5rem; font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.sources-details { margin: 1.5rem 0; padding: 0.5rem 0.875rem; border: 1px solid var(--rule); background: var(--bg); }
+.sources-details summary { cursor: pointer; min-height: 1.5rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.sources-details[open] summary { margin-bottom: 0.5rem; }
+.entry-sources-summary { margin: 0.25rem 0 0; }
 .sources-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; }
 .source-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; font-family: var(--font-mono); font-size: 0.8125rem; padding: 0.25rem 0; }
 .source-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
 .source-info strong { font-weight: 600; }
 .source-status { font-size: 0.75rem; color: var(--text-muted); }
-.source-matched .source-status { color: var(--accent-text); }
+.source-chapters .source-status { color: var(--accent-text); }
 .source-disabled, .source-disabled .source-status { color: var(--text-muted); }
 .source-actions { display: flex; gap: 0.5rem; }
 

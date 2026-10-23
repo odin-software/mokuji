@@ -697,3 +697,20 @@ func TestEntryDetailShowsTrackingHint(t *testing.T) {
 		t.Error("el detalle no explica que solo se avisa de lo que estás leyendo")
 	}
 }
+
+func TestEntryDetailPolledEmptyNotSearching(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	if _, err := db.Exec(`UPDATE manga_sources SET next_check_at = ? WHERE manga_id = ?`, time.Now().Add(6*time.Hour).Unix(), mangaID); err != nil {
+		t.Fatal(err)
+	}
+	body := renderEntry(t, h, id, uid)
+	if !strings.Contains(body, "sin capítulos aquí") {
+		t.Error("una source polleada sin caps debería decir 'sin capítulos aquí'")
+	}
+	if strings.Contains(body, "buscando") {
+		t.Error("una source ya polleada no puede decir 'buscando'")
+	}
+}

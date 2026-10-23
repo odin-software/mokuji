@@ -92,6 +92,10 @@ type Entry struct {
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	SourceStatus          matcher.Status // summary cross-source: matched si al menos una source matchea
+	// Searching: alguna source sigue buscando (sin filas todavía, unmatched,
+	// o matched sin primer poll). Con TotalChapters decide el badge y el
+	// empty state del detalle (D5): un solo cálculo para los dos.
+	Searching bool
 	UnreadCount           int            // caps publicados después del cursor en preferred_language
 	TotalChapters         int            // caps en DB para este manga en preferred_language
 }
@@ -546,6 +550,16 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 
 // --- DB helpers ---
 
+// searchingSQL calcula Entry.Searching. Igual que sourceStatusSummarySQL,
+// referencia m.id del SELECT externo.
+const searchingSQL = `(
+	NOT EXISTS (SELECT 1 FROM manga_sources ms WHERE ms.manga_id = m.id)
+	OR EXISTS (SELECT 1 FROM manga_sources ms
+	           WHERE ms.manga_id = m.id
+	             AND (ms.status = 'unmatched'
+	                  OR (ms.status = 'matched' AND ms.next_check_at IS NULL)))
+)`
+
 // sourceStatusSummarySQL es el snippet SQL que computa el status
 // cross-source de un manga: matched si al menos una source matchea,
 // si no needs_review, si no no_results, default unmatched. Está aislado
@@ -585,6 +599,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
+		       %s AS searching,
 		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
@@ -606,7 +621,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		         END ASC,
 		         le.is_favorite DESC,
 		         le.updated_at DESC
-	`, sourceStatusSummarySQL, where)
+	`, sourceStatusSummarySQL, searchingSQL, where)
 
 	rows, err := h.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -625,7 +640,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 			&e.ID, &e.Status, &cursor, &isFav, &sourceURL, &notes,
 			&created, &updated,
 			&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-			&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
+			&e.SourceStatus, &e.Searching, &e.TotalChapters, &e.UnreadCount,
 		); err != nil {
 			return nil, err
 		}

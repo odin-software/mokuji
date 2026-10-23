@@ -29,10 +29,10 @@ type EntrySource struct {
 	NextCheckAt time.Time
 	HasRow      bool
 	Configured  bool
-	// Pending reporta cuando la source matcheó pero el chapter table
-	// aún no tiene filas para ella. UI muestra "halando capítulos…"
-	// para que el user no piense que el match falló.
-	Pending bool
+	// State es lo que se le muestra al user (ver sourceState) y Chapters
+	// cuántos capítulos distintos trajo esta source.
+	State    SourceState
+	Chapters int
 }
 
 // loadEntrySources arma la lista renderizable para el fieldset combinando
@@ -43,11 +43,11 @@ type EntrySource struct {
 func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntrySource, error) {
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT ms.source, ms.source_id, ms.status, ms.checked_at, ms.next_check_at,
-		       COUNT(c.id) AS chapter_count
+		       ms.consecutive_failures, COUNT(DISTINCT c.number) AS chapter_count
 		FROM manga_sources ms
 		LEFT JOIN chapter c ON c.manga_id = ms.manga_id AND c.source = ms.source
 		WHERE ms.manga_id = ?
-		GROUP BY ms.source, ms.source_id, ms.status, ms.checked_at, ms.next_check_at
+		GROUP BY ms.source, ms.source_id, ms.status, ms.checked_at, ms.next_check_at, ms.consecutive_failures
 	`, mangaID)
 	if err != nil {
 		return nil, err
@@ -60,9 +60,9 @@ func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntryS
 			es           EntrySource
 			checked      sql.NullInt64
 			nextCheck    sql.NullInt64
-			chapterCount int64
+			failures     int
 		)
-		if err := rows.Scan(&es.Source, &es.SourceID, &es.Status, &checked, &nextCheck, &chapterCount); err != nil {
+		if err := rows.Scan(&es.Source, &es.SourceID, &es.Status, &checked, &nextCheck, &failures, &es.Chapters); err != nil {
 			return nil, err
 		}
 		es.HasRow = true
@@ -73,8 +73,7 @@ func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntryS
 		if nextCheck.Valid {
 			es.NextCheckAt = time.Unix(nextCheck.Int64, 0).UTC()
 		}
-		// Pending = matched pero el LEFT JOIN no devolvió chapters.
-		es.Pending = es.Status == matcher.StatusMatched && chapterCount == 0
+		es.State = sourceState(es.Status, nextCheck.Valid, es.Chapters, failures)
 		byName[es.Source] = es
 	}
 	if err := rows.Err(); err != nil {
@@ -91,6 +90,7 @@ func (h *Handler) loadEntrySources(ctx context.Context, mangaID int64) ([]EntryS
 			Source:     name,
 			Status:     matcher.StatusUnmatched,
 			Configured: true,
+			State:      SourceSearching,
 		}
 	}
 

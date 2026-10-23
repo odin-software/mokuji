@@ -95,13 +95,13 @@ func TestLoadEntrySourcesFlagsDisabledRow(t *testing.T) {
 	}
 }
 
-func TestLoadEntrySourcesMarksPendingWhenMatchedWithoutChapters(t *testing.T) {
+func TestLoadEntrySourcesSearchingWhenMatchedNotPolled(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db, nil)
 	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
 	uid := insertUser(t, db, "alice@example.com")
 	_, mangaID := insertEntryWithSource(t, db, uid, "mdx-1", "matched")
-	// No chapter rows insertados — Pending debe ser true.
+	// Sin caps y sin next_check_at: el worker todavía no lo polleó.
 
 	got, err := h.loadEntrySources(context.Background(), mangaID)
 	if err != nil {
@@ -116,18 +116,18 @@ func TestLoadEntrySourcesMarksPendingWhenMatchedWithoutChapters(t *testing.T) {
 	if md == nil {
 		t.Fatal("source mangadex no apareció")
 	}
-	if !md.Pending {
-		t.Errorf("Pending: got false, want true (matched + 0 chapters)")
+	if md.State != SourceSearching {
+		t.Errorf("State: %q, esperado %q (matched sin pollear)", md.State, SourceSearching)
 	}
 }
 
-func TestLoadEntrySourcesPendingFalseWhenChaptersExist(t *testing.T) {
+func TestLoadEntrySourcesChaptersWhenChaptersExist(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db, nil)
 	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
 	uid := insertUser(t, db, "alice@example.com")
 	_, mangaID := insertEntryWithSource(t, db, uid, "mdx-1", "matched")
-	// Insertar 1 cap — Pending debe ser false.
+	// Con un cap ya no está "buscando", aunque no tenga next_check_at.
 	if _, err := db.Exec(`
 		INSERT INTO chapter (manga_id, source, source_id, number, language, published_at, created_at)
 		VALUES (?, 'mangadex', 'ch-1', '1', 'en', ?, ?)
@@ -140,13 +140,13 @@ func TestLoadEntrySourcesPendingFalseWhenChaptersExist(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range got {
-		if s.Source == "mangadex" && s.Pending {
-			t.Errorf("mangadex Pending = true; con caps existentes debe ser false")
+		if s.Source == "mangadex" && (s.State != SourceChapters || s.Chapters != 1) {
+			t.Errorf("mangadex: State %q, Chapters %d; esperado %q y 1", s.State, s.Chapters, SourceChapters)
 		}
 	}
 }
 
-func TestLoadEntrySourcesPendingFalseForNeedsReview(t *testing.T) {
+func TestLoadEntrySourcesNotFoundForNeedsReview(t *testing.T) {
 	db := setupDB(t)
 	h := newTestHandler(t, db, nil)
 	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{}}
@@ -158,8 +158,8 @@ func TestLoadEntrySourcesPendingFalseForNeedsReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, s := range got {
-		if s.Source == "mangadex" && s.Pending {
-			t.Errorf("mangadex Pending = true; needs_review nunca debe ser pending")
+		if s.Source == "mangadex" && s.State != SourceNotFound {
+			t.Errorf("mangadex State %q; needs_review es %q", s.State, SourceNotFound)
 		}
 	}
 }
@@ -372,18 +372,14 @@ func TestEntryDetailRendersSourcesFieldset(t *testing.T) {
 		t.Fatalf("status: %d", w.Code)
 	}
 	body := w.Body.String()
-	// Header del fieldset.
-	if !strings.Contains(body, "sources-fieldset") {
-		t.Error("falta el section sources-fieldset")
+	// Detalle por source, cerrado al final (D5).
+	if !strings.Contains(body, `<details class="sources-details">`) {
+		t.Error("falta el <details> de sources")
 	}
-	// mangadex con fila matched pero sin chapters todavía — Pending,
-	// se renderiza como "halando capítulos…" en vez de "✓ matched".
-	if !strings.Contains(body, ">mangadex<") || !strings.Contains(body, "halando capítulos") {
-		t.Error("falta mangadex pending en el render")
-	}
-	// asura sin fila — placeholder "sin intentar"
-	if !strings.Contains(body, ">asura<") || !strings.Contains(body, "sin intentar") {
-		t.Error("falta asura como 'sin intentar'")
+	// mangadex matched sin pollear y asura sin fila: los dos "buscando".
+	if !strings.Contains(body, ">mangadex<") || !strings.Contains(body, ">asura<") ||
+		strings.Count(body, "buscando capítulos…") < 2 {
+		t.Error("mangadex y asura deberían salir como 'buscando capítulos…'")
 	}
 	// Botones de acción para ambos
 	if !strings.Contains(body, "/sources/mangadex/retry") || !strings.Contains(body, "/sources/mangadex/unlink") {

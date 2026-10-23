@@ -38,9 +38,9 @@ type Chapter struct {
 	Number      string
 	Title       string
 	Language    string
-	ExternalURL string         // URL de la opción primaria (= ReadOptions[0].URL)
-	PublishedAt time.Time      // published_at de la opción primaria
-	Read        bool           // true si este cap está en o antes del cursor
+	ExternalURL string          // URL de la opción primaria (= ReadOptions[0].URL)
+	PublishedAt time.Time       // published_at de la opción primaria
+	Read        bool            // true si este cap está en o antes del cursor
 	ReadOptions []ChapterOption // todas las opciones de lectura para este (manga, number, language)
 }
 
@@ -48,22 +48,24 @@ type Chapter struct {
 // un row específico de la tabla chapter, ya con la URL del lector y
 // metadata útil para mostrar al user (scanlator, source).
 type ChapterOption struct {
-	ID          int64     // chapter.id; permite "marcar leído" apuntando a un row concreto
-	Source      string    // 'mangadex' | 'asura' | 'comick'
-	Label       string    // nombre del scanlator (de chapter.title si lo trae el cliente)
+	ID          int64  // chapter.id; permite "marcar leído" apuntando a un row concreto
+	Source      string // 'mangadex' | 'asura' | 'comick'
+	Label       string // nombre del scanlator (de chapter.title si lo trae el cliente)
 	ExternalURL string
 	PublishedAt time.Time
 }
 
 type entryData struct {
-	Session       *session.Session
-	Entry         Entry
-	Chapters      []Chapter
-	Sources       []EntrySource
-	Sort          string // "asc" | "desc"
-	IncludeRead   bool
-	UnreadCount   int
-	TotalChapters int
+	Session  *session.Session
+	Entry    Entry
+	Chapters []Chapter
+	Sources  []EntrySource
+	// SourcesSummary es la línea bajo el título (ver sourcesSummary).
+	SourcesSummary string
+	Sort           string // "asc" | "desc"
+	IncludeRead    bool
+	UnreadCount    int
+	TotalChapters  int
 
 	// Paginación de la chapter list.
 	Page       int  // 1-indexed; siempre >= 1
@@ -146,13 +148,14 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 	pageChapters := chapters[start:end]
 
 	h.render(w, r, "library/entry.html", entryData{
-		Session:     s,
-		Entry:       entry,
-		Chapters:    pageChapters,
-		Sources:     sources,
-		Sort:        sort,
-		IncludeRead: includeRead,
-		UnreadCount: entry.UnreadCount,
+		Session:        s,
+		Entry:          entry,
+		Chapters:       pageChapters,
+		Sources:        sources,
+		SourcesSummary: sourcesSummary(sources),
+		Sort:           sort,
+		IncludeRead:    includeRead,
+		UnreadCount:    entry.UnreadCount,
 		// TotalChapters es el conteo real del manga en el idioma preferido
 		// del user, no el del slice mostrado: ese cambia con include_read y
 		// confunde ("0 capítulos" para un manga con 480 todos leídos).
@@ -319,12 +322,12 @@ func (h *Handler) parseEntryReadForm(w http.ResponseWriter, r *http.Request) (*s
 // retorno = false si no existe (sin error).
 func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, bool, error) {
 	var (
-		e            Entry
-		isFav        int
-		lrcn         sql.NullFloat64
-		sourceURL    sql.NullString
-		notes        sql.NullString
-		coverURL     sql.NullString
+		e                Entry
+		isFav            int
+		lrcn             sql.NullFloat64
+		sourceURL        sql.NullString
+		notes            sql.NullString
+		coverURL         sql.NullString
 		created, updated int64
 	)
 	q := fmt.Sprintf(`
@@ -332,6 +335,7 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
+		       %s AS searching,
 		       (SELECT COUNT(DISTINCT c.number) FROM chapter c
 		        WHERE c.manga_id = m.id AND c.language = u.preferred_language
 		       ) AS total_chapters,
@@ -345,12 +349,12 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		JOIN manga m ON m.id = le.manga_id
 		JOIN users u ON u.id = le.user_id
 		WHERE le.id = ? AND le.user_id = ?
-	`, sourceStatusSummarySQL)
+	`, sourceStatusSummarySQL, searchingSQL)
 	err := h.db.QueryRowContext(ctx, q, entryID, userID).Scan(
 		&e.ID, &e.Status, &lrcn, &isFav, &sourceURL, &notes,
 		&created, &updated,
 		&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
-		&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
+		&e.SourceStatus, &e.Searching, &e.TotalChapters, &e.UnreadCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Entry{}, false, nil

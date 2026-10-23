@@ -1,17 +1,16 @@
+{{/* Badge de la lista y del detalle (D5). Sale del mismo cálculo que el
+     empty state del detalle: hay capítulos → nuevos o al día; si no,
+     Entry.Searching decide entre "buscando…" y "sin capítulos". */}}
 {{define "mangadex-badge"}}
-{{- if eq .SourceStatus "matched" -}}
-  {{- if eq .TotalChapters 0 -}}
-    <span class="md-badge md-badge-muted" title="match resuelto pero todavía no halamos capítulos">pendiente</span>
-  {{- else if gt .UnreadCount 0 -}}
+{{- if gt .TotalChapters 0 -}}
+  {{- if gt .UnreadCount 0 -}}
     <span class="md-badge md-badge-new">{{.UnreadCount}} nuevo{{if gt .UnreadCount 1}}s{{end}}</span>
   {{- else -}}
-    <span class="md-badge md-badge-ok" title="ver capítulos">al día</span>
+    <span class="md-badge md-badge-ok">al día</span>
   {{- end -}}
-{{- else if eq .SourceStatus "needs_review" -}}
-  <span class="md-badge md-badge-warn" title="múltiples coincidencias en mangadex; matching ambiguo">matching incierto</span>
-{{- else if eq .SourceStatus "no_results" -}}
-  <span class="md-badge md-badge-muted" title="no encontrado en mangadex; no vamos a poder seguir capítulos">sin source</span>
+{{- else if .Searching -}}
+  <span class="md-badge md-badge-muted">buscando…</span>
 {{- else -}}
-  <span class="md-badge md-badge-muted" title="todavía no buscamos en mangadex; el worker lo intentará luego">buscando…</span>
+  <span class="md-badge md-badge-muted">sin capítulos</span>
 {{- end -}}
 {{end}}

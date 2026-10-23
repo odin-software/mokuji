@@ -1014,3 +1014,40 @@ func TestListShowsCursor(t *testing.T) {
 		t.Error("la lista no muestra el cursor — cap. 87")
 	}
 }
+
+func TestListBadgeVocabulary(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	future := time.Now().Add(6 * time.Hour).Unix()
+
+	// 2 nuevos: dos caps, cursor NULL, source polleada.
+	_, mNew := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mNew, "n-1", "1", "en", "", time.Now())
+	insertChapter(t, db, mNew, "n-2", "2", "en", "", time.Now())
+	// al día: un cap, cursor en él.
+	eDay, mDay := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mDay, "d-1", "1", "en", "", time.Now())
+	// buscando…: matched sin pollear todavía.
+	insertMangaWithChapters(t, db, uid, "matched")
+	// sin capítulos: no_results.
+	insertMangaWithChapters(t, db, uid, "no_results")
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = 1 WHERE id = ?`, eDay); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE manga_sources SET next_check_at = ? WHERE manga_id IN (?, ?)`, future, mNew, mDay); err != nil {
+		t.Fatal(err)
+	}
+
+	body := renderList(t, h, uid, "/library")
+	for _, want := range []string{">2 nuevos<", ">al día<", ">buscando…<", ">sin capítulos<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("falta el badge %q", want)
+		}
+	}
+	for _, bad := range []string{"pendiente", "matching incierto", "sin source"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("la lista todavía dice %q", bad)
+		}
+	}
+}

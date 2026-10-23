@@ -91,6 +91,7 @@
       {{.TotalChapters}} {{if eq .TotalChapters 1}}capítulo{{else}}capítulos{{end}}
       {{with fmtChapter .Entry.LastReadChapterNumber}} · vas por cap. {{.}}{{end}}
     </p>
+    {{with .SourcesSummary}}<p class="muted entry-sources-summary">{{.}}</p>{{end}}
   </div>
 </header>
 
@@ -114,53 +115,6 @@
   </form>
   <p class="muted entry-manage-hint">solo te avisamos de capítulos nuevos de lo que estás leyendo.</p>
 </div>
-
-{{if .Sources}}
-<section class="sources-fieldset" aria-labelledby="sources-heading">
-  <h2 id="sources-heading">sources</h2>
-  <ul class="sources-list">
-  {{range .Sources}}
-    <li class="source-row source-{{.Status}}{{if not .Configured}} source-disabled{{end}}">
-      <div class="source-info">
-        <strong>{{.Source}}</strong>
-        <span class="source-status">
-          {{- if eq .Status "matched" -}}
-            {{- if .Pending -}}
-              ⏳ halando capítulos…
-            {{- else -}}
-              ✓ matched
-            {{- end -}}
-          {{- else if eq .Status "needs_review" -}}
-            ⚠ matching incierto
-          {{- else if eq .Status "no_results" -}}
-            × no encontrado
-          {{- else -}}
-            · sin intentar
-          {{- end -}}
-        </span>
-        {{if and .HasRow (not .Configured)}}
-          <span class="muted" title="source deshabilitada por el operador">(deshabilitada)</span>
-        {{end}}
-      </div>
-      {{if .Configured}}
-      <div class="source-actions">
-        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/retry" class="inline-form">
-          {{ csrfInput $.Session }}
-          <button type="submit" class="link-button" title="re-correr el matcher contra esta source">reintentar</button>
-        </form>
-        {{if .HasRow}}
-        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/unlink" class="inline-form">
-          {{ csrfInput $.Session }}
-          <button type="submit" class="link-button" title="dejar de seguir caps en esta source (no borra los ya bajados)">desvincular</button>
-        </form>
-        {{end}}
-      </div>
-      {{end}}
-    </li>
-  {{end}}
-  </ul>
-</section>
-{{end}}
 
 <form method="POST" action="/library/entry/{{.Entry.ID}}/cursor" class="cursor-form">
   {{csrfInput .Session}}
@@ -246,17 +200,18 @@
 </nav>
 {{end}}
 {{else}}
-  {{if eq .Entry.SourceStatus "unmatched"}}
+  {{/* Mismo cálculo que el badge de la lista (Entry.Searching). */}}
+  {{if .Entry.Searching}}
     <div class="empty-state">
       <span class="kanji" aria-hidden="true">待</span>
       <h2>buscando capítulos.</h2>
-      <p>estamos cruzando este título con las sources. tardamos pocos minutos — actualiza la página.</p>
+      <p>estamos cruzando este título con las sources. vuelve en unos minutos.</p>
     </div>
   {{else}}
     <div class="empty-state">
       <span class="kanji" aria-hidden="true">空</span>
-      <h2>sin capítulos todavía.</h2>
-      <p>no encontramos releases en las sources que conectamos. prueba reintentar la búsqueda o vincular una source manualmente.</p>
+      <h2>sin capítulos.</h2>
+      <p>ninguna de nuestras sources tiene este manga. puedes llevar tu progreso a mano con el cursor.</p>
     </div>
   {{end}}
 {{end}}
@@ -289,6 +244,44 @@
     </form>
   </details>
 </section>
+
+{{if .Sources}}
+{{/* Detalle por source: información de operador, cerrada al final (D5). */}}
+<details class="sources-details">
+  <summary>sources</summary>
+  <ul class="sources-list">
+  {{range .Sources}}
+    <li class="source-row source-{{.State}}{{if not .Configured}} source-disabled{{end}}">
+      <div class="source-info">
+        <strong>{{.Source}}</strong>
+        <span class="source-status">
+          {{- if eq .State "chapters"}}{{.Chapters}} capítulo{{if ne .Chapters 1}}s{{end}}
+          {{- else if eq .State "searching"}}buscando capítulos…
+          {{- else if eq .State "empty"}}sin capítulos aquí
+          {{- else if eq .State "failing"}}no responde, reintentamos solos
+          {{- else}}no lo encontramos{{end -}}
+        </span>
+        {{if and .HasRow (not .Configured)}}<span class="muted">(deshabilitada)</span>{{end}}
+      </div>
+      {{if .Configured}}
+      <div class="source-actions">
+        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/retry" class="inline-form">
+          {{ csrfInput $.Session }}
+          <button type="submit" class="link-button">reintentar<span class="visually-hidden"> {{.Source}}</span></button>
+        </form>
+        {{if .HasRow}}
+        <form method="POST" action="/library/entry/{{$.Entry.ID}}/sources/{{.Source}}/unlink" class="inline-form">
+          {{ csrfInput $.Session }}
+          <button type="submit" class="link-button">desvincular<span class="visually-hidden"> {{.Source}}</span></button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </li>
+  {{end}}
+  </ul>
+</details>
+{{end}}
 
 <p class="user-links">
   <a href="/library">← biblioteca</a>

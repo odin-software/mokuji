@@ -85,8 +85,6 @@
   <div class="entry-detail-meta">
     <h1>{{.Entry.Manga.Title}}</h1>
     <p class="entry-detail-tags">
-      <span class="status status-{{.Entry.Status}}">{{statusLabel .Entry.Status}}</span>
-      {{if .Entry.IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
       {{template "mangadex-badge" .Entry}}
     </p>
     <p class="muted">
@@ -95,6 +93,26 @@
     </p>
   </div>
 </header>
+
+{{/* Estado y favorito (D2): un click, sin "guardar". aria-pressed
+     explícito en los tres botones para que el lector los anuncie como un
+     grupo de alternancias; el activo además lleva ✓ para no depender
+     solo del color. */}}
+<div class="entry-manage" id="estado">
+  <span class="entry-manage-label" id="estado-label">estado</span>
+  <div class="status-toggle" role="group" aria-labelledby="estado-label">
+    <form method="POST" action="/library/entry/{{.Entry.ID}}/status">
+      {{csrfInput .Session}}
+      <button type="submit" name="status" value="reading" aria-pressed="{{if eq .Entry.Status "reading"}}true{{else}}false{{end}}"{{if eq .Entry.Status "reading"}} class="is-active"{{end}}>{{if eq .Entry.Status "reading"}}<span aria-hidden="true">✓ </span>{{end}}leyendo</button>
+      <button type="submit" name="status" value="planned" aria-pressed="{{if eq .Entry.Status "planned"}}true{{else}}false{{end}}"{{if eq .Entry.Status "planned"}} class="is-active"{{end}}>{{if eq .Entry.Status "planned"}}<span aria-hidden="true">✓ </span>{{end}}por leer</button>
+      <button type="submit" name="status" value="completed" aria-pressed="{{if eq .Entry.Status "completed"}}true{{else}}false{{end}}"{{if eq .Entry.Status "completed"}} class="is-active"{{end}}>{{if eq .Entry.Status "completed"}}<span aria-hidden="true">✓ </span>{{end}}completado</button>
+    </form>
+  </div>
+  <form method="POST" action="/library/entry/{{.Entry.ID}}/favorite" class="favorite-toggle-form">
+    {{csrfInput .Session}}
+    <button type="submit" name="favorite" value="{{if .Entry.IsFavorite}}0{{else}}1{{end}}" aria-pressed="{{if .Entry.IsFavorite}}true{{else}}false{{end}}" class="favorite-toggle{{if .Entry.IsFavorite}} is-active{{end}}"><span aria-hidden="true">{{if .Entry.IsFavorite}}★{{else}}☆{{end}} </span>favorito</button>
+  </form>
+</div>
 
 {{if .Sources}}
 <section class="sources-fieldset" aria-labelledby="sources-heading">
@@ -241,6 +259,35 @@
     </div>
   {{end}}
 {{end}}
+
+<section class="entry-notes" id="notas" aria-labelledby="notas-heading">
+  <h2 class="lib-section" id="notas-heading">notas y fuente</h2>
+  <form method="POST" action="/library/entry/{{.Entry.ID}}/notes">
+    {{csrfInput .Session}}
+    <label>
+      dónde lo lees (URL)
+      <input type="url" name="source_url" value="{{.Entry.SourceURL}}" maxlength="2000" placeholder="https://manhuaplus.com/...">
+    </label>
+    <label>
+      notas
+      <textarea name="notes" maxlength="5000" rows="3">{{.Entry.Notes}}</textarea>
+    </label>
+    <button type="submit">guardar</button>
+  </form>
+  {{if .Entry.SourceURL}}
+  <p class="entry-source-link"><a href="{{.Entry.SourceURL}}" target="_blank" rel="noopener noreferrer">leer en tu fuente<span class="visually-hidden">, abre en pestaña nueva</span></a></p>
+  {{end}}
+  {{/* Dos pasos sin JS: la CSP bloquea handlers inline, así que un
+       confirm() en onsubmit nunca corría y borrar era un solo toque. */}}
+  <details class="delete-confirm">
+    <summary>borrar de tu biblioteca</summary>
+    <p>se borran tu progreso, notas y favorito. no se puede deshacer.</p>
+    <form method="POST" action="/library/{{.Entry.ID}}/delete">
+      {{csrfInput .Session}}
+      <button type="submit" class="danger">sí, borrar<span class="visually-hidden"> {{.Entry.Manga.Title}}</span></button>
+    </form>
+  </details>
+</section>
 
 <p class="user-links">
   <a href="/library">← biblioteca</a>

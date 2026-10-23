@@ -25,54 +25,16 @@
 {{if .Entries}}
 <ul class="manga-list">
 {{range .Entries}}
-  <li>
-    <details>
-      <summary>
-        {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
-        <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
-        {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
-        <a href="/library/entry/{{.ID}}" class="manga-title-link"><strong>{{.Manga.Title}}</strong></a>
-        {{with fmtChapter .LastReadChapterNumber}}<span class="muted">— cap. {{.}}</span>{{end}}
-        {{template "mangadex-badge" .}}
-      </summary>
-      <form method="POST" action="/library/{{.ID}}/update" class="entry-form">
-        {{ csrfInput $.Session }}
-        <label>
-          estado
-          <select name="status">
-            <option value="reading"{{if eq .Status "reading"}} selected{{end}}>leyendo</option>
-            <option value="planned"{{if eq .Status "planned"}} selected{{end}}>por leer</option>
-            <option value="completed"{{if eq .Status "completed"}} selected{{end}}>completado</option>
-          </select>
-        </label>
-        <label>
-          dónde lo lees (URL)
-          <input type="url" name="source_url" value="{{.SourceURL}}" maxlength="2000" placeholder="https://manhuaplus.com/...">
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" name="is_favorite"{{if .IsFavorite}} checked{{end}}>
-          <span><strong>favorito</strong></span>
-        </label>
-        <label>
-          notas
-          <textarea name="notes" maxlength="5000" rows="3">{{.Notes}}</textarea>
-        </label>
-        <button type="submit">guardar</button>
-      </form>
-      {{if .SourceURL}}
-      <p class="entry-source-link"><a href="{{.SourceURL}}" target="_blank" rel="noopener noreferrer">→ leer en tu fuente</a></p>
-      {{end}}
-      {{/* Dos pasos sin JS: la CSP bloquea handlers inline, así que un
-           confirm() en onsubmit nunca corría y borrar era un solo toque. */}}
-      <details class="delete-confirm">
-        <summary>borrar de tu biblioteca</summary>
-        <p>se borran tu progreso, notas y favorito. no se puede deshacer.</p>
-        <form method="POST" action="/library/{{.ID}}/delete">
-          {{ csrfInput $.Session }}
-          <button type="submit" class="danger">sí, borrar<span class="visually-hidden"> {{.Manga.Title}}</span></button>
-        </form>
-      </details>
-    </details>
+  {{/* La fila entera lleva al detalle, pero el link envuelve solo el
+       título: el ::after de .manga-row-link lo estira a toda la fila. Así
+       el lector nombra el link por el título y no por toda la fila. */}}
+  <li class="manga-row">
+    {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
+    <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
+    {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
+    <a class="manga-row-link" href="/library/entry/{{.ID}}">{{.Manga.Title}}</a>
+    {{with fmtChapter .LastReadChapterNumber}}<span class="muted">— cap. {{.}}</span>{{end}}
+    {{template "mangadex-badge" .}}
   </li>
 {{end}}
 </ul>

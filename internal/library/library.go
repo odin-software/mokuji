@@ -227,12 +227,14 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /library", h.list)
 	mux.HandleFunc("GET /library/search", h.search)
 	mux.HandleFunc("POST /library/add", h.add)
-	mux.HandleFunc("POST /library/{id}/update", h.update)
 	mux.HandleFunc("POST /library/{id}/delete", h.delete)
 	mux.HandleFunc("GET /library/entry/{id}", h.entryDetail)
 	mux.HandleFunc("POST /library/entry/{id}/read", h.entryReadAndOpen)
 	mux.HandleFunc("POST /library/entry/{id}/mark-read", h.entryMarkRead)
 	mux.HandleFunc("POST /library/entry/{id}/cursor", h.entryCursor)
+	mux.HandleFunc("POST /library/entry/{id}/status", h.entryStatus)
+	mux.HandleFunc("POST /library/entry/{id}/favorite", h.entryFavorite)
+	mux.HandleFunc("POST /library/entry/{id}/notes", h.entryNotes)
 	mux.HandleFunc("POST /library/entry/{id}/sources/{source}/retry", h.entrySourceRetry)
 	mux.HandleFunc("POST /library/entry/{id}/sources/{source}/unlink", h.entrySourceUnlink)
 	if h.signer != nil {
@@ -502,59 +504,6 @@ func (h *Handler) tryMatchOne(ctx context.Context, mangaID int64, sourceName str
 		return "", false
 	}
 	return sourceID, result.Status == matcher.StatusMatched && sourceID != ""
-}
-
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	s, ok := h.requireSession(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-
-	status := r.PostFormValue("status")
-	if !validStatuses[status] {
-		status = "reading"
-	}
-
-	sourceURL := strings.TrimSpace(r.PostFormValue("source_url"))
-	if len(sourceURL) > maxSourceURL {
-		sourceURL = sourceURL[:maxSourceURL]
-	}
-
-	notes := strings.TrimSpace(r.PostFormValue("notes"))
-	if len(notes) > maxNotes {
-		notes = notes[:maxNotes]
-	}
-
-	isFav := r.PostFormValue("is_favorite") == "on"
-
-	res, err := h.db.ExecContext(r.Context(), `
-		UPDATE library_entries
-		SET status = ?, source_url = ?, notes = ?, is_favorite = ?, updated_at = ?
-		WHERE id = ? AND user_id = ?
-	`, status, sourceURL, notes, boolToInt(isFav), time.Now().UTC().Unix(), id, s.UserID)
-	if err != nil {
-		h.logger.Error("actualizar entry", "err", err)
-		h.errs.InternalServerError(w, r)
-		return
-	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
-		http.NotFound(w, r)
-		return
-	}
-
-	http.Redirect(w, r, "/library", http.StatusSeeOther)
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {

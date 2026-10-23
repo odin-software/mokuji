@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -304,42 +303,6 @@ func TestListEntriesFavoriteFirst(t *testing.T) {
 	}
 	if len(entries) != 3 || entries[0].Manga.Title != "B-fav" {
 		t.Errorf("favorito no quedó primero: %+v", entries)
-	}
-}
-
-func TestUpdateRejectsOtherUsersEntry(t *testing.T) {
-	db := setupDB(t)
-	h := newTestHandler(t, db, nil)
-	ctx := context.Background()
-
-	alice := insertUser(t, db, "alice@example.com")
-	bob := insertUser(t, db, "bob@example.com")
-
-	mangaID, _ := h.upsertManga(ctx, "anilist", "1", "Berserk", "")
-	res, _ := db.Exec(`INSERT INTO library_entries (user_id, manga_id, status, created_at, updated_at) VALUES (?, ?, 'reading', ?, ?)`,
-		alice, mangaID, time.Now().Unix(), time.Now().Unix())
-	aliceEntryID, _ := res.LastInsertId()
-
-	form := url.Values{"status": {"completed"}}
-	req := httptest.NewRequest(http.MethodPost,
-		"/library/"+strconv.FormatInt(aliceEntryID, 10)+"/update",
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetPathValue("id", strconv.FormatInt(aliceEntryID, 10))
-	req = session.WithUserID(req, bob)
-
-	rec := httptest.NewRecorder()
-	h.update(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status: esperado 404, obtenido %d", rec.Code)
-	}
-	var status string
-	if err := db.QueryRow(`SELECT status FROM library_entries WHERE id = ?`, aliceEntryID).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "reading" {
-		t.Errorf("status de alice cambió: %q", status)
 	}
 }
 

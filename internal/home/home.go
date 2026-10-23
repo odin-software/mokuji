@@ -1,11 +1,11 @@
 // Package home sirve la página raíz de la app.
 //
-// Si el usuario tiene sesión válida, muestra su email y un botón de logout.
-// Si no, sirve la landing pública.
+// Si el usuario tiene sesión válida, lo manda a su biblioteca (D4: no hay
+// dashboard; la biblioteca ordenada es la entrada). Si no, sirve la
+// landing pública.
 package home
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,39 +17,25 @@ import (
 	"git.odin.do/kengru/mokuji/internal/csrf"
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
-	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
 
-// HomeWidgetReleases es el cap de releases que muestra el widget en /.
-// Mantenerlo chico — la lista completa vive en /releases.
-const HomeWidgetReleases = 5
-
-// ReleasesProvider abstrae la fuente de releases para el widget. En prod
-// es *releaseshandler.Handler; en tests se mockea con cualquier impl.
-type ReleasesProvider interface {
-	UnreadReleases(ctx context.Context, userID int64, limit int) ([]releaseshandler.Release, error)
-}
-
 // Config agrupa las dependencias del handler.
 type Config struct {
 	DB            *sql.DB
-	HTMLTemplates fs.FS // contiene layout.html, home.html y landing.html
-	Releases      ReleasesProvider
+	HTMLTemplates fs.FS // contiene layout.html, landing.html y privacy.html
 	Logger        *slog.Logger
 	Errs          *errrender.ErrorRenderer // nil en tests sin assets
 }
 
 // Handler sirve GET /.
 type Handler struct {
-	db            *sql.DB
-	tmplDashboard *template.Template
-	tmplLanding   *template.Template
-	tmplPrivacy   *template.Template
-	releases      ReleasesProvider
-	logger        *slog.Logger
-	errs          *errrender.ErrorRenderer
+	db          *sql.DB
+	tmplLanding *template.Template
+	tmplPrivacy *template.Template
+	logger      *slog.Logger
+	errs        *errrender.ErrorRenderer
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -66,12 +52,6 @@ func New(cfg Config) (*Handler, error) {
 		"appVersion":      func() string { return version.Value },
 		"feedbackEnabled": feedback.IsEnabled,
 	}
-	tmplDashboard, err := template.New("base").Funcs(funcs).ParseFS(
-		cfg.HTMLTemplates, "layout.html", "home.html",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("parsear templates dashboard: %w", err)
-	}
 	tmplLanding, err := template.New("base").Funcs(funcs).ParseFS(
 		cfg.HTMLTemplates, "layout.html", "landing.html",
 	)
@@ -86,13 +66,11 @@ func New(cfg Config) (*Handler, error) {
 	}
 
 	return &Handler{
-		db:            cfg.DB,
-		tmplDashboard: tmplDashboard,
-		tmplLanding:   tmplLanding,
-		tmplPrivacy:   tmplPrivacy,
-		releases:      cfg.Releases,
-		logger:        cfg.Logger,
-		errs:          cfg.Errs,
+		db:          cfg.DB,
+		tmplLanding: tmplLanding,
+		tmplPrivacy: tmplPrivacy,
+		logger:      cfg.Logger,
+		errs:        cfg.Errs,
 	}, nil
 }
 
@@ -103,58 +81,14 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /privacy", h.privacy)
 }
 
-type homeData struct {
-	Email    string
-	Username string
-	Session  *session.Session
-	Releases []releaseshandler.Release
-	// HasUsername=false dispara el banner que invita a setear slug. Una vez
-	// elegido, el banner desaparece sin necesidad de tracking adicional.
-	HasUsername bool
-}
-
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
-	s, ok := session.FromContext(r.Context())
-	if !ok {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := h.tmplLanding.ExecuteTemplate(w, "layout", landingData{}); err != nil {
-			h.logger.Error("renderizar landing", "err", err)
-		}
+	if _, ok := session.FromContext(r.Context()); ok {
+		http.Redirect(w, r, "/library", http.StatusSeeOther)
 		return
 	}
-
-	var emailAddr string
-	var slug sql.NullString
-	err := h.db.QueryRowContext(r.Context(),
-		`SELECT email, slug FROM users WHERE id = ?`, s.UserID,
-	).Scan(&emailAddr, &slug)
-	if err != nil {
-		h.logger.Error("cargar email de usuario", "user_id", s.UserID, "err", err)
-		h.errs.InternalServerError(w, r)
-		return
-	}
-
-	// Widget de releases: best-effort. Si falla la query, logueamos y
-	// renderizamos la home sin el widget — no rompe la página por algo
-	// secundario. Si el provider es nil (caso edge: tests viejos), salta.
-	var releases []releaseshandler.Release
-	if h.releases != nil {
-		releases, err = h.releases.UnreadReleases(r.Context(), s.UserID, HomeWidgetReleases)
-		if err != nil {
-			h.logger.Error("cargar widget releases", "user_id", s.UserID, "err", err)
-			releases = nil
-		}
-	}
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmplDashboard.ExecuteTemplate(w, "layout", homeData{
-		Email:       emailAddr,
-		Username:    slug.String,
-		Session:     s,
-		Releases:    releases,
-		HasUsername: slug.Valid,
-	}); err != nil {
-		h.logger.Error("renderizar home", "err", err)
+	if err := h.tmplLanding.ExecuteTemplate(w, "layout", landingData{}); err != nil {
+		h.logger.Error("renderizar landing", "err", err)
 	}
 }
 

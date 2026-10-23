@@ -1051,3 +1051,28 @@ func TestListBadgeVocabulary(t *testing.T) {
 		}
 	}
 }
+
+// D4: dentro de un mismo estado, lo que tiene capítulos sin leer va arriba.
+func TestListEntriesUnreadFirstWithinStatus(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+
+	oldID, oldManga := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, oldManga, "o-1", "1", "en", "", time.Now())
+	newID, _ := insertMangaWithChapters(t, db, uid, "matched")
+	if _, err := db.Exec(`UPDATE library_entries SET updated_at = ? WHERE id = ?`, time.Now().Add(-48*time.Hour).Unix(), oldID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE library_entries SET updated_at = ? WHERE id = ?`, time.Now().Unix(), newID); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := h.listEntries(context.Background(), uid, "all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].ID != oldID {
+		t.Errorf("la entry con caps sin leer (%d) debería ir primero; orden: %d, %d", oldID, entries[0].ID, entries[1].ID)
+	}
+}

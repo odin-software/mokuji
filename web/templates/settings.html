@@ -120,4 +120,11 @@
   <span class="sep">·</span>
   <a href="/settings/delete-account">borrar cuenta</a>
 </p>
+
+{{/* El sidebar de desktop tiene su propio logout; en mobile este es el
+     único (D4). */}}
+<form method="POST" action="/auth/logout" class="logout-form">
+  {{ csrfInput .Session }}
+  <button type="submit">cerrar sesión</button>
+</form>
 {{end}}

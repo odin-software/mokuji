@@ -619,6 +619,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 		             WHEN 'completed' THEN 2
 		             ELSE 3
 		         END ASC,
+		         (unread_count > 0) DESC,
 		         le.is_favorite DESC,
 		         le.updated_at DESC
 	`, sourceStatusSummarySQL, searchingSQL, where)

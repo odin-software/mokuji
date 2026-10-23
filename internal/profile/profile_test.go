@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"log/slog"
@@ -362,5 +363,26 @@ func TestCountByStatus(t *testing.T) {
 				t.Errorf("counters: esperado %+v, obtenido %+v", *tc.want, *got)
 			}
 		})
+	}
+}
+
+// D4: sin home, el logout de mobile vive al final de ajustes.
+func TestSettingsHasLogout(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db)
+	uid := insertUser(t, db, "alice@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid, CSRFToken: "t"}))
+	rec := httptest.NewRecorder()
+	h.settings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	body := rec.Body.String()
+	main := body[strings.Index(body, `id="contenido"`):]
+	if !strings.Contains(main, `action="/auth/logout"`) {
+		t.Error("ajustes no tiene el form de cerrar sesión dentro del contenido")
 	}
 }

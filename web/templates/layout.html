@@ -666,27 +666,7 @@ button.danger:hover { background: #8a2818; }
 .manga-list.public > li:last-child { border-bottom: 1px solid var(--rule); }
 .public-entry .cover { flex-shrink: 0; border: 1px solid var(--rule); }
 
-.username-nudge {
-  padding: 0.75rem 0.875rem;
-  background: var(--bg-2);
-  border-left: 3px solid var(--accent);
-  font-size: 0.9375rem;
-  margin: 0 0 1.25rem;
-}
-.username-nudge code { background: var(--rule-soft); padding: 0 0.25rem; font-size: 0.8125rem; }
-
-/* ── home widget / releases ──────────────────────────────────────── */
-.home-widget { margin-top: 2rem; }
-.home-widget-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--text);
-}
-.home-widget-header h2 { margin: 0; font-size: 1rem; font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-
+/* ── releases ──────────────────────────────────────── */
 .release-list { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0; }
 .release {
   display: grid;
@@ -993,7 +973,7 @@ button.danger:hover { background: #8a2818; }
   {{block "chrome" .}}
   {{if .Session}}
   <aside class="app-sidebar">
-    <a href="/" class="app-sidebar-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
+    <a href="/library" class="app-sidebar-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
     <nav class="app-sidebar-nav" aria-label="principal">
       <a href="/library">biblioteca</a>
       <a href="/releases">releases</a>
@@ -1015,7 +995,7 @@ button.danger:hover { background: #8a2818; }
   {{block "appnav" .}}
   {{if .Session}}
   <header class="app-nav">
-    <a href="/" class="app-nav-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
+    <a href="/library" class="app-nav-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
     <nav aria-label="principal">
       <a href="/library">biblioteca</a>
       <a href="/releases">releases</a>

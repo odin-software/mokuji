@@ -381,13 +381,9 @@ func main() {
 		log.Fatalf("crear handler onboarding: %v", err)
 	}
 
-	// home se construye después de releasesHandler porque el widget de
-	// "últimos releases" en / reusa el método UnreadReleases. El orden
-	// importa solo para wiring; no hay ciclo de import (home → releases).
 	homeHandler, err := home.New(home.Config{
 		DB:            db,
 		HTMLTemplates: htmlFS,
-		Releases:      releasesHandler,
 		Logger:        logger,
 		Errs:          errs,
 	})

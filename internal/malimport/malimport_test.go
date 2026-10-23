@@ -151,3 +151,24 @@ func TestParseRealAnimeExport(t *testing.T) {
 		t.Errorf("esperado ErrAnimeExport, obtenido %v", err)
 	}
 }
+
+// Export real de manga de MAL (recortado y anonimizado): fija los nombres de
+// tags y los valores de my_status contra el formato de verdad.
+func TestParseRealMangaExport(t *testing.T) {
+	b, err := os.ReadFile("testdata/mangalist_real.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Parse(bytes.NewReader(gzipBytes(t, b)))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []Entry{
+		{MALID: 132912, Title: "#DRCL Midnight Children", ReadChapters: 0, Status: "reading"},
+		{MALID: 3, Title: "20th Century Boys", ReadChapters: 249, Status: "completed"},
+		{MALID: 598, Title: "Fairy Tail", ReadChapters: 1, Status: ""},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("entries:\n got  %+v\n want %+v", got, want)
+	}
+}

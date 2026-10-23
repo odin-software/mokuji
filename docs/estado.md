@@ -275,9 +275,15 @@ Diseño en `docs/superpowers/specs/2026-10-19-import-mal-design.md`.
 - Límite de 3 imports por hora por usuario; el handler extiende su write
   deadline a 55 s. En logs solo van conteos, nunca títulos.
 
-**Pendiente**: los nombres de tags del XML salen de conocimiento general,
-no de documentación de MAL. Hay que validar el parser contra un export
-real antes de anunciar la feature.
+**Validado contra exports reales** (2026-10-23): los tags supuestos coinciden
+con el export de manga de MAL (`user_export_type` 2) y el de anime (1) se
+rechaza con su mensaje. Una lista real de 69 mangas mapeó 67 de 68 en
+AniList (`idMal`); fixtures recortados y anonimizados en
+`internal/malimport/testdata/*_real.xml`.
+
+**Pendiente de deploy**: nginx trae `client_max_body_size 1m` por default; para
+el tope de 5 MB del import hace falta `client_max_body_size 6m` en
+`/settings/import/mal`.
 
 ### v1.0.8 — backoff del crawler y polleo en paralelo
 

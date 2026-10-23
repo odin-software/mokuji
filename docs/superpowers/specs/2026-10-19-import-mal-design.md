@@ -70,10 +70,9 @@ List"), un input de archivo y un botón. Endpoint: `POST
   con "ese es tu export de anime; necesitamos el de manga".
 - Se ignora todo menos estos campos por entrada: `manga_mangadb_id`,
   `manga_title`, `my_read_chapters` y `my_status`.
-- **A verificar:** los nombres de tags salen de conocimiento general, no
-  de documentación. Antes de implementar se confirman contra un export
-  real del autor, que, anonimizado, queda como fixture de tests en
-  `testdata/`.
+- **Verificado** (2026-10-23) contra los exports reales de manga y anime
+  del autor; quedan recortados y anonimizados como fixtures en
+  `internal/malimport/testdata/*_real.xml`.
 
 ### 3. Identidad: MAL id → AniList, sin adivinar
 

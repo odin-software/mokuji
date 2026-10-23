@@ -333,7 +333,8 @@ con un "leer →" que no marcaba leído.
 - **Por qué no rediseñar el home:** cualquier home útil termina siendo una
   lista de mangas con badges de nuevos, que es la biblioteca ordenada así.
 - **Arreglos incluidos:** `.active` en el nav; nav duplicado en desktop
-  (cascada CSS); auto-submit de filtros en el detalle; `include_read=0`
+  (cascada CSS); ~~auto-submit de filtros en el detalle~~ (reemplazado
+  por A2: botón "filtrar" en los dos lados); `include_read=0`
   explícito al desmarcar; pasos del onboarding visibles en dark mode.
 
 ### D5 — Estados de sources honestos, un solo vocabulario (2026-10-19)
@@ -573,10 +574,12 @@ semántico "correcto" para opciones excluyentes, pero sin JS necesita un
 "guardar", que D2 rechazó, y con JS sería auto-submit, que es la falla
 A11y-2.
 
-### Propuestas que necesitan tu decisión (en orden)
+### Decisiones de accesibilidad A1–A4 (aprobadas 2026-10-23)
+
+Se aprobaron las cuatro tal como estaban propuestas.
 
 **A1 — Oscurecer el texto secundario y los bordes de los controles.**
-Propuesta: `--text-muted` `#8a857a` → `#67625a` en claro (5.19 / 4.73) y
+`--text-muted` `#8a857a` → `#67625a` en claro (5.19 / 4.73) y
 `#8a8273` → `#9a9282` en oscuro (5.97 / 5.49); un token nuevo
 `--accent-text` para texto chico en acento (`#a33a25` claro, `#e57358`
 oscuro, ≥ 4.7 incluso sobre `--accent-soft`), dejando `--accent` para
@@ -602,9 +605,9 @@ que abre un texto ("se borran tu progreso, notas y favorito. no se puede
 deshacer.") y el botón real "sí, borrar". Por qué: funciona sin JS y con
 la CSP actual, se opera con teclado (Enter abre el summary), no agrega
 rutas (una página de confirmación sería un GET + template nuevos), y dos
-pasos visibles cumplen 3.3.4. Como hoy está roto en prod, vale la pena
-sacarlo antes que el resto del plan, en la lista actual, si quieres un
-minor aparte; si no, entra con D2.
+pasos visibles cumplen 3.3.4. Como hoy está roto en prod, Task 1b lo
+mete primero en la lista actual y D2 lo mueve al detalle; si se quiere
+antes de la versión de UI, Task 1b sola se puede sacar como minor aparte.
 
 **A4 — Fila de la lista con "stretched link" en el título, no un `<a>`
 que envuelve toda la fila.** El link es solo el título; un `::after`

@@ -58,7 +58,7 @@
   <li class="public-entry">
     {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
     <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
-    {{if .IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
+    {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
     <strong>{{.Manga.Title}}</strong>
     {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
   </li>
@@ -67,13 +67,13 @@
 {{else}}
   {{if eq .Visibility "private"}}
   <div class="empty-state">
-    <span class="kanji">秘</span>
+    <span class="kanji" aria-hidden="true">秘</span>
     <h2>lista privada.</h2>
     <p>este usuario eligió mantener su biblioteca oculta.</p>
   </div>
   {{else}}
   <div class="empty-state">
-    <span class="kanji">白</span>
+    <span class="kanji" aria-hidden="true">白</span>
     <h2>biblioteca vacía.</h2>
     <p>{{if .Slug}}@{{.Slug}}{{else}}este usuario{{end}} todavía no agregó manga.</p>
   </div>

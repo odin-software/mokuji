@@ -91,7 +91,7 @@
   --bg-3: #dfd6c0;
   --text: #1a1815;
   --text-soft: #3a352e;
-  --text-muted: #8a857a;
+  --text-muted: #67625a;     /* 5.2:1 sobre --bg, 4.7:1 sobre --bg-2 */
   --text-label: #3a352e;
 
   --rule: rgba(26, 24, 21, 0.13);
@@ -106,6 +106,13 @@
 
   --accent: #b8412a;          /* vermillion (朱) */
   --accent-soft: rgba(184, 65, 42, 0.13);
+  /* --accent pasa 4.5:1 sobre --bg pero no sobre --bg-2 ni --accent-soft:
+     para texto chico en acento va este; --accent queda para rellenos,
+     bordes y texto grande. */
+  --accent-text: #a33a25;
+  /* Borde de inputs, selects y textareas: 3:1 contra el fondo (WCAG
+     1.4.11). --border es más suave y sigue para separadores. */
+  --border-input: rgba(26, 24, 21, 0.5);
 
   --button-bg: var(--text);
   --button-bg-hover: #000000;
@@ -139,7 +146,7 @@
     --bg-3: #2b251a;
     --text: #ece5d4;
     --text-soft: #c9c1ab;
-    --text-muted: #8a8273;
+    --text-muted: #9a9282;
     --text-label: #c9c1ab;
 
     --rule: rgba(236, 229, 212, 0.13);
@@ -154,6 +161,8 @@
 
     --accent: #d65a40;
     --accent-soft: rgba(214, 90, 64, 0.16);
+    --accent-text: #e57358;
+    --border-input: rgba(236, 229, 212, 0.45);
 
     --button-bg: var(--text);
     --button-bg-hover: #ffffff;
@@ -175,6 +184,45 @@
 
 * { box-sizing: border-box; }
 ::selection { background: var(--accent); color: var(--bg); }
+
+/* ── accesibilidad ───────────────────────────────────────────────── */
+/* Texto solo para lectores de pantalla (nombres completos de botones que
+   visualmente se repiten por fila, labels de filtros). */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -10rem;
+  z-index: 10;
+  padding: 0.6rem 0.9rem;
+  background: var(--button-bg);
+  color: var(--button-fg);
+  font-weight: 700;
+  text-decoration: none;
+}
+.skip-link:focus { top: 0.75rem; }
+a:focus-visible, button:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+::placeholder { color: var(--text-muted); opacity: 1; }
+.logo-kanji {
+  font-family: var(--font-jp);
+  font-weight: 900;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
 
 body {
   margin: 0;
@@ -261,13 +309,6 @@ body {
   text-decoration: none;
   color: var(--text);
 }
-.app-sidebar-logo::before {
-  content: "目次";
-  font-family: var(--font-jp);
-  font-weight: 900;
-  font-size: 1.25rem;
-  letter-spacing: -0.03em;
-}
 .app-sidebar-nav {
   display: flex;
   flex-direction: column;
@@ -331,14 +372,14 @@ form { display: grid; gap: 0.75rem; }
 label { display: grid; gap: 0.3rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-label); }
 input, select, textarea {
   padding: 0.625rem 0.75rem;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-input);
   border-radius: 0;
   font-size: 1rem;
   font-family: var(--font-sans);
   background: var(--input-bg);
   color: var(--text);
 }
-input:focus, select:focus, textarea:focus { outline: 0; border-color: var(--text); }
+input:focus, select:focus, textarea:focus { border-color: var(--text); }
 textarea { resize: vertical; min-height: 6rem; }
 button {
   padding: 0.6875rem 1rem;
@@ -382,6 +423,7 @@ button.danger:hover { background: #8a2818; }
 /* ── app chrome ───────────────────────────────────────────────────── */
 .app-nav {
   display: flex;
+  flex-wrap: wrap;  /* a 320px el nav baja de línea en vez de ensanchar la página */
   justify-content: space-between;
   align-items: baseline;
   gap: 1rem;
@@ -400,14 +442,7 @@ button.danger:hover { background: #8a2818; }
   color: var(--text);
   white-space: nowrap;
 }
-.app-nav-logo::before {
-  content: "目次";
-  font-family: var(--font-jp);
-  font-weight: 900;
-  font-size: 1.25rem;
-  letter-spacing: -0.03em;
-}
-.app-nav nav { display: flex; gap: 1rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.app-nav nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .app-nav nav a { color: var(--text-muted); text-decoration: none; padding-bottom: 0.2rem; border-bottom: 2px solid transparent; }
 .app-nav nav a:hover, .app-nav nav a.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -480,7 +515,15 @@ button.danger:hover { background: #8a2818; }
 .manga-list details[open] { background: var(--bg-2); padding-left: 0.75rem; padding-right: 0.75rem; }
 .entry-form { margin-top: 0.75rem; }
 .entry-source-link { margin: 0.75rem 0 0; font-family: var(--font-mono); font-size: 0.8125rem; }
-.delete-form { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); }
+.delete-confirm { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--rule); }
+.delete-confirm summary {
+  cursor: pointer;
+  min-height: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--text-soft);
+}
+.delete-confirm p { font-size: 0.875rem; color: var(--text-soft); }
 
 /* ── status badges (lowercase, monospace number prefix) ──────────── */
 .status {
@@ -506,23 +549,22 @@ button.danger:hover { background: #8a2818; }
   color: var(--status-reading-fg);
   border-color: var(--status-reading-bg);
 }
-.status-reading::before { content: "01"; opacity: 0.85; }
+.status-reading::before { content: "01" / ""; opacity: 0.85; }
 .status-planned {
   background: var(--status-planned-bg);
   color: var(--status-planned-fg);
   border-color: var(--status-planned-border);
 }
-.status-planned::before { content: "02"; }
+.status-planned::before { content: "02" / ""; }
 .status-completed {
   background: var(--status-completed-bg);
   color: var(--status-completed-fg);
   border-color: var(--status-completed-border);
 }
-.status-completed::before { content: "03"; }
+.status-completed::before { content: "03" / ""; }
 
 .favorite { color: var(--accent); font-size: 0.9rem; line-height: 1; }
-.favorite::before { content: "●"; }
-.favorite > * { display: none; }   /* hide any inner ★ glyph from old markup */
+.favorite::before { content: "●" / ""; }
 
 /* ── checkboxes / radios ──────────────────────────────────────────── */
 .checkbox, .radio {
@@ -585,7 +627,7 @@ button.danger:hover { background: #8a2818; }
   font-size: 0.6875rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -636,7 +678,7 @@ button.danger:hover { background: #8a2818; }
 .release-info { min-width: 0; }
 .release-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .release-meta { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--text-soft); margin-top: 0.15rem; }
-.release-meta > span:first-child { color: var(--accent); font-weight: 600; }
+.release-meta > span:first-child { color: var(--accent-text); font-weight: 600; }
 .release-meta > span:not(:first-child) { margin-left: 0.25rem; }
 .release-actions { display: flex; flex-direction: column; gap: 0.3rem; align-items: flex-end; }
 
@@ -652,6 +694,7 @@ button.danger:hover { background: #8a2818; }
   text-decoration: underline;
   letter-spacing: 0.02em;
   font-weight: 500;
+  min-height: 1.5rem;
 }
 .link-button:hover { color: var(--text); background: none; }
 
@@ -668,7 +711,7 @@ button.danger:hover { background: #8a2818; }
   text-transform: uppercase;
   border: 1px solid currentColor;
 }
-.md-badge-new { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.md-badge-new { color: var(--accent-text); border-color: var(--accent); background: var(--accent-soft); }
 .md-badge-new:hover { background: var(--accent); color: var(--bg); }
 .md-badge-ok { color: var(--text); border-color: var(--rule-strong); }
 .md-badge-warn { color: #8a6a00; border-color: #8a6a00; }
@@ -706,7 +749,8 @@ button.danger:hover { background: #8a2818; }
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--rule);
 }
-.chapter-row.chapter-read { opacity: 0.5; }
+.chapter-row.chapter-read .chapter-num,
+.chapter-row.chapter-read .chapter-title { color: var(--text-muted); }
 .chapter-header {
   display: flex;
   flex-wrap: wrap;
@@ -736,8 +780,8 @@ button.danger:hover { background: #8a2818; }
 .source-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
 .source-info strong { font-weight: 600; }
 .source-status { font-size: 0.75rem; color: var(--text-muted); }
-.source-matched .source-status { color: var(--accent); }
-.source-disabled { opacity: 0.6; }
+.source-matched .source-status { color: var(--accent-text); }
+.source-disabled, .source-disabled .source-status { color: var(--text-muted); }
 .source-actions { display: flex; gap: 0.5rem; }
 
 /* ── page heading helper (used by lib, releases, settings, etc.) ── */
@@ -751,7 +795,7 @@ button.danger:hover { background: #8a2818; }
   font-size: 0.6875rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .accent { color: var(--accent); }
 
@@ -867,7 +911,7 @@ button.danger:hover { background: #8a2818; }
   font-size: 0.6875rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   margin: 0 0 0.5rem;
 }
@@ -925,12 +969,13 @@ button.danger:hover { background: #8a2818; }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#contenido">saltar al contenido</a>
 <div class="app-shell">
   {{block "chrome" .}}
   {{if .Session}}
   <aside class="app-sidebar">
-    <a href="/" class="app-sidebar-logo">mokuji</a>
-    <nav class="app-sidebar-nav">
+    <a href="/" class="app-sidebar-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
+    <nav class="app-sidebar-nav" aria-label="principal">
       <a href="/library">biblioteca</a>
       <a href="/releases">releases</a>
       <a href="/settings">settings</a>
@@ -942,30 +987,30 @@ button.danger:hover { background: #8a2818; }
         <button type="submit">cerrar sesión</button>
       </form>
       <div class="app-sidebar-version">
-        <a href="/version">mokuji {{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} · 目次
+        <a href="/version">mokuji {{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} <span aria-hidden="true">· 目次</span>
       </div>
     </div>
   </aside>
   {{end}}
   {{end}}
-  <main class="app-main">
-    {{block "appnav" .}}
-    {{if .Session}}
-    <header class="app-nav">
-      <a href="/" class="app-nav-logo">mokuji</a>
-      <nav>
-        <a href="/library">biblioteca</a>
-        <a href="/releases">releases</a>
-        <a href="/settings">settings</a>
-      </nav>
-    </header>
-    {{end}}
-    {{end}}
+  {{block "appnav" .}}
+  {{if .Session}}
+  <header class="app-nav">
+    <a href="/" class="app-nav-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
+    <nav aria-label="principal">
+      <a href="/library">biblioteca</a>
+      <a href="/releases">releases</a>
+      <a href="/settings">settings</a>
+    </nav>
+  </header>
+  {{end}}
+  {{end}}
+  <main class="app-main" id="contenido" tabindex="-1">
     {{block "content" .}}<p>contenido vacío</p>{{end}}
   </main>
 </div>
 {{block "appfooter" .}}
-<footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} · 目次</footer>
+<footer class="app-footer">mokuji · <a href="/version">{{appVersion}}</a> · <a href="/privacy">privacidad</a>{{if feedbackEnabled}} · <a href="/feedback">feedback</a>{{end}} <span aria-hidden="true">· 目次</span></footer>
 {{end}}
 </body>
 </html>{{end}}

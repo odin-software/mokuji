@@ -1,7 +1,7 @@
 {{define "title"}}error · mokuji{{end}}
 {{define "content"}}
 <div class="error-page">
-  <div class="error-glyph">×</div>
+  <div class="error-glyph" aria-hidden="true">×</div>
   <div class="error-body">
     <p class="eyebrow">№ 500 · algo se rompió</p>
     <h1>algo se rompió<br><span class="accent">de nuestro lado.</span></h1>
@@ -10,7 +10,7 @@
     <p class="error-id"><code>req · {{.RequestedAt}} · <strong>{{.ErrorID}}</strong></code></p>
     {{end}}
     <div class="error-ctas">
-      <a href="" onclick="event.preventDefault(); location.reload();" class="action-link">↻ reintentar</a>
+      <a href="" class="action-link"><span aria-hidden="true">↻</span> reintentar</a>
       <a href="/library" class="error-cta-secondary">← tu biblioteca</a>
     </div>
   </div>

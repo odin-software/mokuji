@@ -1,4 +1,4 @@
-{{define "title"}}borrar cuenta — mokuji{{end}}
+{{define "title"}}{{if .Error}}error: {{end}}borrar cuenta — mokuji{{end}}
 {{define "content"}}
 <header class="page-head">
   <p class="eyebrow">cuenta · {{.Email}}</p>
@@ -15,7 +15,7 @@
   <p>tienes <strong>7 días</strong> después de confirmar para cancelar el borrado. después de eso es permanente.</p>
 </div>
 
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert" id="delete-error">{{.Error}}</p>{{end}}
 
 {{if .CodeSent}}
   <p class="success">te enviamos un código a <strong>{{.Email}}</strong>. ingresa el código para confirmar:</p>
@@ -23,7 +23,7 @@
     {{ csrfInput .Session }}
     <label>
       código
-      <input type="text" name="code" class="otp-input" inputmode="numeric" autocomplete="one-time-code" required autofocus>
+      <input type="text" name="code" class="otp-input" inputmode="numeric" autocomplete="one-time-code" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="delete-error"{{end}}>
     </label>
     <button type="submit" class="danger">confirmar borrado</button>
   </form>

@@ -989,3 +989,20 @@ func TestStartSinTurnstileNoConsumeLimiterPorEmail(t *testing.T) {
 		t.Errorf("esperaba 1 envío tras resolver el reto, sent=%d", sent)
 	}
 }
+
+func TestVerifyErrorAssociated(t *testing.T) {
+	db := setupDB(t)
+	var sent int
+	h := newAuthTestHandler(t, db, &sent, nil)
+	req := httptest.NewRequest(http.MethodPost, "/auth/verify", strings.NewReader("email=alice@example.com&code=abc"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.verify(w, req)
+
+	body := w.Body.String()
+	for _, want := range []string{`role="alert"`, `id="code-error"`, `aria-invalid="true"`, `aria-describedby="code-error"`, `<title>error: `} {
+		if !strings.Contains(body, want) {
+			t.Errorf("verify con código malo: falta %q", want)
+		}
+	}
+}

@@ -1,4 +1,4 @@
-{{define "title"}}configuración — mokuji{{end}}
+{{define "title"}}{{if .UsernameError}}error: {{end}}configuración — mokuji{{end}}
 {{define "content"}}
 <header class="page-head">
   <p class="eyebrow">cuenta · {{.Email}}</p>
@@ -28,10 +28,12 @@
              value="{{if .UsernameDraft}}{{.UsernameDraft}}{{else}}{{.Username}}{{end}}"
              minlength="3" maxlength="20" pattern="[a-z0-9][a-z0-9_\-]*[a-z0-9]"
              placeholder="ej: alice, tu-nombre, otaku_42"
-             autocomplete="off" autocapitalize="off" spellcheck="false">
-      <span class="muted">3-20 caracteres. minúsculas, números, guión y guión bajo.</span>
+             autocomplete="off" autocapitalize="off" spellcheck="false"
+             aria-describedby="username-hint{{if .UsernameError}} username-error{{end}}"
+             {{- if .UsernameError}} aria-invalid="true" autofocus{{end}}>
+      <span class="muted" id="username-hint">3-20 caracteres. minúsculas, números, guión y guión bajo.</span>
     </label>
-    {{if .UsernameError}}<p class="error">{{.UsernameError}}</p>{{end}}
+    {{if .UsernameError}}<p class="error" role="alert" id="username-error">{{.UsernameError}}</p>{{end}}
     {{if .CooldownUntilFmt}}
       <p class="muted">puedes volver a cambiarlo a partir del {{.CooldownUntilFmt}}.</p>
     {{end}}

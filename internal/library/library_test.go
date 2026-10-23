@@ -961,3 +961,52 @@ func TestOwnedSourceIDs(t *testing.T) {
 		t.Errorf("filtro por user roto: esperaba vacío para bob, got %v", ownedBob)
 	}
 }
+
+func renderList(t *testing.T, h *Handler, userID int64, target string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+func TestLibraryFiltersLabelled(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	body := renderList(t, h, uid, "/library")
+
+	for _, want := range []string{`for="lib-q"`, `id="lib-q"`, `for="lib-filter"`, `id="lib-filter"`, `<button type="submit">filtrar</button>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("filtros de /library sin %q", want)
+		}
+	}
+	for _, bad := range []string{"data-auto-submit", "<noscript>"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("filtros de /library todavía tienen %q", bad)
+		}
+	}
+}
+
+func TestLayoutSkipLink(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	body := renderList(t, h, uid, "/library")
+
+	i := strings.Index(body, "<body>")
+	if i < 0 {
+		t.Fatal("sin <body>")
+	}
+	first := strings.Index(body[i:], "<a ")
+	if first < 0 || !strings.HasPrefix(body[i+first:], `<a class="skip-link" href="#contenido">`) {
+		t.Error("el primer link del body no es el skip link a #contenido")
+	}
+	if !strings.Contains(body, `id="contenido"`) {
+		t.Error(`falta el destino id="contenido"`)
+	}
+}

@@ -36,12 +36,12 @@
 .cursor-form input[type="number"] {
   width: 6rem;
   padding: 0.375rem 0.5rem;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-input);
   background: var(--input-bg);
   color: var(--text);
   font: inherit;
 }
-.cursor-form input[type="number"]:focus { outline: none; border-color: var(--accent); }
+.cursor-form input[type="number"]:focus { border-color: var(--accent); }
 .cursor-form button {
   padding: 0.375rem 0.875rem;
   background: var(--button-bg);
@@ -86,7 +86,7 @@
     <h1>{{.Entry.Manga.Title}}</h1>
     <p class="entry-detail-tags">
       <span class="status status-{{.Entry.Status}}">{{statusLabel .Entry.Status}}</span>
-      {{if .Entry.IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
+      {{if .Entry.IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
       {{template "mangadex-badge" .Entry}}
     </p>
     <p class="muted">
@@ -169,11 +169,12 @@
        y el server toma el primero; desmarcado llega solo el 0. Sin esto,
        desmarcar estando al día volvía al default y la casilla se remarcaba. */}}
   <input type="hidden" name="include_read" value="0">
-  <select name="sort">
+  <label class="visually-hidden" for="chapter-sort">orden</label>
+  <select id="chapter-sort" name="sort">
     <option value="desc"{{if eq .Sort "desc"}} selected{{end}}>más recientes primero</option>
     <option value="asc"{{if eq .Sort "asc"}} selected{{end}}>más viejos primero</option>
   </select>
-  <button type="submit">aplicar</button>
+  <button type="submit">filtrar</button>
 </form>
 
 {{if .Chapters}}
@@ -228,13 +229,13 @@
 {{else}}
   {{if eq .Entry.SourceStatus "unmatched"}}
     <div class="empty-state">
-      <span class="kanji">待</span>
+      <span class="kanji" aria-hidden="true">待</span>
       <h2>buscando capítulos.</h2>
       <p>estamos cruzando este título con las sources. tardamos pocos minutos — actualiza la página.</p>
     </div>
   {{else}}
     <div class="empty-state">
-      <span class="kanji">空</span>
+      <span class="kanji" aria-hidden="true">空</span>
       <h2>sin capítulos todavía.</h2>
       <p>no encontramos releases en las sources que conectamos. prueba reintentar la búsqueda o vincular una source manualmente.</p>
     </div>

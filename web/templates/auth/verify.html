@@ -1,4 +1,4 @@
-{{define "title"}}código · mokuji{{end}}
+{{define "title"}}{{if .Error}}error: {{end}}código · mokuji{{end}}
 {{define "content"}}
 <div class="auth-page">
   <p class="eyebrow">№ 002 — revisa tu mail</p>
@@ -10,7 +10,7 @@
     abre el mail que mandamos a <strong>{{.Email}}</strong> y pega los 6 dígitos abajo. expira en 10 minutos.
   </p>
 
-  {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="error" role="alert" id="code-error">{{.Error}}</p>{{end}}
 
   <form method="POST" action="/auth/verify" autocomplete="off">
     {{csrfInput .Session}}
@@ -18,7 +18,8 @@
     <label>
       código de 6 dígitos
       <input type="text" name="code" required autofocus
-             inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+             {{- if .Error}} aria-invalid="true" aria-describedby="code-error"{{end}}
+             inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"
              class="otp-input" placeholder="000000">
     </label>
     <button type="submit">entrar →</button>

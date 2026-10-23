@@ -1,4 +1,4 @@
-{{define "title"}}feedback · mokuji{{end}}
+{{define "title"}}{{if .Error}}error: {{end}}feedback · mokuji{{end}}
 {{define "content"}}
 <style>
 .feedback { max-width: 36rem; margin: 0 auto; padding: 1.5rem 0 3rem; }
@@ -9,14 +9,14 @@
 .feedback select,
 .feedback textarea {
   width: 100%; padding: 0.625rem 0.75rem;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-input);
   background: var(--input-bg);
   color: var(--text);
   font: inherit;
   border-radius: 0;
 }
 .feedback textarea { min-height: 9rem; resize: vertical; line-height: 1.45; }
-.feedback select:focus, .feedback textarea:focus { outline: none; border-color: var(--accent); }
+.feedback select:focus, .feedback textarea:focus { border-color: var(--accent); }
 .feedback .help { font-size: 0.75rem; color: var(--text-muted); margin: -0.4rem 0 0; }
 .feedback .error { background: var(--error-bg); border-left: 3px solid var(--error-border); color: var(--error-text); padding: 0.625rem 0.875rem; font-size: 0.875rem; }
 .feedback button {
@@ -30,11 +30,11 @@
 }
 .feedback button:hover { background: var(--button-bg-hover); }
 </style>
-<main class="feedback">
+<div class="feedback">
   <h1>feedback</h1>
   <p class="lead">¿Encontraste un bug, quieres pedir una mejora, o algo no se entiende? Cuéntame.</p>
 
-  {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+  {{if .Error}}<p class="error" role="alert" id="feedback-error">{{.Error}}</p>{{end}}
 
   <form method="POST" action="/feedback">
     {{csrfInput .Session}}
@@ -49,10 +49,10 @@
     </select>
 
     <label for="mensaje">mensaje</label>
-    <textarea id="mensaje" name="mensaje" required minlength="4" maxlength="4000" placeholder="¿Qué pasó? ¿Qué esperabas?"></textarea>
-    <p class="help">Mínimo 4 caracteres, máximo 4000. Tu email queda visible para que pueda responderte.</p>
+    <textarea id="mensaje" name="mensaje" aria-describedby="mensaje-help{{if .Error}} feedback-error{{end}}"{{if .Error}} aria-invalid="true" autofocus{{end}} required minlength="4" maxlength="4000" placeholder="¿Qué pasó? ¿Qué esperabas?"></textarea>
+    <p class="help" id="mensaje-help">Mínimo 4 caracteres, máximo 4000. Tu email queda visible para que pueda responderte.</p>
 
     <button type="submit">enviar</button>
   </form>
-</main>
+</div>
 {{end}}

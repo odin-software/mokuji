@@ -42,6 +42,7 @@
 </header>
 
 <p class="muted" style="margin-top:0.75rem;">capítulos nuevos de tu biblioteca, lo más reciente arriba.</p>
+<p class="muted">"leer" abre el capítulo en una pestaña nueva y lo marca leído, junto con los anteriores.</p>
 
 {{if .Releases}}
 <ul class="release-list">
@@ -60,12 +61,12 @@
       <form method="POST" action="/releases/read" target="_blank" class="inline-form">
         {{csrfInput $.Session}}
         <input type="hidden" name="chapter_id" value="{{.ChapterID}}">
-        <button type="submit" class="action-link" title="abre el lector en una pestaña nueva y marca leído acá">leer →</button>
+        <button type="submit" class="action-link">leer<span class="visually-hidden">{{if .ChapterNumber}} el cap. {{.ChapterNumber}} de{{end}} {{.MangaTitle}}, abre en pestaña nueva</span> <span aria-hidden="true">→</span></button>
       </form>
       <form method="POST" action="/releases/mark-read" class="inline-form">
         {{csrfInput $.Session}}
         <input type="hidden" name="chapter_id" value="{{.ChapterID}}">
-        <button type="submit" class="link-button" title="marcar este capítulo y los anteriores como leídos">marcar leído</button>
+        <button type="submit" class="link-button">marcar leído<span class="visually-hidden">{{if .ChapterNumber}} el cap. {{.ChapterNumber}} de{{end}} {{.MangaTitle}} y los anteriores</span></button>
       </form>
     </div>
   </li>
@@ -80,7 +81,7 @@
 {{end}}
 {{else}}
 <div class="empty-state">
-  <span class="kanji">了</span>
+  <span class="kanji" aria-hidden="true">了</span>
   <h2>al día con todo.</h2>
   <p>no hay capítulos nuevos desde tu última visita. cuando salgan, los vas a ver acá.</p>
   <a href="/library" class="action-link">tu biblioteca →</a>

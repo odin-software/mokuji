@@ -7,15 +7,17 @@
   </div>
 </header>
 
-<form method="GET" action="/library" class="lib-filters" data-auto-submit>
-  <input type="search" name="q" placeholder="buscar tu biblioteca o agregar manga nuevo" value="{{.Query}}">
-  <select name="filter">
+<form method="GET" action="/library" class="lib-filters">
+  <label class="visually-hidden" for="lib-q">buscar en tu biblioteca o agregar un manga</label>
+  <input type="search" id="lib-q" name="q" placeholder="buscar o agregar manga" value="{{.Query}}">
+  <label class="visually-hidden" for="lib-filter">estado</label>
+  <select id="lib-filter" name="filter">
     <option value="all"{{if eq .Filter "all"}} selected{{end}}>todos</option>
     <option value="reading"{{if eq .Filter "reading"}} selected{{end}}>leyendo</option>
     <option value="planned"{{if eq .Filter "planned"}} selected{{end}}>por leer</option>
     <option value="completed"{{if eq .Filter "completed"}} selected{{end}}>completado</option>
   </select>
-  <noscript><button type="submit">buscar</button></noscript>
+  <button type="submit">filtrar</button>
 </form>
 
 {{if .Query}}<h2 class="lib-section">en tu biblioteca</h2>{{end}}
@@ -28,7 +30,7 @@
       <summary>
         {{if .Manga.CoverURL}}<img src="{{.Manga.CoverURL}}" alt="" class="cover" width="40" loading="lazy" referrerpolicy="no-referrer">{{end}}
         <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
-        {{if .IsFavorite}}<span class="favorite" title="favorito"></span>{{end}}
+        {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
         <a href="/library/entry/{{.ID}}" class="manga-title-link"><strong>{{.Manga.Title}}</strong></a>
         {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
         {{template "mangadex-badge" .}}
@@ -64,10 +66,16 @@
       {{if .SourceURL}}
       <p class="entry-source-link"><a href="{{.SourceURL}}" target="_blank" rel="noopener noreferrer">→ leer en tu fuente</a></p>
       {{end}}
-      <form method="POST" action="/library/{{.ID}}/delete" onsubmit="return confirm('¿borrar {{.Manga.Title}} de tu biblioteca?');" class="delete-form">
-        {{ csrfInput $.Session }}
-        <button type="submit" class="danger">borrar</button>
-      </form>
+      {{/* Dos pasos sin JS: la CSP bloquea handlers inline, así que un
+           confirm() en onsubmit nunca corría y borrar era un solo toque. */}}
+      <details class="delete-confirm">
+        <summary>borrar de tu biblioteca</summary>
+        <p>se borran tu progreso, notas y favorito. no se puede deshacer.</p>
+        <form method="POST" action="/library/{{.ID}}/delete">
+          {{ csrfInput $.Session }}
+          <button type="submit" class="danger">sí, borrar<span class="visually-hidden"> {{.Manga.Title}}</span></button>
+        </form>
+      </details>
     </details>
   </li>
 {{end}}
@@ -76,13 +84,13 @@
 <p class="muted lib-empty-inline">nada en tu biblioteca matchea "{{.Query}}".</p>
 {{else if ne .Filter "all"}}
 <div class="empty-state">
-  <span class="kanji">無</span>
+  <span class="kanji" aria-hidden="true">無</span>
   <h2>0 coincidencias.</h2>
   <p>nada en tu lista matchea este filtro. prueba cambiar el estado.</p>
 </div>
 {{else}}
 <div class="empty-state">
-  <span class="kanji">白</span>
+  <span class="kanji" aria-hidden="true">白</span>
   <h2>tu índice está en blanco.</h2>
   <p>busca un manga arriba y agrégalo con tu progreso.</p>
 </div>
@@ -90,7 +98,7 @@
 
 {{if .Query}}
 <h2 class="lib-section">agregar nuevo · {{.Source}}</h2>
-{{if .CatalogError}}<p class="error">{{.CatalogError}}</p>{{end}}
+{{if .CatalogError}}<p class="error" role="alert">{{.CatalogError}}</p>{{end}}
 {{if .Catalog}}
 <ul class="search-results">
 {{range .Catalog}}
@@ -118,7 +126,7 @@
 </ul>
 {{else if not .CatalogError}}
 <div class="empty-state">
-  <span class="kanji">無</span>
+  <span class="kanji" aria-hidden="true">無</span>
   <h2>nada en el catálogo.</h2>
   <p>prueba kanji, romaji, o el título en inglés. AniList indexa con varios alias.</p>
 </div>

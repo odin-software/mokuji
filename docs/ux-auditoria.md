@@ -400,3 +400,222 @@ Responde a F1.
   vez de nombrarlas a mano.
 - **Settings:** un form y un botón por sección (username, visibilidad,
   digest); al final cerrar sesión (D4), exportar y borrar cuenta.
+
+---
+
+## Accesibilidad — pasada WCAG 2.2 AA (2026-10-23)
+
+Revisión del plan de UX antes de ejecutarlo. Sale de leer los templates
+(`layout.html`, `library/*`, `settings.html`, `onboarding/*`,
+`releases.html`, `profile.html`, `auth/*`), calcular el contraste de los
+tokens de `layout.html` y de un recorrido en local con una cuenta nueva
+(`a11y-audit@example.test`, One Piece y Frieren agregados), en 1024px,
+375px y 320px, claro y oscuro. Lo marcado **[en vivo]** se confirmó en el
+navegador.
+
+Prioridad: **P1** = falla un criterio AA (o A) en algo que se usa a diario;
+**P2** = falla AA en algo secundario, o pasa justo y el plan lo empeoraría;
+**P3** = mejora sin falla formal.
+
+### Contraste medido
+
+Ratios contra `--bg` / `--bg-2` (sidebar, panel abierto, empty states,
+cursor). Mínimo AA: 4.5 texto normal, 3 para bordes de controles (1.4.11).
+
+| token / uso | claro | oscuro |
+|---|---|---|
+| `--text-muted` (`.muted`, nav, hints, meta de capítulos, `completado`) | **3.15** / **2.87** | 4.84 / **4.45** |
+| `--accent` como texto chico (`.eyebrow`, legends) | 4.70 / **4.29** | 4.73 / **4.35** |
+| `--accent` sobre `--accent-soft` (badge `N nuevos`) | **3.94** | **3.97** |
+| `.md-badge-warn` (`matching incierto`) | **4.35** | 10.90 |
+| `--border` (borde de inputs y selects) | **1.45** | **1.72** |
+| capítulo leído (`opacity: 0.5`), texto principal | **3.26** | 4.45 |
+| capítulo leído, `.muted` | **1.68** | **2.12** |
+| `--bg` sobre `--accent` (`leyendo`, botón danger oscuro) | 4.70 | 4.73 |
+| `--text`, `--text-soft`, `--error-text` | ≥ 9 | ≥ 9 |
+
+`--text-muted` en claro es el hallazgo más grande de toda la pasada: es el
+color de casi todo el texto secundario de la app y no llega a 4.5 en ningún
+fondo.
+
+### P1
+
+**A11y-1. Texto secundario y bordes de controles sin contraste** (1.4.3,
+1.4.11). Ver tabla. Además de `.muted`, falla el badge `N nuevos` (el dato
+más importante de la lista), el nav entero (mono, 0.75rem, muted), los
+capítulos leídos (por la opacidad, que también apaga sus botones) y el
+borde de 1px del buscador de `/library`, que en claro casi no se ve.
+
+**A11y-2. Filtros con auto-submit** (3.2.2 On Input, nivel A). Cambiar el
+`<select>` de `/library` recarga la página. En Windows la flecha abajo sobre
+un select cerrado cambia el valor sin abrirlo y dispara `change`:
+el primer intento de recorrer las opciones con teclado te manda a otra
+página y el foco vuelve arriba. D4 propone extender el auto-submit al
+detalle, lo que duplicaría la falla.
+
+**A11y-3. "borrar" no pide confirmación** (3.3.4 Error Prevention, que
+cubre borrar datos del user). **[en vivo]** El `onsubmit="return
+confirm(…)"` de la lista es un handler inline y la CSP (`script-src 'self'`)
+lo bloquea; la consola lo reporta y el form se envía directo. **Es un bug
+vivo en producción**, no algo del plan: hoy un toque en "borrar" borra el
+manga con su progreso y sus notas. El plan (Task 3) dice conservar "el
+`confirm()` actual", o sea, conservaría el bug.
+
+**A11y-4. Campos sin nombre accesible** (1.3.1, 3.3.2, 4.1.2). El buscador
+de `/library` solo tiene placeholder (y en mobile se corta antes de
+"agregar manga nuevo"); los selects de filtro (`/library`) y de orden
+(detalle) no tienen label. Un lector de pantalla anuncia "campo de
+búsqueda" y "menú emergente, todos" sin decir qué filtra.
+
+**A11y-5. Reflow a 320px** (1.4.10). **[en vivo]** A 320px la página se
+ensancha a 374px: el header no envuelve y "SETTINGS" queda cortado con
+scroll horizontal. A 375px entra con 2px de margen. Los labels más cortos
+de D8 ayudan pero no garantizan nada sin `flex-wrap`.
+
+### P2
+
+**A11y-6. Errores que no se anuncian ni se asocian al campo** (3.3.1,
+4.1.3). Los `<p class="error">` de auth (start y verify), settings
+(username), borrar cuenta, feedback y el error del catálogo no tienen
+`role="alert"` ni están ligados al input (`aria-invalid`,
+`aria-describedby`). El flash de settings sí tiene `role`. Ojo: en una app
+sin JS cada respuesta es una página nueva, y los lectores no anuncian de
+forma confiable un live region que ya viene en la carga. Lo que sí
+funciona sin JS: `autofocus` en el campo inválido (el lector lee label +
+descripción + "inválido") y el error como primera palabra del `<title>`.
+
+**A11y-7. Botones con el mismo nombre repetido** (2.4.6; 2.4.4 para los
+links). **[en vivo]** La búsqueda "one piece" da 20 botones "+ agregar"
+idénticos; el detalle tiene un "leer en mangadex →" y un "marcar leído" por
+capítulo, y "reintentar"/"desvincular" por source; `/releases` repite "leer
+→". Fuera de contexto (lista de controles del lector, o al tabular) no se
+sabe de qué manga o capítulo es cada uno. Además el "→" se lee como
+"flecha derecha" y el "+" como "más".
+
+**A11y-8. Info que solo vive en `title`**. "abre el lector en una pestaña
+nueva y marca leído aquí" (releases y detalle) y "marcar este capítulo y
+los anteriores como leídos" solo salen al pasar el mouse: no llegan a
+teclado ni a touch. Abrir pestaña nueva sin avisar desorienta a quien usa
+lector de pantalla.
+
+**A11y-9. Saltar la navegación** (2.4.1). En desktop hay 12 paradas de
+tabulador antes del buscador (sidebar + el header duplicado del bug de
+cascada). No hay skip link, el `<header class="app-nav">` mobile vive dentro
+de `<main>` y los dos `<nav>` no tienen nombre.
+
+**A11y-10. Kanji y glifos decorativos que se leen en voz alta** (1.1.1,
+3.1.2). Los kanji de los empty states (`無`, `白`, `待`, `空`, `了`, `秘`) y
+de 404/500 no tienen `aria-hidden`; un lector con voz en español los lee
+como caracteres sueltos (o cambia de voz a medias), sin aportar nada. Igual el `目次` que
+el logo mete por CSS (`::before`) y el "· 目次" del footer. Los del
+onboarding, verify y unsubscribe ya están bien.
+
+**A11y-11. Favorito que no se anuncia** (1.1.1). Es un `<span>` vacío con
+`title` y un `●` por CSS: el lector dice "círculo negro" o nada. Lo mismo
+el `01/02/03` del `::before` de los badges de estado ("cero uno leyendo").
+
+**A11y-12. Foco que se pierde después de cada POST**. Toda acción redirige
+a la página completa y el foco vuelve al inicio. Con D2 esto pasa a ser el
+flujo principal (estado, favorito, marcar leído, cursor): cambiar el estado
+con teclado te devuelve arriba del todo, a recorrer otra vez el nav.
+
+### P3
+
+- **Tamaños de toque** (2.5.8). **[en vivo]** `marcar leído`,
+  `reintentar` y `desvincular` miden 15px de alto. Pasan AA por la
+  excepción de espaciado (no hay otro target a menos de 24px), pero en
+  mobile son difíciles de acertar. El resto de los controles mide ≥ 24px.
+- **Foco visible**: pasa. Los inputs cambian el borde a `--text` (15:1) y
+  links y botones usan el anillo del navegador **[en vivo]**. Pero no es
+  consistente (el cursor usa `--accent`, feedback también) y los botones de
+  estado nuevos de D2 van a tener fondo oscuro.
+- **Contenido interactivo anidado**: el `<summary>` de la lista contiene
+  links (título y badge). D2 lo elimina; no hay que reintroducirlo.
+- **Encabezados**: el detalle no tiene un `h2` "capítulos"; la lista de
+  capítulos no se puede alcanzar por encabezado.
+- **OTP**: `auth/verify` no tiene `autocomplete="one-time-code"` (borrar
+  cuenta sí). No es requisito AA, pero en iOS sugiere el código del email.
+- **`500.html`** usa `onclick` inline, que la CSP también bloquea; funciona
+  de casualidad porque `href=""` recarga igual.
+
+### Lo que ya está bien
+
+`lang="es"`, `<title>` por página, viewport sin bloquear zoom, `<main>`,
+labels envolviendo inputs en settings y cursor, radios agrupados en
+`fieldset` con `legend`, `role="alert"/"status"` en el flash de settings,
+todo operable con teclado y sin JS (forms POST + links), sin animaciones,
+portadas con `alt=""` al lado del título (correcto: son decorativas ahí),
+`aria-label` en las paginaciones.
+
+### Sobre los botones de estado de D2 (`aria-pressed`)
+
+El plan pone `aria-pressed="true"` solo en el botón activo, en tres forms
+separados. Así, el lector anuncia el activo como "botón de alternancia,
+presionado" y los otros dos como botones comunes: no se entiende que son
+un grupo de tres opciones. Ajuste (técnico, no cambia D2):
+
+- **Un solo form** con tres `<button name="status" value="…">`, dentro de
+  `<div role="group" aria-labelledby="estado-label">` con un label visible
+  "estado".
+- **`aria-pressed` explícito en los tres**: `"true"` en el activo y
+  `"false"` en los otros dos. El activo sigue habilitado (no `disabled`:
+  saldría del orden de foco y perdería contraste); re-enviarlo es un no-op.
+- **El activo no depende solo del color** (1.4.1): relleno + `✓`
+  (`aria-hidden`) delante del texto.
+- **Favorito** como un solo botón "favorito" con `aria-pressed`
+  `true/false` (el caso de libro de `aria-pressed`), en vez de cambiar el
+  label entre "★ favorito" y "☆ favorito". La estrella va `aria-hidden`.
+- **Alto mínimo 2.75rem (44px)** en mobile para estado y favorito: son las
+  acciones principales del detalle.
+
+Descartado: un radio group con `<input type="radio">`. Es el patrón
+semántico "correcto" para opciones excluyentes, pero sin JS necesita un
+"guardar", que D2 rechazó, y con JS sería auto-submit, que es la falla
+A11y-2.
+
+### Propuestas que necesitan tu decisión (en orden)
+
+**A1 — Oscurecer el texto secundario y los bordes de los controles.**
+Propuesta: `--text-muted` `#8a857a` → `#67625a` en claro (5.19 / 4.73) y
+`#8a8273` → `#9a9282` en oscuro (5.97 / 5.49); un token nuevo
+`--accent-text` para texto chico en acento (`#a33a25` claro, `#e57358`
+oscuro, ≥ 4.7 incluso sobre `--accent-soft`), dejando `--accent` para
+rellenos, bordes y el kanji grande; y un `--border-input` a 0.5 de alfa en
+claro (3.26) y 0.45 en oscuro (3.84) solo para inputs, selects y
+textareas. Por qué: es el único cambio que arregla de un golpe la mayoría
+de las fallas de contraste, y el look se mantiene (mismo tono cálido, un
+paso más oscuro; el vermellón de marca no cambia). Cambiar `--border`
+entero endurecería también las reglas y separadores, que no lo necesitan.
+Capítulos leídos: `color: var(--text-muted)` en vez de `opacity: 0.5`.
+
+**A2 — Sin auto-submit en ningún filtro; un botón "filtrar" visible en los
+dos.** Revierte la parte de D4 que extendía el auto-submit al detalle, y lo
+quita de `/library`. Por qué: es una falla de nivel A (3.2.2) que pega
+justo a quien navega con teclado, la consistencia entre pantallas (#8) se
+logra igual (botón en los dos lados), y es la opción más simple: borra el
+único bloque de `app.js` que no es el service worker. El costo es un clic
+más para filtrar por estado. El buscador sigue enviando con Enter.
+
+**A3 — Confirmar "borrar" sin JS con un `<details>` de dos pasos.** Al
+fondo del detalle: `<details><summary>borrar de tu biblioteca</summary>`
+que abre un texto ("se borran tu progreso, notas y favorito. no se puede
+deshacer.") y el botón real "sí, borrar". Por qué: funciona sin JS y con
+la CSP actual, se opera con teclado (Enter abre el summary), no agrega
+rutas (una página de confirmación sería un GET + template nuevos), y dos
+pasos visibles cumplen 3.3.4. Como hoy está roto en prod, vale la pena
+sacarlo antes que el resto del plan, en la lista actual, si quieres un
+minor aparte; si no, entra con D2.
+
+**A4 — Fila de la lista con "stretched link" en el título, no un `<a>`
+que envuelve toda la fila.** El link es solo el título; un `::after`
+absoluto lo estira a toda la fila (`position: relative` en el `<li>`), así
+que tocar cualquier parte sigue llevando al detalle. Por qué: con el `<a>`
+envolviendo todo, el nombre accesible del link es "01 leyendo círculo
+negro One Piece — cap. 87 14 nuevos" y así sale en la lista de links del
+lector, para cada fila. Con el stretched link el nombre es "One Piece" y el
+resto se lee como texto normal de la fila. Mismo comportamiento visual y
+de toque, mismo markup sin JS.
+
+Lo demás (labels, `aria-hidden`, skip link, errores asociados, fragmentos
+en los redirects, nombres de botones) son correcciones sin alternativa
+razonable y van directo al plan.

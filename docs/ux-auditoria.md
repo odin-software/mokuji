@@ -256,6 +256,9 @@ faltantes, pero solo corre al arrancar.
 
 ## Decisiones cerradas
 
+> **Implementadas (2026-10-23)** en el branch de UX, junto con A1–A4 de la
+> sección de accesibilidad. Detalle en `docs/estado.md`.
+
 ### D1 — El cursor es la única fuente de progreso (2026-10-19)
 
 `last_read_chapter_number` es la única verdad sobre "por dónde voy";

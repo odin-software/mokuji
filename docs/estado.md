@@ -247,6 +247,41 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
+### (versión por definir) — UX y accesibilidad
+
+Implementa las decisiones D1–D8 y A1–A4 de `docs/ux-auditoria.md`
+(plan: `docs/superpowers/plans/2026-10-19-ux-v1.1.md`). Sin tag ni bump de
+`VERSION` todavía: el número lo decide el autor.
+
+- **Un solo progreso (D1)**: el cursor reemplaza a `last_chapter`. La
+  migración 0015 sube el cursor con los valores numéricos, antepone los no
+  numéricos a las notas (`progreso anterior: …`) y borra la columna. El
+  export ya no trae `last_chapter`.
+- **El detalle gestiona (D2)**: estado con tres botones (`aria-pressed`),
+  favorito como toggle, notas y fuente, y borrar en dos pasos con
+  `<details>`. Endpoints chicos (`/status`, `/favorite`, `/notes`) que
+  redirigen con fragmento; `POST /library/{id}/update` desaparece. La lista
+  solo navega (el link es el título, estirado a toda la fila).
+- **Estado reactivo (D3)**: cualquier progreso pasa "por leer" a "leyendo".
+  Agregar lleva al detalle del manga.
+- **Sin home (D4)**: `/` con sesión redirige a `/library`, que ordena lo que
+  tiene capítulos sin leer primero. El logout de mobile vive en ajustes.
+- **Sources honestas (D5)**: un vocabulario (`N nuevos · al día ·
+  buscando… · sin capítulos`) y el detalle por source al final, cerrado.
+- **Sigue leyendo (D6)**: "sigue con el cap. N →" arriba; sin fechas de
+  subida en la lista de capítulos.
+- **Búsqueda (D7)**: formato, año, capítulos y estado desde AniList;
+  one-shots y novelas al final.
+- **Copy (D8)**: nav `biblioteca · nuevos · ajustes`, ajustes con un form
+  por sección, onboarding con las sources de la instancia.
+- **Accesibilidad**: contraste AA en claro y oscuro (`--text-muted`,
+  `--accent-text`, `--border-input`), skip link, foco visible, labels en
+  los filtros, sin auto-submit, errores asociados al campo, kanji
+  decorativos ocultos al lector, nombres completos en botones repetidos y
+  sin scroll horizontal a 320px. **Arregla un bug de prod**: el `confirm()`
+  de borrar era un handler inline que la CSP bloqueaba, así que borrar no
+  pedía confirmación.
+
 ### v1.1.0 — import de MyAnimeList
 
 Feature nueva: importar el export de manga de MAL desde `/settings`.

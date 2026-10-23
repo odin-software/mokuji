@@ -222,7 +222,7 @@ var redirectTmpl = htmltmpl.Must(htmltmpl.New("redir").Parse(`<!DOCTYPE html>
 <meta http-equiv="refresh" content="0; url={{.URL}}">
 <title>abriendo el lector…</title>
 </head><body>
-<p>abriendo el lector… si no pasa nada, <a href="{{.URL}}" rel="noopener">click acá</a>.</p>
+<p>abriendo el lector… si no pasa nada, <a href="{{.URL}}" rel="noopener">toca aquí</a>.</p>
 </body></html>`))
 
 func writeRedirectPage(w http.ResponseWriter, url string) {

@@ -9,7 +9,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="mokuji">
 <meta property="og:title" content="mokuji · una biblioteca para tu manga">
-<meta property="og:description" content="Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin recomendaciones — solo un índice prolijo de lo que importa.">
+<meta property="og:description" content="Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin recomendaciones — solo un índice limpio de lo que importa.">
 <meta property="og:image" content="/static/og/og-default.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -325,7 +325,7 @@ body {
   padding: 0.4rem 0;
   border-bottom: 2px solid transparent;
 }
-.app-sidebar-nav a:hover { color: var(--text); border-bottom-color: var(--accent); }
+.app-sidebar-nav a:hover, .app-sidebar-nav a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 .app-sidebar-foot {
   margin-top: auto;
   padding-top: 2rem;
@@ -444,7 +444,7 @@ button.danger:hover { background: #8a2818; }
 }
 .app-nav nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .app-nav nav a { color: var(--text-muted); text-decoration: none; padding-bottom: 0.2rem; border-bottom: 2px solid transparent; }
-.app-nav nav a:hover, .app-nav nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+.app-nav nav a:hover, .app-nav nav a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 
 .app-footer {
   margin: 3rem 0 0;
@@ -978,8 +978,8 @@ button.danger:hover { background: #8a2818; }
     <a href="/library" class="app-sidebar-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
     <nav class="app-sidebar-nav" aria-label="principal">
       <a href="/library">biblioteca</a>
-      <a href="/releases">releases</a>
-      <a href="/settings">settings</a>
+      <a href="/releases">nuevos</a>
+      <a href="/settings">ajustes</a>
     </nav>
     <div class="app-sidebar-foot">
       <a href="/u/{{.Session.UserID}}">tu perfil</a>
@@ -1000,8 +1000,8 @@ button.danger:hover { background: #8a2818; }
     <a href="/library" class="app-nav-logo"><span class="logo-kanji" lang="ja" aria-hidden="true">目次</span>mokuji</a>
     <nav aria-label="principal">
       <a href="/library">biblioteca</a>
-      <a href="/releases">releases</a>
-      <a href="/settings">settings</a>
+      <a href="/releases">nuevos</a>
+      <a href="/settings">ajustes</a>
     </nav>
   </header>
   {{end}}

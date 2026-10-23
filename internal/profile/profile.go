@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	texttmpl "text/template"
 	"time"
 
@@ -260,25 +261,37 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vis := r.PostFormValue("list_visibility")
-	if vis != VisibilityPublic && vis != VisibilityPrivate {
-		http.Error(w, "valor inválido para list_visibility", http.StatusBadRequest)
-		return
+	// Ajustes tiene un form por sección (D8): cada POST trae solo sus
+	// campos y se actualiza solo lo que vino. Un valor presente pero
+	// inválido es 400; un POST vacío no cambia nada.
+	var sets []string
+	var args []any
+	if _, ok := r.PostForm["list_visibility"]; ok {
+		vis := r.PostFormValue("list_visibility")
+		if vis != VisibilityPublic && vis != VisibilityPrivate {
+			http.Error(w, "valor inválido para list_visibility", http.StatusBadRequest)
+			return
+		}
+		sets, args = append(sets, "list_visibility = ?"), append(args, vis)
+	}
+	if _, ok := r.PostForm["digest_frequency"]; ok {
+		freq := r.PostFormValue("digest_frequency")
+		if freq != "weekly" && freq != "daily" && freq != "off" {
+			http.Error(w, "valor inválido para digest_frequency", http.StatusBadRequest)
+			return
+		}
+		sets, args = append(sets, "digest_frequency = ?"), append(args, freq)
 	}
 
-	freq := r.PostFormValue("digest_frequency")
-	if freq != "weekly" && freq != "daily" && freq != "off" {
-		freq = "weekly"
-	}
-
-	if _, err := h.db.ExecContext(r.Context(), `
-		UPDATE users
-		SET list_visibility = ?, digest_frequency = ?
-		WHERE id = ?
-	`, vis, freq, s.UserID); err != nil {
-		h.logger.Error("actualizar settings", "err", err)
-		h.errs.InternalServerError(w, r)
-		return
+	if len(sets) > 0 {
+		args = append(args, s.UserID)
+		if _, err := h.db.ExecContext(r.Context(),
+			`UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...,
+		); err != nil {
+			h.logger.Error("actualizar settings", "err", err)
+			h.errs.InternalServerError(w, r)
+			return
+		}
 	}
 
 	if h.flasher != nil {

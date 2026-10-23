@@ -51,7 +51,7 @@ func serveSitemap(baseURL string) http.HandlerFunc {
 const llmsTxtBody = `# mokuji
 
 Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin
-recomendaciones — solo un índice prolijo de lo que importa.
+recomendaciones — solo un índice limpio de lo que importa.
 
 ## Qué hace
 

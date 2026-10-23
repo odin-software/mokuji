@@ -1,8 +1,8 @@
-{{define "title"}}{{if .UsernameError}}error: {{end}}configuración — mokuji{{end}}
+{{define "title"}}{{if .UsernameError}}error: {{end}}ajustes — mokuji{{end}}
 {{define "content"}}
 <header class="page-head">
   <p class="eyebrow">cuenta · {{.Email}}</p>
-  <h1>configuración</h1>
+  <h1>ajustes</h1>
 </header>
 
 {{if .Flash}}<p class="{{if eq .Flash.Kind "error"}}error{{else}}success{{end}}" role="{{if eq .Flash.Kind "error"}}alert{{else}}status{{end}}">{{.Flash.Message}}</p>{{end}}
@@ -37,7 +37,7 @@
     {{if .CooldownUntilFmt}}
       <p class="muted">puedes volver a cambiarlo a partir del {{.CooldownUntilFmt}}.</p>
     {{end}}
-    <button type="submit">guardar username</button>
+    <button type="submit">guardar<span class="visually-hidden"> username</span></button>
   </fieldset>
 </form>
 
@@ -59,7 +59,14 @@
         <span class="muted">solo tú puedes ver tu lista</span>
       </span>
     </label>
+    <button type="submit">guardar<span class="visually-hidden"> visibilidad</span></button>
   </fieldset>
+</form>
+
+{{/* Un form por sección (D8): cada POST manda solo sus campos y el server
+     actualiza solo esos. Antes visibilidad y digest compartían botón. */}}
+<form method="POST" action="/settings">
+  {{ csrfInput .Session }}
   <fieldset class="block">
     <legend class="block-legend">digest por email</legend>
     <p class="muted" style="margin-bottom: 0.75rem;">
@@ -70,7 +77,7 @@
       <input type="radio" name="digest_frequency" value="weekly" {{if eq .DigestFrequency "weekly"}}checked{{end}}>
       <span>
         <strong>semanal · domingos</strong>
-        <code>un solo email · prolijo</code>
+        <code>un solo email · resumido</code>
       </span>
     </label>
 
@@ -89,8 +96,8 @@
         <code>solo dentro de la app</code>
       </span>
     </label>
+    <button type="submit">guardar<span class="visually-hidden"> digest</span></button>
   </fieldset>
-  <button type="submit">guardar</button>
 </form>
 
 <form method="POST" action="/settings/import/mal" enctype="multipart/form-data">

@@ -13,9 +13,11 @@ import (
 	"io/fs"
 	"log"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -376,6 +378,7 @@ func main() {
 		DB:            db,
 		HTMLTemplates: htmlFS,
 		Logger:        logger.With("component", "onboarding"),
+		SourceNames:   slices.Sorted(maps.Keys(sourceMatchers)),
 	})
 	if err != nil {
 		log.Fatalf("crear handler onboarding: %v", err)

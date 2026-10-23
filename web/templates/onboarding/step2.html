@@ -16,7 +16,7 @@
   <p class="eyebrow">02 — qué monitoreamos</p>
   <h1>capítulos nuevos,<br><span class="accent">cuando salen.</span></h1>
   <p class="onb-body">
-    seguimos <strong>MangaDex</strong> y <strong>Asura</strong> automáticamente. no tienes que configurar nada — cuando agregas un manga, encontramos las sources solas.
+    {{if .Sources}}seguimos <strong>{{.Sources}}</strong> automáticamente.{{else}}seguimos tus mangas automáticamente.{{end}} no tienes que configurar nada — cuando agregas un manga, encontramos las sources solas.
   </p>
   <div class="onb-ctas">
     <a href="/onboarding/step3" class="onb-cta-primary">seguir →</a>

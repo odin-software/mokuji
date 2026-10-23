@@ -52,3 +52,19 @@ func TestTemplatesDecorativeGlyphsHidden(t *testing.T) {
 		}
 	})
 }
+
+// D8: copy en español dominicano. Regionalismos y restos en inglés que ya
+// se sacaron no deberían volver.
+func TestCopyHasNoRegionalisms(t *testing.T) {
+	// "entries" es case-sensitive y con espacio, > o } antes para no
+	// pegarle a .Entries ni a /library/entry. "acá" sin \b al final: en RE2
+	// \b es ASCII y la á no cuenta como letra.
+	re := regexp.MustCompile(`(?i:prolijo|\bacá|[^-_a-z]mail\b|es_AR)|[ >}]entries\b`)
+	walkTemplates(t, func(path, body string) {
+		// Los comentarios de template no son copy.
+		body = regexp.MustCompile(`(?s)\{\{/\*.*?\*/\}\}`).ReplaceAllString(body, "")
+		for _, m := range re.FindAllString(body, -1) {
+			t.Errorf("%s: %q", path, m)
+		}
+	})
+}

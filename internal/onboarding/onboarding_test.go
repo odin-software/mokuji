@@ -227,3 +227,27 @@ func TestSteps2And3_FullScreenNoChrome(t *testing.T) {
 		}
 	}
 }
+
+// D8: el paso 2 nombra las sources habilitadas en esta instancia, no una
+// lista escrita a mano.
+func TestOnboardingStep2ListsConfiguredSources(t *testing.T) {
+	db := setupDB(t)
+	h, err := New(Config{
+		DB:            db,
+		HTMLTemplates: os.DirFS("../../web/templates"),
+		SourceNames:   []string{"asura", "comick", "mangadex"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID := insertUser(t, db, "alice@example.com", sql.NullInt64{})
+	mux := http.NewServeMux()
+	h.Mount(mux)
+	req := withSession(httptest.NewRequest(http.MethodGet, "/onboarding/step2", nil), userID)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if !strings.Contains(w.Body.String(), "asura, comick y mangadex") {
+		t.Error("el paso 2 no lista las sources configuradas")
+	}
+}

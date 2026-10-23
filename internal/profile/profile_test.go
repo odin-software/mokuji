@@ -192,16 +192,81 @@ func TestUpdateSettingsDigestFrequency(t *testing.T) {
 		t.Errorf("digest no se actualizó a 'off': obtenido %q", got)
 	}
 
-	// Valor inválido cae a 'weekly' (safe default).
-	form3 := url.Values{"list_visibility": {"public"}, "digest_frequency": {"bogus"}}
+	// Valor presente pero inválido: 400 y no cambia nada (con un form por
+	// sección ya no hay un default que pisar a ciegas).
+	form3 := url.Values{"digest_frequency": {"bogus"}}
 	req3 := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form3.Encode()))
 	req3.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req3 = session.WithUserID(req3, userID)
-	h.updateSettings(httptest.NewRecorder(), req3)
+	rec3 := httptest.NewRecorder()
+	h.updateSettings(rec3, req3)
 
+	if rec3.Code != http.StatusBadRequest {
+		t.Errorf("digest inválido: esperado 400, obtenido %d", rec3.Code)
+	}
 	db.QueryRow(`SELECT digest_frequency FROM users WHERE id = ?`, userID).Scan(&got)
-	if got != "weekly" {
-		t.Errorf("valor inválido no cayó a 'weekly': obtenido %q", got)
+	if got != "off" {
+		t.Errorf("digest inválido cambió el valor: obtenido %q", got)
+	}
+}
+
+// postSettings manda solo los campos dados, como cada form por sección.
+func postSettings(h *Handler, userID int64, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = session.WithUserID(req, userID)
+	rec := httptest.NewRecorder()
+	h.updateSettings(rec, req)
+	return rec
+}
+
+func readSettings(t *testing.T, db *sql.DB, userID int64) (vis, freq string) {
+	t.Helper()
+	if err := db.QueryRow(`SELECT list_visibility, digest_frequency FROM users WHERE id = ?`, userID).Scan(&vis, &freq); err != nil {
+		t.Fatal(err)
+	}
+	return vis, freq
+}
+
+func TestUpdateSettingsDigestOnlyKeepsVisibility(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	setVisibility(t, db, userID, "private")
+
+	if rec := postSettings(h, userID, url.Values{"digest_frequency": {"daily"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("status: esperado 303, obtenido %d", rec.Code)
+	}
+	if vis, freq := readSettings(t, db, userID); vis != "private" || freq != "daily" {
+		t.Errorf("visibilidad %q, digest %q; esperado private y daily", vis, freq)
+	}
+}
+
+func TestUpdateSettingsVisibilityOnlyKeepsDigest(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	if _, err := db.Exec(`UPDATE users SET digest_frequency = 'off' WHERE id = ?`, userID); err != nil {
+		t.Fatal(err)
+	}
+
+	postSettings(h, userID, url.Values{"list_visibility": {"private"}})
+	if vis, freq := readSettings(t, db, userID); vis != "private" || freq != "off" {
+		t.Errorf("visibilidad %q, digest %q; esperado private y off", vis, freq)
+	}
+}
+
+func TestUpdateSettingsEmptyIsNoop(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	beforeVis, beforeFreq := readSettings(t, db, userID)
+
+	if rec := postSettings(h, userID, url.Values{}); rec.Code != http.StatusSeeOther {
+		t.Errorf("POST vacío: esperado 303, obtenido %d", rec.Code)
+	}
+	if vis, freq := readSettings(t, db, userID); vis != beforeVis || freq != beforeFreq {
+		t.Errorf("POST vacío cambió algo: %q/%q → %q/%q", beforeVis, beforeFreq, vis, freq)
 	}
 }
 
@@ -384,5 +449,47 @@ func TestSettingsHasLogout(t *testing.T) {
 	main := body[strings.Index(body, `id="contenido"`):]
 	if !strings.Contains(main, `action="/auth/logout"`) {
 		t.Error("ajustes no tiene el form de cerrar sesión dentro del contenido")
+	}
+}
+
+// D8: un form por sección; ninguno manda los campos de otro, y cada botón
+// "guardar" dice qué guarda.
+func TestSettingsOneFormPerSection(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db)
+	uid := insertUser(t, db, "alice@example.com")
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: uid, CSRFToken: "t"}))
+	rec := httptest.NewRecorder()
+	h.settings(rec, req)
+
+	body := rec.Body.String()
+	forms := strings.Split(body, "<form")
+	var vis, digest int
+	for _, f := range forms[1:] {
+		f = f[:strings.Index(f, "</form>")]
+		hasVis := strings.Contains(f, `name="list_visibility"`)
+		hasDigest := strings.Contains(f, `name="digest_frequency"`)
+		if hasVis && hasDigest {
+			t.Error("visibilidad y digest siguen en el mismo form")
+		}
+		if hasVis {
+			vis++
+		}
+		if hasDigest {
+			digest++
+		}
+	}
+	if vis != 1 || digest != 1 {
+		t.Errorf("forms con visibilidad: %d, con digest: %d; esperado 1 y 1", vis, digest)
+	}
+	for _, want := range []string{
+		`guardar<span class="visually-hidden"> username</span>`,
+		`guardar<span class="visually-hidden"> visibilidad</span>`,
+		`guardar<span class="visually-hidden"> digest</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("falta el botón %q", want)
+		}
 	}
 }

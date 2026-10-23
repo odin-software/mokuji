@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.odin.do/kengru/mokuji/internal/csrf"
@@ -33,6 +34,9 @@ type Config struct {
 	DB            *sql.DB
 	HTMLTemplates fs.FS
 	Logger        *slog.Logger
+	// SourceNames son las sources habilitadas en esta instancia, para que
+	// el paso 2 las nombre (D8) en vez de una lista escrita a mano.
+	SourceNames []string
 }
 
 // Handler sirve el wizard de onboarding.
@@ -42,6 +46,7 @@ type Handler struct {
 	tmplStep2 *template.Template
 	tmplStep3 *template.Template
 	logger    *slog.Logger
+	sources   string
 }
 
 // New construye un Handler. Falla si las plantillas no parsean.
@@ -84,6 +89,7 @@ func New(cfg Config) (*Handler, error) {
 		tmplStep2: s2,
 		tmplStep3: s3,
 		logger:    cfg.Logger,
+		sources:   joinY(cfg.SourceNames),
 	}, nil
 }
 
@@ -97,6 +103,21 @@ func (h *Handler) Mount(mux *http.ServeMux) {
 
 type stepData struct {
 	Session *session.Session
+	// Sources: "asura, comick y mangadex" (solo lo usa el paso 2).
+	Sources string
+}
+
+// joinY une con comas y "y" antes del último. Misma regla que el resumen de
+// sources del detalle (library), duplicada a propósito: son tres líneas y
+// onboarding no debería depender de library.
+func joinY(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " y " + items[len(items)-1]
 }
 
 // requireUnonboarded verifica que el usuario tenga sesión y que onboarded_at
@@ -136,7 +157,7 @@ func (h *Handler) step2(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.render(w, h.tmplStep2, "step2", stepData{Session: s})
+	h.render(w, h.tmplStep2, "step2", stepData{Session: s, Sources: h.sources})
 }
 
 func (h *Handler) step3(w http.ResponseWriter, r *http.Request) {

@@ -200,9 +200,10 @@ func (c *Client) do(ctx context.Context, query string, variables map[string]any,
 	return nil
 }
 
-// preferTitle retorna el primero no-vacío entre los candidatos.
+// demoted marca los formatos que van al final de la búsqueda (D7).
 func demoted(format string) bool { return format == "ONE_SHOT" || format == "NOVEL" }
 
+// preferTitle retorna el primero no-vacío entre los candidatos.
 func preferTitle(candidates ...string) string {
 	for _, s := range candidates {
 		if s != "" {

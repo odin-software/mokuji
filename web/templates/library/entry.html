@@ -216,8 +216,16 @@
 </nav>
 {{end}}
 {{else}}
-  {{/* Mismo cálculo que el badge de la lista (Entry.Searching). */}}
-  {{if .Entry.Searching}}
+  {{/* Mismo cálculo que el badge de la lista (Entry.Searching). Si el
+       manga tiene capítulos y la lista quedó vacía, es que estás al día
+       con los leídos ocultos: no es que falten capítulos. */}}
+  {{if gt .TotalChapters 0}}
+    <div class="empty-state">
+      <span class="kanji" aria-hidden="true">了</span>
+      <h2>estás al día.</h2>
+      <p>marca «ver leídos» para ver los capítulos anteriores.</p>
+    </div>
+  {{else if .Entry.Searching}}
     <div class="empty-state">
       <span class="kanji" aria-hidden="true">待</span>
       <h2>buscando capítulos.</h2>
@@ -263,7 +271,7 @@
 
 {{if .Sources}}
 {{/* Detalle por source: información de operador, cerrada al final (D5). */}}
-<details class="sources-details">
+<details class="sources-details" id="sources"{{if .SourcesOpen}} open{{end}}>
   <summary>sources</summary>
   <ul class="sources-list">
   {{range .Sources}}

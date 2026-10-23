@@ -43,6 +43,9 @@ func TestSourcesSummary(t *testing.T) {
 		{[]EntrySource{src("asura", SourceChapters), src("comick", SourceChapters), src("mangadex", SourceChapters)},
 			"capítulos de asura, comick y mangadex"},
 		{[]EntrySource{src("mangadex", SourceSearching)}, "buscando capítulos…"},
+		// Una falla transitoria no borra los capítulos que ya trajo.
+		{[]EntrySource{src("asura", SourceChapters), {Source: "mangadex", State: SourceFailing, Chapters: 480}},
+			"capítulos de asura y mangadex"},
 		{[]EntrySource{src("asura", SourceEmpty)}, ""},
 	} {
 		if got := sourcesSummary(tc.in); got != tc.want {

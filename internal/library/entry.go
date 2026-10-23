@@ -62,14 +62,17 @@ type entryData struct {
 	Sources  []EntrySource
 	// SourcesSummary es la línea bajo el título (ver sourcesSummary).
 	SourcesSummary string
+	// SourcesOpen abre el <details> de sources al volver de reintentar o
+	// desvincular (?sources=1), para que se vea el resultado.
+	SourcesOpen bool
 	// Next es el primer capítulo después del cursor (nil si estás al día) y
 	// Latest el número del último disponible. Ver loadNextChapter.
-	Next   *Chapter
-	Latest string
-	Sort           string // "asc" | "desc"
-	IncludeRead    bool
-	UnreadCount    int
-	TotalChapters  int
+	Next          *Chapter
+	Latest        string
+	Sort          string // "asc" | "desc"
+	IncludeRead   bool
+	UnreadCount   int
+	TotalChapters int
 
 	// Paginación de la chapter list.
 	Page       int  // 1-indexed; siempre >= 1
@@ -164,6 +167,7 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		Chapters:       pageChapters,
 		Sources:        sources,
 		SourcesSummary: sourcesSummary(sources),
+		SourcesOpen:    r.URL.Query().Get("sources") == "1",
 		Next:           next,
 		Latest:         latest,
 		Sort:           sort,
@@ -385,17 +389,6 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 	return e, true, nil
 }
 
-// loadChaptersForEntry trae los caps del manga en el idioma preferido
-// del user. La consulta NO dedupa — devuelve una fila por (cap, source);
-// el agrupamiento por número sucede en Go, donde armamos un slice de
-// ChapterOption por cada grupo. El user ve un row por número con la
-// lista de "leer en X" disponibles.
-//
-// ORDER BY por número (no published_at) porque agregadores como Comick
-// suben archivos históricos completos cuando se agrega un scanlator
-// nuevo: el published_at refleja "cuándo apareció en la plataforma",
-// no la cronología. Ordenar por número da la progresión esperada para
-// ponerse al día.
 // loadNextChapter busca el CTA "sigue con el cap. N" (D6): el menor
 // capítulo numérico después del cursor, en el idioma del user; si hay
 // varias filas con ese número, la más reciente. latest es el mayor número
@@ -434,6 +427,17 @@ func (h *Handler) loadNextChapter(ctx context.Context, userID, mangaID int64) (*
 	return &next, latest, nil
 }
 
+// loadChaptersForEntry trae los caps del manga en el idioma preferido
+// del user. La consulta NO dedupa — devuelve una fila por (cap, source);
+// el agrupamiento por número sucede en Go, donde armamos un slice de
+// ChapterOption por cada grupo. El user ve un row por número con la
+// lista de "leer en X" disponibles.
+//
+// ORDER BY por número (no published_at) porque agregadores como Comick
+// suben archivos históricos completos cuando se agrega un scanlator
+// nuevo: el published_at refleja "cuándo apareció en la plataforma",
+// no la cronología. Ordenar por número da la progresión esperada para
+// ponerse al día.
 func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int64, sort string, includeRead bool) ([]Chapter, error) {
 	order := "DESC"
 	if sort == "asc" {
@@ -553,15 +557,15 @@ func includeReadFilter(include bool) string {
 	return "AND (le.last_read_chapter_number IS NULL OR CAST(c.number AS REAL) > le.last_read_chapter_number)"
 }
 
-// markChapterRead avanza el cursor del entry al MAX(cursor_actual, número
-// del cap marcado). Cursor monotónico: leer cap 3 después de cap 10 no
-// retrocede. Valida que el chapter pertenezca al manga del entry (devuelve
-// 0 rows si no — un user no puede mover el cursor de otro user).
 // promotePlannedSQL es la regla de D3: cualquier progreso pasa "por leer" a
 // "leyendo" (solo esos se pollean y se avisan). Nunca toca "completado":
 // avanzar ahí es una relectura, no un cambio de estado.
 const promotePlannedSQL = `CASE WHEN status = 'planned' THEN 'reading' ELSE status END`
 
+// markChapterRead avanza el cursor del entry al MAX(cursor_actual, número
+// del cap marcado). Cursor monotónico: leer cap 3 después de cap 10 no
+// retrocede. Valida que el chapter pertenezca al manga del entry (devuelve
+// 0 rows si no — un user no puede mover el cursor de otro user).
 func (h *Handler) markChapterRead(ctx context.Context, userID, entryID, chapterID int64) error {
 	res, err := h.db.ExecContext(ctx, `
 		UPDATE library_entries

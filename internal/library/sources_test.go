@@ -373,7 +373,7 @@ func TestEntryDetailRendersSourcesFieldset(t *testing.T) {
 	}
 	body := w.Body.String()
 	// Detalle por source, cerrado al final (D5).
-	if !strings.Contains(body, `<details class="sources-details">`) {
+	if !strings.Contains(body, `<details class="sources-details" id="sources">`) {
 		t.Error("falta el <details> de sources")
 	}
 	// mangadex matched sin pollear y asura sin fila: los dos "buscando".
@@ -391,5 +391,24 @@ func TestEntryDetailRendersSourcesFieldset(t *testing.T) {
 	// Asura sin fila NO debe tener form de unlink.
 	if strings.Contains(body, "/sources/asura/unlink") {
 		t.Error("asura sin fila no debería ofrecer unlink")
+	}
+}
+
+// Las acciones por source viven en el <details> del final: el redirect
+// vuelve ahí (y lo abre) en vez de dejar el foco en el logo.
+func TestSourceActionsRedirectToSources(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db, nil)
+	h.matchers = map[string]Matcher{"mangadex": &fakeMatcher{result: matcher.Result{Status: matcher.StatusNoResults}}}
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, _ := insertEntryWithSource(t, db, uid, "mdx-1", "matched")
+
+	for name, fn := range map[string]func(http.ResponseWriter, *http.Request){"retry": h.entrySourceRetry, "unlink": h.entrySourceUnlink} {
+		r := authRetryReq("POST", "/library/entry/X/sources/mangadex/"+name, uid, entryID, "mangadex")
+		w := httptest.NewRecorder()
+		fn(w, r)
+		if loc := w.Header().Get("Location"); !strings.HasSuffix(loc, "#sources") {
+			t.Errorf("%s: Location %q, esperado terminar en #sources", name, loc)
+		}
 	}
 }

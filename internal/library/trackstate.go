@@ -49,6 +49,12 @@ func sourcesSummary(srcs []EntrySource) string {
 		switch s.State {
 		case SourceChapters:
 			with = append(with, s.Source)
+		case SourceFailing:
+			// Una falla transitoria no borra lo que ya trajo: si tiene
+			// capítulos sigue siendo de donde salen.
+			if s.Chapters > 0 {
+				with = append(with, s.Source)
+			}
 		case SourceNotFound, SourceEmpty:
 			without = append(without, s.Source)
 		case SourceSearching:

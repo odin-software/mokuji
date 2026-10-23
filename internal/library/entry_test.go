@@ -815,3 +815,31 @@ func TestEntryChapterButtonsNamed(t *testing.T) {
 		t.Error("los botones de capítulo todavía dependen de title")
 	}
 }
+
+// Al día y con "ver leídos" desmarcado la lista queda vacía, pero el
+// manga sí tiene capítulos: el empty state no puede decir que no existe.
+func TestEntryDetailCaughtUpWithReadHidden(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "c9", "9", "en", "", time.Now())
+	insertChapter(t, db, mangaID, "c10", "10", "en", "", time.Now())
+	if _, err := db.Exec(`UPDATE manga_sources SET next_check_at = ? WHERE manga_id = ?`, time.Now().Add(time.Hour).Unix(), mangaID); err != nil {
+		t.Fatal(err)
+	}
+	setCursor(t, db, id, 10)
+
+	sid := strconv.FormatInt(id, 10)
+	r := authReq("GET", "/library/entry/"+sid+"?include_read=0", "", uid)
+	r.SetPathValue("id", sid)
+	w := httptest.NewRecorder()
+	h.entryDetail(w, r)
+	body := w.Body.String()
+	if !strings.Contains(body, "estás al día.") {
+		t.Error("falta el empty state de 'al día' con los leídos ocultos")
+	}
+	if strings.Contains(body, "ninguna de nuestras sources tiene este manga") || strings.Contains(body, "buscando capítulos.") {
+		t.Error("el empty state dice que el manga no tiene capítulos")
+	}
+}

@@ -140,7 +140,7 @@ func (h *Handler) entrySourceRetry(w http.ResponseWriter, r *http.Request) {
 		// fallo es esperable. Le mostramos el detail page de vuelta.
 		h.logger.Warn("entry source retry: matcher",
 			"user_id", s.UserID, "manga_id", entry.Manga.ID, "source", sourceName, "err", err)
-		http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/library/entry/%d?sources=1#sources", entry.ID), http.StatusSeeOther)
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *Handler) entrySourceRetry(w http.ResponseWriter, r *http.Request) {
 		h.errs.InternalServerError(w, r)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d?sources=1#sources", entry.ID), http.StatusSeeOther)
 }
 
 // entrySourceUnlink sirve POST /library/entry/{id}/sources/{source}/unlink.
@@ -176,7 +176,7 @@ func (h *Handler) entrySourceUnlink(w http.ResponseWriter, r *http.Request) {
 		h.errs.InternalServerError(w, r)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d?sources=1#sources", entry.ID), http.StatusSeeOther)
 }
 
 // parseSourceForm valida sesión, ownership del entry, y extrae el nombre

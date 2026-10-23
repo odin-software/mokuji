@@ -139,3 +139,15 @@ func TestParseGzipBomb(t *testing.T) {
 		t.Errorf("esperado ErrTooLarge, obtenido %v", err)
 	}
 }
+
+// Export real de anime de MAL (recortado y anonimizado): confirma que el
+// formato de verdad cae en ErrAnimeExport y no en un "0 importados".
+func TestParseRealAnimeExport(t *testing.T) {
+	b, err := os.ReadFile("testdata/animelist_real.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(bytes.NewReader(gzipBytes(t, b))); !errors.Is(err, ErrAnimeExport) {
+		t.Errorf("esperado ErrAnimeExport, obtenido %v", err)
+	}
+}

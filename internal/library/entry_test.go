@@ -622,3 +622,78 @@ func TestEntryDetailIncludeReadZeroHidesReadWhenCaughtUp(t *testing.T) {
 		t.Error("include_read=1&include_read=0 no muestra los leídos")
 	}
 }
+
+func entryStatusOf(t *testing.T, db *sql.DB, entryID int64) string {
+	t.Helper()
+	var s string
+	if err := db.QueryRow(`SELECT status FROM library_entries WHERE id = ?`, entryID).Scan(&s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func markReadAs(t *testing.T, db *sql.DB, initial string) string {
+	t.Helper()
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice-"+initial+"@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	if _, err := db.Exec(`UPDATE library_entries SET status = ? WHERE id = ?`, initial, entryID); err != nil {
+		t.Fatal(err)
+	}
+	chID := insertChapter(t, db, mangaID, "ch-"+initial, "1", "en", "", time.Now())
+	form := url.Values{"chapter_id": {strconv.FormatInt(chID, 10)}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/mark-read", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	h.entryMarkRead(httptest.NewRecorder(), r)
+	return entryStatusOf(t, db, entryID)
+}
+
+func TestMarkReadPromotesPlannedToReading(t *testing.T) {
+	if got := markReadAs(t, setupDB(t), "planned"); got != "reading" {
+		t.Errorf("planned + marcar leído → %q, esperado reading", got)
+	}
+}
+
+func TestMarkReadKeepsCompleted(t *testing.T) {
+	if got := markReadAs(t, setupDB(t), "completed"); got != "completed" {
+		t.Errorf("completed + marcar leído → %q, esperado completed", got)
+	}
+}
+
+func cursorAs(t *testing.T, value string) string {
+	t.Helper()
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, uid, "matched")
+	if _, err := db.Exec(`UPDATE library_entries SET status = 'planned' WHERE id = ?`, entryID); err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"last_read_chapter_number": {value}}
+	r := authReq("POST", "/library/entry/"+strconv.FormatInt(entryID, 10)+"/cursor", form.Encode(), uid)
+	r.SetPathValue("id", strconv.FormatInt(entryID, 10))
+	h.entryCursor(httptest.NewRecorder(), r)
+	return entryStatusOf(t, db, entryID)
+}
+
+func TestCursorPositivePromotesPlanned(t *testing.T) {
+	if got := cursorAs(t, "5"); got != "reading" {
+		t.Errorf("planned + cursor 5 → %q, esperado reading", got)
+	}
+}
+
+func TestCursorZeroKeepsPlanned(t *testing.T) {
+	if got := cursorAs(t, "0"); got != "planned" {
+		t.Errorf("planned + cursor 0 → %q, esperado planned", got)
+	}
+}
+
+func TestEntryDetailShowsTrackingHint(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, _ := insertMangaWithChapters(t, db, uid, "matched")
+	if !strings.Contains(renderEntry(t, h, id, uid), "solo te avisamos de capítulos nuevos de lo que estás leyendo.") {
+		t.Error("el detalle no explica que solo se avisa de lo que estás leyendo")
+	}
+}

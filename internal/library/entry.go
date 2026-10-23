@@ -261,9 +261,11 @@ func (h *Handler) entryCursor(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.db.ExecContext(r.Context(), `
 		UPDATE library_entries
-		SET last_read_chapter_number = ?, updated_at = ?
+		SET last_read_chapter_number = ?,
+		    status = CASE WHEN ? > 0 THEN `+promotePlannedSQL+` ELSE status END,
+		    updated_at = ?
 		WHERE id = ? AND user_id = ?
-	`, cursor, time.Now().UTC().Unix(), entryID, s.UserID)
+	`, cursor, cursor, time.Now().UTC().Unix(), entryID, s.UserID)
 	if err != nil {
 		h.logger.Error("set cursor", "err", err, "entry_id", entryID, "user_id", s.UserID)
 		h.errs.InternalServerError(w, r)
@@ -500,6 +502,11 @@ func includeReadFilter(include bool) string {
 // del cap marcado). Cursor monotónico: leer cap 3 después de cap 10 no
 // retrocede. Valida que el chapter pertenezca al manga del entry (devuelve
 // 0 rows si no — un user no puede mover el cursor de otro user).
+// promotePlannedSQL es la regla de D3: cualquier progreso pasa "por leer" a
+// "leyendo" (solo esos se pollean y se avisan). Nunca toca "completado":
+// avanzar ahí es una relectura, no un cambio de estado.
+const promotePlannedSQL = `CASE WHEN status = 'planned' THEN 'reading' ELSE status END`
+
 func (h *Handler) markChapterRead(ctx context.Context, userID, entryID, chapterID int64) error {
 	res, err := h.db.ExecContext(ctx, `
 		UPDATE library_entries
@@ -507,6 +514,7 @@ func (h *Handler) markChapterRead(ctx context.Context, userID, entryID, chapterI
 		      COALESCE(last_read_chapter_number, 0),
 		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
 		    ),
+		    status = `+promotePlannedSQL+`,
 		    updated_at = ?
 		WHERE id = ?
 		  AND user_id = ?

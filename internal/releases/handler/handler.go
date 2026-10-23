@@ -202,6 +202,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 		      COALESCE(last_read_chapter_number, 0),
 		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
 		    ),
+		    status = CASE WHEN status = 'planned' THEN 'reading' ELSE status END,
 		    updated_at = ?
 		WHERE user_id = ?
 		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)
@@ -254,6 +255,7 @@ func (h *Handler) readAndOpen(w http.ResponseWriter, r *http.Request) {
 		      COALESCE(last_read_chapter_number, 0),
 		      (SELECT CAST(number AS REAL) FROM chapter WHERE id = ?)
 		    ),
+		    status = CASE WHEN status = 'planned' THEN 'reading' ELSE status END,
 		    updated_at = ?
 		WHERE user_id = ?
 		  AND manga_id = (SELECT manga_id FROM chapter WHERE id = ?)

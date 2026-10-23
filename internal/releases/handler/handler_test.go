@@ -567,3 +567,24 @@ func TestUnreadReleasesPageSecondPageDoesNotRepeat(t *testing.T) {
 		}
 	}
 }
+
+// D3: cualquier progreso pasa "por leer" a "leyendo"; "completado" no se
+// toca (relecturas).
+func TestMarkReadPromotesPlannedKeepsCompleted(t *testing.T) {
+	db := setupDB(t)
+	h := newTestHandler(t, db)
+	userID := insertUser(t, db, "alice@example.com")
+	for initial, want := range map[string]string{"planned": "reading", "completed": "completed"} {
+		mangaID := insertManga(t, db, "md-"+initial)
+		entryID := insertEntry(t, db, userID, mangaID, initial, nil)
+		chID := insertChapter(t, db, mangaID, "ch-"+initial, "1", "en", time.Now())
+		h.markRead(httptest.NewRecorder(), markReadRequest(userID, chID))
+		var got string
+		if err := db.QueryRow(`SELECT status FROM library_entries WHERE id = ?`, entryID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s + marcar leído → %q, esperado %q", initial, got, want)
+		}
+	}
+}

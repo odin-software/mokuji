@@ -444,23 +444,46 @@ func TestSearchRedirectsToLibraryWithQuery(t *testing.T) {
 	}
 }
 
-func TestAddRedirectsPreservingQuery(t *testing.T) {
-	db := setupDB(t)
-	h := newFullHandler(t, db, nil)
-	userID := insertUser(t, db, "alice@example.com")
-
-	form := "source=anilist&source_id=30002&title=Berserk&q=ber"
+func postAdd(h *Handler, userID int64, sourceID string) *httptest.ResponseRecorder {
+	form := "source=anilist&source_id=" + sourceID + "&title=Berserk"
 	req := httptest.NewRequest(http.MethodPost, "/library/add", strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = req.WithContext(session.NewContext(context.Background(), &session.Session{UserID: userID}))
 	rec := httptest.NewRecorder()
 	h.add(rec, req)
+	return rec
+}
 
+func TestAddRedirectsToEntryDetail(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	userID := insertUser(t, db, "alice@example.com")
+
+	rec := postAdd(h, userID, "30002")
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status: esperado 303, obtenido %d", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/library?q=ber" {
-		t.Errorf("Location: esperado /library?q=ber, obtenido %q", loc)
+	var id int64
+	if err := db.QueryRow(`SELECT id FROM library_entries WHERE user_id = ?`, userID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/library/entry/"+strconv.FormatInt(id, 10) {
+		t.Errorf("Location: esperado el detalle de la entry %d, obtenido %q", id, loc)
+	}
+}
+
+func TestAddExistingRedirectsToExistingEntry(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	userID := insertUser(t, db, "alice@example.com")
+
+	first := postAdd(h, userID, "30002")
+	second := postAdd(h, userID, "30002")
+	if second.Code != http.StatusSeeOther {
+		t.Fatalf("segundo add: esperado 303, obtenido %d", second.Code)
+	}
+	if a, b := first.Header().Get("Location"), second.Header().Get("Location"); a != b || !strings.HasPrefix(a, "/library/entry/") {
+		t.Errorf("Location: primero %q, segundo %q; esperado el mismo detalle", a, b)
 	}
 }
 

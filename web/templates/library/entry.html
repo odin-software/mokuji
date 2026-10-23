@@ -112,6 +112,7 @@
     {{csrfInput .Session}}
     <button type="submit" name="favorite" value="{{if .Entry.IsFavorite}}0{{else}}1{{end}}" aria-pressed="{{if .Entry.IsFavorite}}true{{else}}false{{end}}" class="favorite-toggle{{if .Entry.IsFavorite}} is-active{{end}}"><span aria-hidden="true">{{if .Entry.IsFavorite}}★{{else}}☆{{end}} </span>favorito</button>
   </form>
+  <p class="muted entry-manage-hint">solo te avisamos de capítulos nuevos de lo que estás leyendo.</p>
 </div>
 
 {{if .Sources}}

@@ -405,11 +405,19 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 	// "reintentar" desde el detail page más adelante).
 	h.tryMatchSources(r.Context(), mangaID, title)
 
-	target := "/library"
-	if q := strings.TrimSpace(r.PostFormValue("q")); q != "" {
-		target = "/library?q=" + url.QueryEscape(q)
+	// Al detalle del manga (D3): el siguiente paso natural es poner el
+	// cursor. Se busca por (user, manga) y no por LastInsertId para cubrir
+	// el caso de UNIQUE (doble click, dos pestañas): lleva a la que ya está.
+	var entryID int64
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT id FROM library_entries WHERE user_id = ? AND manga_id = ?`,
+		s.UserID, mangaID,
+	).Scan(&entryID); err != nil {
+		h.logger.Error("buscar entry recién agregada", "err", err)
+		h.errs.InternalServerError(w, r)
+		return
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entryID), http.StatusSeeOther)
 }
 
 // tryMatchSources corre cada matcher configurado contra el manga en

@@ -62,6 +62,10 @@ type entryData struct {
 	Sources  []EntrySource
 	// SourcesSummary es la línea bajo el título (ver sourcesSummary).
 	SourcesSummary string
+	// Next es el primer capítulo después del cursor (nil si estás al día) y
+	// Latest el número del último disponible. Ver loadNextChapter.
+	Next   *Chapter
+	Latest string
 	Sort           string // "asc" | "desc"
 	IncludeRead    bool
 	UnreadCount    int
@@ -131,6 +135,13 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	next, latest, err := h.loadNextChapter(r.Context(), s.UserID, entry.Manga.ID)
+	if err != nil {
+		h.logger.Error("entry detail: cargar siguiente cap", "err", err, "entry_id", entryID)
+		h.errs.InternalServerError(w, r)
+		return
+	}
+
 	// Paginación 1-indexed. Default 1, invalid → 1, out-of-bounds → clamp a TotalPages.
 	page := 1
 	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
@@ -153,6 +164,8 @@ func (h *Handler) entryDetail(w http.ResponseWriter, r *http.Request) {
 		Chapters:       pageChapters,
 		Sources:        sources,
 		SourcesSummary: sourcesSummary(sources),
+		Next:           next,
+		Latest:         latest,
 		Sort:           sort,
 		IncludeRead:    includeRead,
 		UnreadCount:    entry.UnreadCount,
@@ -229,7 +242,7 @@ func (h *Handler) entryMarkRead(w http.ResponseWriter, r *http.Request) {
 		h.errs.InternalServerError(w, r)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entry.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d#capitulos", entry.ID), http.StatusSeeOther)
 }
 
 // entryCursor sirve POST /library/entry/{id}/cursor. Setea el cursor de
@@ -281,7 +294,7 @@ func (h *Handler) entryCursor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d", entryID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/library/entry/%d#cursor", entryID), http.StatusSeeOther)
 }
 
 // parseEntryReadForm valida sesión + entry id de la URL + chapter_id del form
@@ -383,6 +396,44 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 // nuevo: el published_at refleja "cuándo apareció en la plataforma",
 // no la cronología. Ordenar por número da la progresión esperada para
 // ponerse al día.
+// loadNextChapter busca el CTA "sigue con el cap. N" (D6): el menor
+// capítulo numérico después del cursor, en el idioma del user; si hay
+// varias filas con ese número, la más reciente. latest es el mayor número
+// numérico tal cual está guardado. Los no numéricos ("Special", "Extra")
+// se ignoran: CAST los convierte en 0 y quedarían siempre primero.
+func (h *Handler) loadNextChapter(ctx context.Context, userID, mangaID int64) (*Chapter, string, error) {
+	const base = `
+		FROM chapter c
+		JOIN users u ON u.id = ?
+		JOIN library_entries le ON le.user_id = u.id AND le.manga_id = c.manga_id
+		WHERE c.manga_id = ?
+		  AND c.language = u.preferred_language
+		  AND c.number GLOB '[0-9]*'`
+
+	var latest string
+	err := h.db.QueryRowContext(ctx, `SELECT c.number `+base+`
+		ORDER BY CAST(c.number AS REAL) DESC LIMIT 1`, userID, mangaID).Scan(&latest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+
+	var next Chapter
+	err = h.db.QueryRowContext(ctx, `SELECT c.id, c.number `+base+`
+		  AND CAST(c.number AS REAL) > COALESCE(le.last_read_chapter_number, -1)
+		ORDER BY CAST(c.number AS REAL) ASC, c.published_at DESC, c.id DESC
+		LIMIT 1`, userID, mangaID).Scan(&next.ID, &next.Number)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, latest, nil
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return &next, latest, nil
+}
+
 func (h *Handler) loadChaptersForEntry(ctx context.Context, userID, mangaID int64, sort string, includeRead bool) ([]Chapter, error) {
 	order := "DESC"
 	if sort == "asc" {

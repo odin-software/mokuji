@@ -108,8 +108,17 @@ func TestEntryDetail404ForOtherUserEntry(t *testing.T) {
 // hasChapterForm devuelve true si el body HTML incluye un hidden input
 // chapter_id apuntando al id dado. Más confiable que buscar source_id en
 // el body (que no se renderea como tal en el template).
+// chapterList recorta el HTML del detalle a la lista de capítulos: el CTA
+// "sigue con el cap." de arriba también postea un chapter_id.
+func chapterList(body string) string {
+	if i := strings.Index(body, `class="chapter-list"`); i >= 0 {
+		return body[i:]
+	}
+	return ""
+}
+
 func hasChapterForm(body string, chapterID int64) bool {
-	return strings.Contains(body, `name="chapter_id" value="`+strconv.FormatInt(chapterID, 10)+`"`)
+	return strings.Contains(chapterList(body), `name="chapter_id" value="`+strconv.FormatInt(chapterID, 10)+`"`)
 }
 
 func TestEntryDetailListsChaptersDescByDefault(t *testing.T) {
@@ -129,7 +138,7 @@ func TestEntryDetailListsChaptersDescByDefault(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: %d body: %s", w.Code, w.Body.String())
 	}
-	body := w.Body.String()
+	body := chapterList(w.Body.String())
 	newNeedle := `name="chapter_id" value="` + strconv.FormatInt(chNew, 10) + `"`
 	oldNeedle := `name="chapter_id" value="` + strconv.FormatInt(chOld, 10) + `"`
 	newIdx := strings.Index(body, newNeedle)
@@ -181,7 +190,7 @@ func TestEntryDetailGroupsByNumberAndShowsAllOptions(t *testing.T) {
 	// Cada ReadOption renderea un form POST /read con su chapter_id —
 	// el handler hace el redirect al external_url, así que la URL no
 	// aparece directo en el HTML. Verificamos que estén los 3 botones.
-	if got := strings.Count(body, "/library/entry/"+strconv.FormatInt(entryID, 10)+"/read"); got != 3 {
+	if got := strings.Count(chapterList(body), "/library/entry/"+strconv.FormatInt(entryID, 10)+"/read"); got != 3 {
 		t.Errorf("debería haber 3 forms de /read (uno por scanlator), obtuvo %d", got)
 	}
 
@@ -408,7 +417,7 @@ func TestEntryMarkReadRedirectsInternal(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("status: %d", w.Code)
 	}
-	want := "/library/entry/" + strconv.FormatInt(entryID, 10)
+	want := "/library/entry/" + strconv.FormatInt(entryID, 10) + "#capitulos"
 	if loc := w.Header().Get("Location"); loc != want {
 		t.Errorf("Location: %q, want %q", loc, want)
 	}
@@ -433,7 +442,7 @@ func TestEntryCursorAllowsArbitraryValue(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("status: got %d, want 303. body: %s", w.Code, w.Body.String())
 	}
-	want := "/library/entry/" + strconv.FormatInt(entryID, 10)
+	want := "/library/entry/" + strconv.FormatInt(entryID, 10) + "#cursor"
 	if loc := w.Header().Get("Location"); loc != want {
 		t.Errorf("Location: %q, want %q", loc, want)
 	}
@@ -712,5 +721,97 @@ func TestEntryDetailPolledEmptyNotSearching(t *testing.T) {
 	}
 	if strings.Contains(body, "buscando") {
 		t.Error("una source ya polleada no puede decir 'buscando'")
+	}
+}
+
+func setCursor(t *testing.T, db *sql.DB, entryID int64, v any) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = ? WHERE id = ?`, v, entryID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEntryDetailNextChapterCTA(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "c10", "10", "en", "", time.Now())
+	ch11 := insertChapter(t, db, mangaID, "c11", "11", "en", "", time.Now())
+	insertChapter(t, db, mangaID, "c12", "12", "en", "", time.Now())
+	setCursor(t, db, id, 10)
+
+	body := renderEntry(t, h, id, uid)
+	if !strings.Contains(body, "sigue con el cap. 11") {
+		t.Error("falta el CTA 'sigue con el cap. 11'")
+	}
+	cta := strings.Index(body, `class="next-chapter"`)
+	if cta < 0 || !strings.Contains(body[cta:cta+600], `name="chapter_id" value="`+strconv.FormatInt(ch11, 10)+`"`) {
+		t.Error("el CTA no postea el chapter_id del cap. 11")
+	}
+}
+
+func TestEntryDetailCaughtUp(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "c11", "11", "en", "", time.Now())
+	insertChapter(t, db, mangaID, "c12", "12", "en", "", time.Now())
+	setCursor(t, db, id, 12)
+
+	body := renderEntry(t, h, id, uid)
+	if !strings.Contains(body, "al día · último: cap. 12") {
+		t.Error("falta 'al día · último: cap. 12'")
+	}
+	if strings.Contains(body, "sigue con el cap.") {
+		t.Error("al día no debería ofrecer seguir")
+	}
+}
+
+func TestNextChapterIgnoresNonNumeric(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "sp", "Special", "en", "", time.Now())
+	insertChapter(t, db, mangaID, "c1", "1", "en", "", time.Now())
+	insertChapter(t, db, mangaID, "c2", "2", "en", "", time.Now())
+
+	if body := renderEntry(t, h, id, uid); !strings.Contains(body, "sigue con el cap. 1<") {
+		t.Error("con cursor NULL el CTA debería ser el cap. 1, ignorando 'Special'")
+	}
+}
+
+func TestEntryDetailNoChapterDates(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "c1", "1", "en", "", time.Date(2025, 11, 2, 12, 0, 0, 0, time.UTC))
+
+	if strings.Contains(renderEntry(t, h, id, uid), "2025-11-02") {
+		t.Error("el detalle muestra la fecha de subida del capítulo")
+	}
+}
+
+func TestEntryChapterButtonsNamed(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	id, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	insertChapter(t, db, mangaID, "c11", "11", "en", "https://r.example/11", time.Now())
+
+	body := renderEntry(t, h, id, uid)
+	for _, want := range []string{
+		`visually-hidden"> el cap. 11, abre en pestaña nueva`,
+		`visually-hidden"> el cap. 11 y los anteriores`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("falta el nombre completo %q", want)
+		}
+	}
+	if strings.Contains(body, `title="abre el lector`) {
+		t.Error("los botones de capítulo todavía dependen de title")
 	}
 }

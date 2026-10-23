@@ -116,7 +116,19 @@
   <p class="muted entry-manage-hint">solo te avisamos de capítulos nuevos de lo que estás leyendo.</p>
 </div>
 
-<form method="POST" action="/library/entry/{{.Entry.ID}}/cursor" class="cursor-form">
+{{/* D6: lo siguiente por leer, arriba de todo. Abre el lector y marca
+     leído, igual que "leer →". */}}
+{{if .Next}}
+<form method="POST" action="/library/entry/{{.Entry.ID}}/read" target="_blank" class="next-chapter">
+  {{csrfInput .Session}}
+  <input type="hidden" name="chapter_id" value="{{.Next.ID}}">
+  <button type="submit">sigue con el cap. {{.Next.Number}}<span class="visually-hidden">, abre en pestaña nueva</span> <span aria-hidden="true">→</span></button>
+</form>
+{{else if .Latest}}
+<p class="next-chapter-done">al día · último: cap. {{.Latest}}</p>
+{{end}}
+
+<form method="POST" action="/library/entry/{{.Entry.ID}}/cursor" class="cursor-form" id="cursor">
   {{csrfInput .Session}}
   <label for="cursor-input">voy por el capítulo</label>
   <input type="number"
@@ -128,10 +140,13 @@
          placeholder="0">
   <button type="submit">guardar</button>
   <p class="cursor-hint muted">
-    Si marcaste un capítulo por error, pon acá el número correcto.
+    Si marcaste un capítulo por error, pon aquí el número correcto.
     También sirve si ya leíste el manga afuera y solo quieres trackear desde donde vas.
   </p>
 </form>
+
+<h2 class="lib-section" id="capitulos">capítulos</h2>
+<p class="muted">"leer" abre el capítulo en una pestaña nueva y lo marca leído, junto con los anteriores.</p>
 
 <form method="GET" action="/library/entry/{{.Entry.ID}}" class="lib-filters">
   <label class="checkbox" style="margin: 0;">
@@ -144,8 +159,8 @@
   <input type="hidden" name="include_read" value="0">
   <label class="visually-hidden" for="chapter-sort">orden</label>
   <select id="chapter-sort" name="sort">
-    <option value="desc"{{if eq .Sort "desc"}} selected{{end}}>más recientes primero</option>
-    <option value="asc"{{if eq .Sort "asc"}} selected{{end}}>más viejos primero</option>
+    <option value="desc"{{if eq .Sort "desc"}} selected{{end}}>del último al primero</option>
+    <option value="asc"{{if eq .Sort "asc"}} selected{{end}}>del primero al último</option>
   </select>
   <button type="submit">filtrar</button>
 </form>
@@ -153,14 +168,15 @@
 {{if .Chapters}}
 <ul class="chapter-list">
 {{range .Chapters}}
+  {{$num := .Number}}
   <li class="chapter-row{{if .Read}} chapter-read{{end}}">
     <div class="chapter-header">
       <strong class="chapter-num">{{if .Number}}cap. {{.Number}}{{else}}cap. ?{{end}}</strong>
       {{if .Title}}<span class="chapter-title">{{.Title}}</span>{{end}}
+      {{/* Sin fecha (D6): es la de subida a la source, no la de
+           publicación, y con subidas en lote miente. */}}
       <span class="chapter-meta muted">
-        {{if not .PublishedAt.IsZero}}{{.PublishedAt.Format "2006-01-02"}}{{end}}
-        {{if .Language}}· {{.Language}}{{end}}
-        {{if .Read}}· leído{{end}}
+        {{- .Language}}{{if .Read}} · leído{{end -}}
       </span>
     </div>
     <div class="chapter-actions">
@@ -169,7 +185,7 @@
         <form method="POST" action="/library/entry/{{$.Entry.ID}}/read" target="_blank" class="inline-form">
           {{ csrfInput $.Session }}
           <input type="hidden" name="chapter_id" value="{{.ID}}">
-          <button type="submit" class="chapter-read-btn" title="abre el lector en una pestaña nueva y marca leído acá">leer en {{.Label}} →</button>
+          <button type="submit" class="chapter-read-btn">leer en {{.Label}}<span class="visually-hidden">{{if $num}} el cap. {{$num}}{{end}}, abre en pestaña nueva</span> <span aria-hidden="true">→</span></button>
         </form>
         {{end}}
       </div>
@@ -177,7 +193,7 @@
       <form method="POST" action="/library/entry/{{$.Entry.ID}}/mark-read" class="inline-form chapter-mark-read">
         {{ csrfInput $.Session }}
         <input type="hidden" name="chapter_id" value="{{.ID}}">
-        <button type="submit" class="link-button">marcar leído</button>
+        <button type="submit" class="link-button">marcar leído<span class="visually-hidden">{{if $num}} el cap. {{$num}}{{end}} y los anteriores</span></button>
       </form>
       {{end}}
     </div>

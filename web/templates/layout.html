@@ -484,6 +484,7 @@ button.danger:hover { background: #8a2818; }
 .lib-header h1 { margin: 0; }
 .lib-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin: 1rem 0 1.25rem;
   align-items: center;
@@ -619,6 +620,12 @@ button.danger:hover { background: #8a2818; }
   align-items: start;
 }
 .search-results .result img { border: 1px solid var(--rule); }
+/* A 320px el botón de agregar no cabe en una tercera columna: baja bajo la
+   info en vez de ensanchar la página. */
+@media (max-width: 30rem) {
+  .search-results .result { grid-template-columns: 56px minmax(0, 1fr); }
+  .search-results .result form { grid-column: 2; }
+}
 .search-results .info p { margin: 0.4rem 0 0; font-size: 0.875rem; line-height: 1.5; overflow: hidden; color: var(--text-soft); font-family: var(--font-sans); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .search-results .info .muted { margin-left: 0.4rem; }
 .search-results .info .result-meta { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); -webkit-line-clamp: unset; line-clamp: none; }
@@ -638,10 +645,12 @@ button.danger:hover { background: #8a2818; }
 
 /* ── settings ────────────────────────────────────────────────────── */
 .settings-section {
+  min-width: 0;  /* un fieldset no encoge por debajo de su contenido sin esto */
   border: 1px solid var(--rule);
   padding: 1rem;
   margin: 0 0 1rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);  /* ídem para el input de archivo */
   gap: 0.75rem;
   background: var(--bg);
 }
@@ -902,6 +911,7 @@ button.danger:hover { background: #8a2818; }
 
 /* ── section block (settings, restore-account, etc.) ──────────────── */
 .block {
+  min-width: 0;
   border: 1px solid var(--rule);
   padding: 1rem;
   margin: 0 0 1rem;

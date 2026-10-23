@@ -248,8 +248,6 @@ body {
     padding: 0;
     max-width: none;
   }
-  .app-nav { display: none; }  /* sidebar replaces it on desktop */
-  .app-footer { display: none; }  /* sidebar foot handles version link */
 }
 
 /* Sidebar internal styles */
@@ -400,6 +398,7 @@ button.danger:hover { background: #8a2818; }
   letter-spacing: -0.025em;
   text-decoration: none;
   color: var(--text);
+  white-space: nowrap;
 }
 .app-nav-logo::before {
   content: "目次";
@@ -423,6 +422,14 @@ button.danger:hover { background: #8a2818; }
   letter-spacing: 0.05em;
 }
 .app-footer a { color: inherit; }
+
+/* Va después de las reglas base de .app-nav y .app-footer a propósito: con
+   la misma especificidad gana la última, y dentro del @media de arriba
+   quedaban pisadas (en desktop salían el sidebar y el header a la vez). */
+@media (min-width: 64rem) {
+  .app-nav { display: none; }  /* sidebar replaces it on desktop */
+  .app-footer { display: none; }  /* sidebar foot handles version link */
+}
 
 /* ── action link / button-like anchors ───────────────────────────── */
 .action-link {

@@ -272,3 +272,18 @@ func TestOnboardingRedirect_AlreadyOnboarded(t *testing.T) {
 		t.Fatalf("status: esperado 200 (pass-through), obtenido %d", rec.Code)
 	}
 }
+
+func TestFaviconServed(t *testing.T) {
+	s := New(Config{
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		StaticAssets: os.DirFS("../../web"),
+	})
+	rec := httptest.NewRecorder()
+	s.routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: esperado 200, obtenido %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/") {
+		t.Errorf("Content-Type: esperado image/*, obtenido %q", ct)
+	}
+}

@@ -84,6 +84,13 @@ func (s *Server) mountPWA(mux *http.ServeMux) {
 	if err == nil {
 		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
 	}
+	// Los browsers piden /favicon.ico en el root aunque el <link> apunte a
+	// /static/; sin esto cada visita renderizaba el 404 completo.
+	if err == nil {
+		mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFileFS(w, r, staticSub, "favicon.ico")
+		})
+	}
 	mux.HandleFunc("GET /manifest.webmanifest", s.serveManifest)
 	mux.HandleFunc("GET /sw.js", s.serveSW)
 }

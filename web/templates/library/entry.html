@@ -165,6 +165,10 @@
     <input type="checkbox" name="include_read" value="1"{{if .IncludeRead}} checked{{end}}>
     <span>ver leídos</span>
   </label>
+  {{/* Va después del checkbox: marcado llega include_read=1&include_read=0
+       y el server toma el primero; desmarcado llega solo el 0. Sin esto,
+       desmarcar estando al día volvía al default y la casilla se remarcaba. */}}
+  <input type="hidden" name="include_read" value="0">
   <select name="sort">
     <option value="desc"{{if eq .Sort "desc"}} selected{{end}}>más recientes primero</option>
     <option value="asc"{{if eq .Sort "asc"}} selected{{end}}>más viejos primero</option>

@@ -586,3 +586,39 @@ func TestEntryCursorScopedToOwner(t *testing.T) {
 		t.Errorf("cursor del owner cambió: got %v, want 5.0", cursor)
 	}
 }
+
+func TestEntryDetailIncludeReadZeroHidesReadWhenCaughtUp(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, mangaID := insertMangaWithChapters(t, db, uid, "matched")
+	ch9 := insertChapter(t, db, mangaID, "ch-9", "9", "en", "", time.Now().Add(-48*time.Hour))
+	ch10 := insertChapter(t, db, mangaID, "ch-10", "10", "en", "", time.Now().Add(-1*time.Hour))
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = 10 WHERE id = ?`, entryID); err != nil {
+		t.Fatal(err)
+	}
+	id := strconv.FormatInt(entryID, 10)
+
+	get := func(query string) string {
+		r := authReq("GET", "/library/entry/"+id+query, "", uid)
+		r.SetPathValue("id", id)
+		w := httptest.NewRecorder()
+		h.entryDetail(w, r)
+		return w.Body.String()
+	}
+
+	body := get("?include_read=0")
+	if hasChapterForm(body, ch9) || hasChapterForm(body, ch10) {
+		t.Error("include_read=0 muestra capítulos leídos estando al día")
+	}
+	// Desmarcar la casilla tiene que mandar 0 explícito: el form lleva un
+	// hidden después del checkbox, así que marcado llega "1&…=0" y
+	// Query().Get toma el primero.
+	if !strings.Contains(body, `<input type="hidden" name="include_read" value="0">`) {
+		t.Error("el form de filtros no manda include_read=0 al desmarcar")
+	}
+	body = get("?include_read=1&include_read=0")
+	if !hasChapterForm(body, ch9) || !hasChapterForm(body, ch10) {
+		t.Error("include_read=1&include_read=0 no muestra los leídos")
+	}
+}

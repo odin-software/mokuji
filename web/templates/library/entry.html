@@ -91,7 +91,7 @@
     </p>
     <p class="muted">
       {{.TotalChapters}} {{if eq .TotalChapters 1}}capítulo{{else}}capítulos{{end}}
-      {{if .Entry.LastChapter}} · vas por cap. {{.Entry.LastChapter}}{{end}}
+      {{with fmtChapter .Entry.LastReadChapterNumber}} · vas por cap. {{.}}{{end}}
     </p>
   </div>
 </header>

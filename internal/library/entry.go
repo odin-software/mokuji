@@ -319,7 +319,6 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 	var (
 		e            Entry
 		isFav        int
-		lastCh       sql.NullString
 		lrcn         sql.NullFloat64
 		sourceURL    sql.NullString
 		notes        sql.NullString
@@ -327,7 +326,7 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		created, updated int64
 	)
 	q := fmt.Sprintf(`
-		SELECT le.id, le.status, le.last_chapter, le.last_read_chapter_number, le.is_favorite, le.source_url, le.notes,
+		SELECT le.id, le.status, le.last_read_chapter_number, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
@@ -346,7 +345,7 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		WHERE le.id = ? AND le.user_id = ?
 	`, sourceStatusSummarySQL)
 	err := h.db.QueryRowContext(ctx, q, entryID, userID).Scan(
-		&e.ID, &e.Status, &lastCh, &lrcn, &isFav, &sourceURL, &notes,
+		&e.ID, &e.Status, &lrcn, &isFav, &sourceURL, &notes,
 		&created, &updated,
 		&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
 		&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
@@ -358,7 +357,6 @@ func (h *Handler) loadEntry(ctx context.Context, userID, entryID int64) (Entry, 
 		return Entry{}, false, err
 	}
 	e.IsFavorite = isFav == 1
-	e.LastChapter = lastCh.String
 	e.LastReadChapterNumber = lrcn.Float64 // 0 si NULL — comportamiento esperado para entries nuevos
 	e.SourceURL = sourceURL.String
 	e.Notes = notes.String

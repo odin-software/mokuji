@@ -25,6 +25,7 @@ import (
 	"git.odin.do/kengru/mokuji/internal/errrender"
 	"git.odin.do/kengru/mokuji/internal/feedback"
 	"git.odin.do/kengru/mokuji/internal/flash"
+	"git.odin.do/kengru/mokuji/internal/library"
 	"git.odin.do/kengru/mokuji/internal/session"
 	"git.odin.do/kengru/mokuji/internal/version"
 )
@@ -44,10 +45,11 @@ type Manga struct {
 }
 
 type ProfileEntry struct {
-	Manga       Manga
-	Status      string
-	LastChapter string
-	IsFavorite  bool
+	Manga  Manga
+	Status string
+	// LastReadChapterNumber es el cursor de lectura (D1); 0 = sin progreso.
+	LastReadChapterNumber float64
+	IsFavorite            bool
 }
 
 // Config agrupa las dependencias del handler.
@@ -87,6 +89,7 @@ func New(cfg Config) (*Handler, error) {
 	funcs := template.FuncMap{
 		"csrfInput":       csrf.Input,
 		"statusLabel":     statusLabel,
+		"fmtChapter":      library.FormatChapter,
 		"appVersion":      func() string { return version.Value },
 		"feedbackEnabled": feedback.IsEnabled,
 	}
@@ -492,7 +495,7 @@ func (h *Handler) requireSession(w http.ResponseWriter, r *http.Request) (*sessi
 func (h *Handler) loadEntries(ctx context.Context, userID int64) ([]ProfileEntry, error) {
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT m.id, m.title, m.cover_url,
-		       le.status, le.last_chapter, le.is_favorite
+		       le.status, le.last_read_chapter_number, le.is_favorite
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id
 		WHERE le.user_id = ?
@@ -506,13 +509,14 @@ func (h *Handler) loadEntries(ctx context.Context, userID int64) ([]ProfileEntry
 	var entries []ProfileEntry
 	for rows.Next() {
 		var e ProfileEntry
-		var lastCh, coverURL sql.NullString
+		var coverURL sql.NullString
+		var cursor sql.NullFloat64
 		var isFav int
-		if err := rows.Scan(&e.Manga.ID, &e.Manga.Title, &coverURL, &e.Status, &lastCh, &isFav); err != nil {
+		if err := rows.Scan(&e.Manga.ID, &e.Manga.Title, &coverURL, &e.Status, &cursor, &isFav); err != nil {
 			return nil, err
 		}
 		e.Manga.CoverURL = coverURL.String
-		e.LastChapter = lastCh.String
+		e.LastReadChapterNumber = cursor.Float64
 		e.IsFavorite = isFav == 1
 		entries = append(entries, e)
 	}

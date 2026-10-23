@@ -32,7 +32,7 @@
         <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
         {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
         <a href="/library/entry/{{.ID}}" class="manga-title-link"><strong>{{.Manga.Title}}</strong></a>
-        {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
+        {{with fmtChapter .LastReadChapterNumber}}<span class="muted">— cap. {{.}}</span>{{end}}
         {{template "mangadex-badge" .}}
       </summary>
       <form method="POST" action="/library/{{.ID}}/update" class="entry-form">
@@ -44,10 +44,6 @@
             <option value="planned"{{if eq .Status "planned"}} selected{{end}}>por leer</option>
             <option value="completed"{{if eq .Status "completed"}} selected{{end}}>completado</option>
           </select>
-        </label>
-        <label>
-          último capítulo
-          <input type="text" name="last_chapter" value="{{.LastChapter}}" maxlength="100">
         </label>
         <label>
           dónde lo lees (URL)

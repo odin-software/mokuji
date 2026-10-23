@@ -60,7 +60,7 @@
     <span class="status status-{{.Status}}">{{statusLabel .Status}}</span>
     {{if .IsFavorite}}<span class="favorite"><span class="visually-hidden">favorito</span></span>{{end}}
     <strong>{{.Manga.Title}}</strong>
-    {{if .LastChapter}}<span class="muted">— cap. {{.LastChapter}}</span>{{end}}
+    {{with fmtChapter .LastReadChapterNumber}}<span class="muted">— cap. {{.}}</span>{{end}}
   </li>
 {{end}}
 </ul>

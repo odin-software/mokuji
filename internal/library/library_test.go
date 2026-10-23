@@ -1010,3 +1010,21 @@ func TestLayoutSkipLink(t *testing.T) {
 		t.Error(`falta el destino id="contenido"`)
 	}
 }
+
+func TestListShowsCursor(t *testing.T) {
+	db := setupDB(t)
+	h := newFullHandler(t, db, nil)
+	uid := insertUser(t, db, "alice@example.com")
+	entryID, _ := insertMangaWithChapters(t, db, uid, "matched")
+	insertMangaWithChapters(t, db, uid, "matched")
+
+	if strings.Contains(renderList(t, h, uid, "/library"), "— cap.") {
+		t.Error("cursor NULL no debería mostrar — cap.")
+	}
+	if _, err := db.Exec(`UPDATE library_entries SET last_read_chapter_number = 87 WHERE id = ?`, entryID); err != nil {
+		t.Fatal(err)
+	}
+	if body := renderList(t, h, uid, "/library"); !strings.Contains(body, "— cap. 87<") {
+		t.Error("la lista no muestra el cursor — cap. 87")
+	}
+}

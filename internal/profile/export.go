@@ -35,7 +35,6 @@ type exportProfile struct {
 type exportEntry struct {
 	Manga                 exportManga `json:"manga"`
 	Status                string      `json:"status"`
-	LastChapter           string      `json:"last_chapter,omitempty"`
 	IsFavorite            bool        `json:"is_favorite"`
 	SourceURL             string      `json:"source_url,omitempty"`
 	Notes                 string      `json:"notes,omitempty"`
@@ -136,7 +135,7 @@ func (h *Handler) loadProfile(ctx context.Context, userID int64) (exportProfile,
 func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]exportEntry, error) {
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT m.id, m.title, m.source, m.source_id, m.cover_url,
-		       le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
+		       le.status, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at, le.last_read_chapter_number
 		FROM library_entries le
 		JOIN manga m ON m.id = le.manga_id
@@ -154,7 +153,6 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 		var (
 			e            exportEntry
 			coverURL     sql.NullString
-			lastChapter  sql.NullString
 			sourceURL    sql.NullString
 			notes        sql.NullString
 			isFavorite   int
@@ -165,13 +163,12 @@ func (h *Handler) loadExportLibrary(ctx context.Context, userID int64) ([]export
 		if err := rows.Scan(
 			&e.Manga.ID, &e.Manga.Title, &e.Manga.Source, &e.Manga.SourceID,
 			&coverURL,
-			&e.Status, &lastChapter, &isFavorite, &sourceURL, &notes,
+			&e.Status, &isFavorite, &sourceURL, &notes,
 			&createdAt, &updatedAt, &cursorNumber,
 		); err != nil {
 			return nil, err
 		}
 		e.Manga.CoverURL = coverURL.String
-		e.LastChapter = lastChapter.String
 		e.SourceURL = sourceURL.String
 		e.Notes = notes.String
 		e.IsFavorite = isFavorite == 1

@@ -44,7 +44,6 @@ type Matcher interface {
 }
 
 const (
-	maxLastChapter = 100
 	maxNotes       = 5000
 	maxSourceURL   = 2000
 	maxQuery       = 200
@@ -82,11 +81,10 @@ type Entry struct {
 	ID          int64
 	Manga       Manga
 	Status      string
-	LastChapter string
-	// LastReadChapterNumber es el cursor numérico de lectura (a diferencia de
-	// LastChapter, que es texto libre que el user edita manualmente). Se usa
-	// para derivar qué caps aparecen marcados como leídos y para el prefill
-	// del form de "voy por el capítulo X" en entry.html.
+	// LastReadChapterNumber es el cursor de lectura, la única fuente de
+	// progreso (D1): deriva qué caps cuentan como leídos, los badges, el
+	// "— cap. N" de la lista y el prefill de "voy por el capítulo X".
+	// 0 = sin progreso (NULL en DB).
 	LastReadChapterNumber float64
 	IsFavorite            bool
 	SourceURL             string
@@ -180,6 +178,7 @@ func New(cfg Config) (*Handler, error) {
 	funcs := template.FuncMap{
 		"csrfInput":       csrf.Input,
 		"statusLabel":     statusLabel,
+		"fmtChapter":      FormatChapter,
 		"appVersion":      func() string { return version.Value },
 		"feedbackEnabled": feedback.IsEnabled,
 		"add":             func(a, b int) int { return a + b },
@@ -527,11 +526,6 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		status = "reading"
 	}
 
-	lastCh := strings.TrimSpace(r.PostFormValue("last_chapter"))
-	if len(lastCh) > maxLastChapter {
-		lastCh = lastCh[:maxLastChapter]
-	}
-
 	sourceURL := strings.TrimSpace(r.PostFormValue("source_url"))
 	if len(sourceURL) > maxSourceURL {
 		sourceURL = sourceURL[:maxSourceURL]
@@ -546,9 +540,9 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.db.ExecContext(r.Context(), `
 		UPDATE library_entries
-		SET status = ?, last_chapter = ?, source_url = ?, notes = ?, is_favorite = ?, updated_at = ?
+		SET status = ?, source_url = ?, notes = ?, is_favorite = ?, updated_at = ?
 		WHERE id = ? AND user_id = ?
-	`, status, lastCh, sourceURL, notes, boolToInt(isFav), time.Now().UTC().Unix(), id, s.UserID)
+	`, status, sourceURL, notes, boolToInt(isFav), time.Now().UTC().Unix(), id, s.UserID)
 	if err != nil {
 		h.logger.Error("actualizar entry", "err", err)
 		h.errs.InternalServerError(w, r)
@@ -630,7 +624,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 	// filas (uno por scanlator), pero al user le importa el cap, no la
 	// fuente. Cursor NULL = nunca leyó, cuenta todos.
 	q := fmt.Sprintf(`
-		SELECT le.id, le.status, le.last_chapter, le.is_favorite, le.source_url, le.notes,
+		SELECT le.id, le.status, le.last_read_chapter_number, le.is_favorite, le.source_url, le.notes,
 		       le.created_at, le.updated_at,
 		       m.id, m.source, m.source_id, m.title, m.cover_url,
 		       %s AS source_status,
@@ -667,10 +661,11 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 	for rows.Next() {
 		var e Entry
 		var isFav int
-		var lastCh, sourceURL, notes, coverURL sql.NullString
+		var sourceURL, notes, coverURL sql.NullString
+		var cursor sql.NullFloat64
 		var created, updated int64
 		if err := rows.Scan(
-			&e.ID, &e.Status, &lastCh, &isFav, &sourceURL, &notes,
+			&e.ID, &e.Status, &cursor, &isFav, &sourceURL, &notes,
 			&created, &updated,
 			&e.Manga.ID, &e.Manga.Source, &e.Manga.SourceID, &e.Manga.Title, &coverURL,
 			&e.SourceStatus, &e.TotalChapters, &e.UnreadCount,
@@ -678,7 +673,7 @@ func (h *Handler) listEntries(ctx context.Context, userID int64, filter, query s
 			return nil, err
 		}
 		e.IsFavorite = isFav == 1
-		e.LastChapter = lastCh.String
+		e.LastReadChapterNumber = cursor.Float64
 		e.SourceURL = sourceURL.String
 		e.Notes = notes.String
 		e.Manga.CoverURL = coverURL.String

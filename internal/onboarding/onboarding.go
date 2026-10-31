@@ -3,7 +3,7 @@
 // Tres pasos:
 //  1. Qué es mokuji (informativo, kanji 登).
 //  2. Qué monitoreamos (informativo — MangaDex + Asura, kanji 新).
-//  3. Digest prefs (form: digest_frequency, kanji 始).
+//  3. Digest prefs + visibilidad (form: digest_frequency, list_visibility, kanji 始).
 //
 // Al completar step 3, escribe users.onboarded_at = now() y digest_frequency,
 // luego redirige a /library.
@@ -177,9 +177,14 @@ func (h *Handler) finish(w http.ResponseWriter, r *http.Request) {
 	if freq != "weekly" && freq != "daily" && freq != "off" {
 		freq = "weekly"
 	}
+	// Sin valor válido se conserva el default de la columna (public).
+	vis := r.PostFormValue("list_visibility")
+	if vis != "public" && vis != "private" {
+		vis = "public"
+	}
 	_, err := h.db.ExecContext(r.Context(),
-		`UPDATE users SET digest_frequency = ?, onboarded_at = ? WHERE id = ?`,
-		freq, time.Now().Unix(), s.UserID,
+		`UPDATE users SET digest_frequency = ?, list_visibility = ?, onboarded_at = ? WHERE id = ?`,
+		freq, vis, time.Now().Unix(), s.UserID,
 	)
 	if err != nil {
 		h.logger.Error("finish onboarding", "user_id", s.UserID, "err", err)

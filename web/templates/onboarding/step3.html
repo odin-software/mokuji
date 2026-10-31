@@ -13,7 +13,7 @@
   <div class="onb-visual" aria-hidden="true">
     <span class="onb-kanji">始</span>
   </div>
-  <p class="eyebrow">03 — tu digest</p>
+  <p class="eyebrow">03 — tus avisos y tu lista</p>
   <h1>cuándo te avisamos<br><span class="accent">de capítulos nuevos.</span></h1>
   <p class="onb-body">
     nunca te llenamos la inbox. opt-in, cancelable cuando quieras desde ajustes.
@@ -42,6 +42,23 @@
         <code>solo dentro de la app</code>
       </span>
     </label>
+    <fieldset class="onb-visibility">
+      <legend>quién puede ver tu biblioteca</legend>
+      <label class="radio" style="margin-bottom: 0.5rem;">
+        <input type="radio" name="list_visibility" value="public" checked>
+        <span>
+          <strong>pública</strong>
+          <code>cualquiera con tu link puede verla</code>
+        </span>
+      </label>
+      <label class="radio" style="margin-bottom: 1rem;">
+        <input type="radio" name="list_visibility" value="private">
+        <span>
+          <strong>privada</strong>
+          <code>solo tú · lo cambias cuando quieras en ajustes</code>
+        </span>
+      </label>
+    </fieldset>
     <button type="submit" class="onb-cta-primary">empezar →</button>
     <p class="muted" style="text-align: center; margin-top: 0.75rem;">
       <a href="/onboarding/step2">← atrás</a>
@@ -49,6 +66,8 @@
   </form>
 </div>
 <style>
+.onb-visibility { border: 0; padding: 0; margin: 1.25rem 0 0; }
+.onb-visibility legend { font-weight: 700; font-size: 0.9375rem; padding: 0; margin-bottom: 0.5rem; }
 .onb { max-width: 30rem; margin: 0 auto; padding: 2rem 1.25rem; min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; }
 .onb-progress { display: flex; gap: 0.25rem; margin-bottom: 2rem; }
 .onb-progress-step { display: block; width: 1.125rem; height: 3px; background: var(--rule); }

@@ -251,3 +251,36 @@ func TestOnboardingStep2ListsConfiguredSources(t *testing.T) {
 		t.Error("el paso 2 no lista las sources configuradas")
 	}
 }
+
+func TestFinish_WritesListVisibility(t *testing.T) {
+	cases := []struct{ name, body, want string }{
+		{"privada", "digest_frequency=weekly&list_visibility=private", "private"},
+		{"publica", "digest_frequency=weekly&list_visibility=public", "public"},
+		{"invalida cae a publica", "digest_frequency=weekly&list_visibility=x", "public"},
+		{"ausente cae a publica", "digest_frequency=weekly", "public"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			db := setupDB(t)
+			h := newTestHandler(t, db)
+			uid := insertUser(t, db, "v@example.com", sql.NullInt64{})
+			req := withSession(httptest.NewRequest(http.MethodPost, "/onboarding/finish", strings.NewReader(c.body)), uid)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			w := httptest.NewRecorder()
+			mux := http.NewServeMux()
+			h.Mount(mux)
+			mux.ServeHTTP(w, req)
+			if w.Code != http.StatusSeeOther {
+				t.Fatalf("status = %d, esperado 303", w.Code)
+			}
+			var vis string
+			if err := db.QueryRowContext(context.Background(),
+				`SELECT list_visibility FROM users WHERE id = ?`, uid).Scan(&vis); err != nil {
+				t.Fatal(err)
+			}
+			if vis != c.want {
+				t.Errorf("list_visibility = %q, esperado %q", vis, c.want)
+			}
+		})
+	}
+}

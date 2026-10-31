@@ -9,10 +9,16 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 )
+
+// keepBackups es cuántos respaldos previos a una migración se conservan.
+const keepBackups = 3
 
 // Run aplica todas las migraciones .sql encontradas en src que aún no estén
 // registradas en schema_migrations. Cada migración corre en su propia
@@ -35,6 +41,19 @@ func Run(db *sql.DB, src fs.FS) (int, error) {
 	pending, err := pendingFiles(src, done)
 	if err != nil {
 		return 0, fmt.Errorf("listar migraciones pendientes: %w", err)
+	}
+
+	// Si hay algo que aplicar sobre una base que ya tenía datos, se respalda
+	// antes. Si el respaldo falla no se migra: arrancar sin red de seguridad
+	// es peor que no arrancar (el binario viejo sigue sirviendo la base intacta).
+	if len(pending) > 0 && len(done) > 0 {
+		path, err := backupBeforeMigrating(db)
+		if err != nil {
+			return 0, fmt.Errorf("respaldo previo a migrar: %w", err)
+		}
+		if path != "" {
+			slog.Info("respaldo previo a migrar", "path", path, "pendientes", len(pending))
+		}
 	}
 
 	count := 0
@@ -107,4 +126,50 @@ func apply(db *sql.DB, src fs.FS, name string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// backupBeforeMigrating guarda una copia consistente de la base (VACUUM INTO,
+// seguro con WAL y con el servidor sin levantar) junto al archivo original,
+// con permisos 0600 porque contiene emails. Devuelve "" si la base es en
+// memoria. Conserva solo los últimos keepBackups respaldos.
+func backupBeforeMigrating(db *sql.DB) (string, error) {
+	var dbFile string
+	rows, err := db.Query(`PRAGMA database_list`)
+	if err != nil {
+		return "", err
+	}
+	for rows.Next() {
+		var seq int
+		var name, file string
+		if err := rows.Scan(&seq, &name, &file); err != nil {
+			rows.Close()
+			return "", err
+		}
+		if name == "main" {
+			dbFile = file
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return "", err
+	}
+	if dbFile == "" {
+		return "", nil
+	}
+
+	dest := fmt.Sprintf("%s.pre-migracion-%s.bak", dbFile, time.Now().UTC().Format("20060102-150405"))
+	if _, err := db.Exec(`VACUUM INTO ?`, dest); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dest, 0o600); err != nil {
+		return "", err
+	}
+
+	old, err := filepath.Glob(dbFile + ".pre-migracion-*.bak")
+	if err == nil && len(old) > keepBackups {
+		sort.Strings(old) // el timestamp ordena cronológicamente
+		for _, f := range old[:len(old)-keepBackups] {
+			_ = os.Remove(f)
+		}
+	}
+	return dest, nil
 }

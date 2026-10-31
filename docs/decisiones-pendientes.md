@@ -65,13 +65,13 @@ Para soportarlo: detectar puerto 465 (o un flag `SMTP_TLS_MODE=implicit`) y hace
 
 Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525` muchos providers) cubren todos los casos comunes.
 
-## CI: tests antes de deployar
+## CI: tests antes de deployar (cerrado)
 
-Sigue sin haber tests en el workflow. En v0.4.0 se intentó con el runner de Forgejo en mimir y se canceló por recursos (`context canceled, signal: terminated`). Desde el [ADR 0015](adr/0015-cd-github-actions.md) el deploy corre en un runner de GitHub, así que ese problema ya no aplica: agregar `go test ./...` como step antes de compilar (con el cache de módulos que trae `actions/setup-go`) es barato y evita que un merge roto llegue a producción. Hoy los tests se corren en local antes del merge.
+✅ El workflow corre `go test ./...` antes de compilar (ver [ADR 0015](adr/0015-cd-github-actions.md)). En v0.4.0 se había intentado con el runner de Forgejo en mimir y se canceló por recursos; en el runner de GitHub ya no es problema. Además `paths-ignore` cubre `**.md` y `docs/**`, así que un cambio solo de docs no despliega.
 
-Prioridad: media. El merge a `main` despliega directo.
+## Migraciones: respaldo automático (cerrado)
 
-Relacionado: `paths-ignore: '*.md'` solo cubre markdown de la raíz, así que un cambio en `docs/*.md` también despliega. Usar `'**.md'` si no se quiere.
+✅ Antes de aplicar migraciones pendientes sobre una base con datos, el binario copia la base a `<DB_PATH>.pre-migracion-<fecha>.bak` y no migra si el respaldo falla. Pendiente (opcional): sacar esos `.bak` de la máquina (rclone/rsync), porque viven en el mismo disco que la base.
 
 ## Sources adicionales para multi-source
 

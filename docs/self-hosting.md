@@ -35,7 +35,7 @@ Hay dos caminos.
 ### Bajar un binario ya compilado
 
 Los releases publicados están en
-[git.odin.do/kengru/mokuji/releases](https://git.odin.do/kengru/mokuji/releases).
+[github.com/odin-software/mokuji/tags](https://github.com/odin-software/mokuji/tags).
 Cada release adjunta `mokuji-linux-amd64`, statically-linked, listo para
 correr en cualquier distro Linux moderna.
 
@@ -44,7 +44,7 @@ correr en cualquier distro Linux moderna.
 Requiere Go 1.25 o más nuevo.
 
 ```bash
-git clone https://git.odin.do/kengru/mokuji.git
+git clone https://github.com/odin-software/mokuji.git
 cd mokuji
 make build              # binario para el host actual en ./bin/mokuji
 make build-linux-amd64  # cross-compile para Linux x86_64 en ./bin/mokuji-linux-amd64
@@ -121,9 +121,13 @@ Opciones por orden de robustez:
 
 Las migraciones corren automáticamente al startup. Cuando bajas una versión
 nueva del binario y la reinicias, aplica los `.sql` pendientes vía el
-runner embebido (~60 LOC en `internal/migrations`). **Backup antes de
-actualizar versiones** es un hábito sano hasta que la suite de migrations
-tenga una garantía formal de reversibilidad.
+runner embebido (~60 LOC en `internal/migrations`). Antes de aplicar la
+primera, mokuji copia la base a `DB_PATH.pre-migracion-AAAAMMDD-HHMMSS.bak`
+(permisos 0600, se conservan los 3 últimos); si no puede escribir el
+respaldo, no migra y no arranca. Las migraciones no tienen "down": para
+volver atrás hay que restaurar ese `.bak` y usar el binario anterior. Los
+respaldos viven en el mismo disco que la base, así que sigue valiendo copiar
+`DB_PATH` a otro lado.
 
 ## Proceso supervisor
 
@@ -216,8 +220,9 @@ curl https://tu-instancia/version
 ```
 
 Las migraciones corren solas durante el startup. Si una falla, mokuji loggea
-el error y aborta — revisa los logs y restaura el backup del DB antes de
-intentar de nuevo.
+el error y aborta. La migración que falla hace rollback, así que la base
+queda como estaba; revisa los logs. Si hace falta volver a un estado
+anterior, restaura el `.pre-migracion-*.bak` más reciente.
 
 ## Troubleshooting
 

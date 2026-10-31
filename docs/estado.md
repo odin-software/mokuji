@@ -108,7 +108,19 @@ ASURA_FRONTEND_BASE_URL=  # vacío = asurascans.com (para reconstruir reader URL
 
 ### Update flow (CD automático)
 
-**Merge a `main` = deploy a producción.** Workflow [`deploy.yml`](../.github/workflows/deploy.yml) en GitHub Actions → `make build-linux-amd64` en el runner → binario por SSH a `deploy@mimir.odin.do` (comando forzado `mokuji`). No corre tests: correrlos en local antes del merge. Detalle en [ADR 0015](adr/0015-cd-github-actions.md) (el flujo anterior, con runner de Forgejo, está en [ADR 0012](adr/0012-cicd-forgejo-runner.md), reemplazada). Las migraciones corren automáticamente al startup del binario. Antes de mergear una versión con migración destructiva (como la `0015`) hacer backup de la DB.
+**Merge a `main` = deploy a producción.** Workflow [`deploy.yml`](../.github/workflows/deploy.yml) en GitHub Actions → `make build-linux-amd64` en el runner → binario por SSH a `deploy@mimir.odin.do` (comando forzado `mokuji`). Corre `go test ./...` antes de compilar: un test roto frena el deploy. Detalle en [ADR 0015](adr/0015-cd-github-actions.md) (el flujo anterior, con runner de Forgejo, está en [ADR 0012](adr/0012-cicd-forgejo-runner.md), reemplazada). Las migraciones corren automáticamente al startup del binario.
+
+**Migraciones**: el binario aplica las pendientes al arrancar (cada una en su transacción) y antes de la primera hace un respaldo automático de la base: `$DB_PATH.pre-migracion-AAAAMMDD-HHMMSS.bak` (0600, se conservan los 3 últimos). Si el respaldo falla, no migra ni arranca. Si una migración falla, hace rollback y la base queda intacta. No hace falta backup manual.
+
+Para volver atrás tras una migración destructiva (p. ej. `0015`, que el binario anterior no soporta):
+
+```bash
+ssh mimir 'sudo systemctl stop mokuji'
+ssh mimir 'ls -t /var/lib/mokuji/mokuji.db.pre-migracion-*.bak | head -1'   # el más reciente
+# copiarlo sobre /var/lib/mokuji/mokuji.db (borrar antes los -wal y -shm), dejar de nuevo el binario anterior (mokuji.prev) y arrancar
+```
+
+Los respaldos quedan junto a la base; las escrituras posteriores al respaldo se pierden al restaurar.
 
 Verificación post-deploy:
 

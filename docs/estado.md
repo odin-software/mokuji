@@ -5,9 +5,9 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. **Producción corre v0.8.0** con identidad visual completa, landing, onboarding wizard, layout desktop con sidebar, daily digest opt-in, y polish completo (empty states + microcopy + emails redesigned + favicons PNG + dark mode parity). Trabajo activo apuntando a **v1.0** ("listo para promoción pública").
+Tracker de manga público en Go + SQLite. **Versión actual: v1.2.0** (ver `VERSION`; confirmar qué corre en prod con `curl https://mokuji.org/version`). Proyecto público desde v1.0, con identidad visual completa, landing, onboarding, digest semanal/diario, import de MyAnimeList y una pasada de UX + accesibilidad WCAG 2.2 AA (v1.2.0).
 
-Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
+Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → onboarding (digest + visibilidad de la biblioteca) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
 ## Stack cerrado
 
@@ -25,7 +25,7 @@ Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: ley
 | Estructura repo | Intermedia con `internal/` por feature | [0008](adr/0008-estructura-del-repo.md) |
 | Migrations | Runner propio, ~60 LOC, embebido | [0009](adr/0009-migration-tooling.md) |
 | Licencia | AGPL-3.0 | [0011](adr/0011-licencia-agpl.md) |
-| CI/CD | Forgejo runner host-based + script con sudoers | [0012](adr/0012-cicd-forgejo-runner.md) |
+| CI/CD | GitHub Actions + deploy por SSH con llave restringida | [0015](adr/0015-cd-github-actions.md) (reemplaza a [0012](adr/0012-cicd-forgejo-runner.md)) |
 | Fase 2 — Release tracking | MangaDex worker + cursor + email digest + GDPR export/delete | [0013](adr/0013-fase-2-release-tracking.md) (✅ v0.2.0) |
 | Fase 3 — Multi-source | Tabla `manga_sources` + `releasesource.Client` + Asura + Comick + backfill | [0014](adr/0014-fase-3-multi-source.md) (✅ v0.3.0) |
 | Fase 4 — Resiliencia / cuentas | Usernames `/u/{slug}`, flash messages, resiliencia digest (retry + recovery), separación `SMTP_FROM_PRODUCT`, rate limit `/unsubscribe` | — (✅ v0.4.0) |
@@ -108,7 +108,7 @@ ASURA_FRONTEND_BASE_URL=  # vacío = asurascans.com (para reconstruir reader URL
 
 ### Update flow (CD automático)
 
-Push a `main` → workflow [`deploy.yml`](../.forgejo/workflows/deploy.yml) en Forgejo runner host-based (corre en mimir) → `make build-linux-amd64` → `sudo /usr/local/bin/mokuji-deploy <binario>` (validación + backup `mokuji.prev` + install atómico + restart + health check). Detalle completo y razones en [ADR 0012](adr/0012-cicd-forgejo-runner.md). Las migraciones corren automáticamente al startup del binario.
+**Merge a `main` = deploy a producción.** Workflow [`deploy.yml`](../.github/workflows/deploy.yml) en GitHub Actions → `make build-linux-amd64` en el runner → binario por SSH a `deploy@mimir.odin.do` (comando forzado `mokuji`). No corre tests: correrlos en local antes del merge. Detalle en [ADR 0015](adr/0015-cd-github-actions.md) (el flujo anterior, con runner de Forgejo, está en [ADR 0012](adr/0012-cicd-forgejo-runner.md), reemplazada). Las migraciones corren automáticamente al startup del binario. Antes de mergear una versión con migración destructiva (como la `0015`) hacer backup de la DB.
 
 Verificación post-deploy:
 
@@ -118,7 +118,7 @@ ssh mimir 'systemctl status mokuji'
 ssh mimir 'journalctl -u mokuji -n 30 --no-pager'
 ```
 
-Fallback manual si el CD falla:
+Fallback manual si el CD falla (el script `mokuji-deploy` es del flujo anterior; confirmar que sigue en mimir):
 
 ```bash
 make build-linux-amd64
@@ -144,7 +144,7 @@ ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
 - PWA instalable (manifest + service worker).
 - Dark mode automático via `prefers-color-scheme`.
 - Versión inyectada en build, visible en footer y `/version` (ver sección Versionado arriba).
-- CD automático: push a `main` deploya solo (Forgejo runner en mimir).
+- CD automático: push a `main` deploya solo (GitHub Actions → SSH a mimir).
 - **Workers en-proceso (Fase 2)**: poll mangadex (1h), digest semanal (domingo 9-22 UTC con retry diferido hasta 3 corridas/día vía tabla `digest_runs`), hard delete diario. Todos goroutines en el mismo binario; sin systemd units adicionales.
 - **Rate-limited HTTP client** para MangaDex (`golang.org/x/time/rate`, 2 req/s + retry on 429/5xx respetando Retry-After).
 - **Email outbound multipart** (plain+HTML básico) para product emails, plain-text para auth (ADR 0007 — nota Fase 2). Headers `List-Unsubscribe` + `List-Unsubscribe-Post` RFC 8058 one-click en cada digest. From separable vía `SMTP_FROM_PRODUCT` (default: comparte `SMTP_FROM` con auth).
@@ -209,7 +209,7 @@ Cierre del roadmap: el proyecto está listo para promoción pública.
 - **Discoverability técnica**: `/robots.txt` + `/sitemap.xml` + `/llms.txt` servidos desde el root (handler nuevo `mountDiscoverability` en `internal/server/`). JSON-LD `SoftwareApplication` en landing. `<link rel="canonical">` overridable en layout. `BaseURL` agregado a `server.Config`.
 - **Página `/privacy`** pública, sin auth: qué se recolecta, por qué, retención, derechos (export/delete), contacto `kg@odin.do`. Link en footer.
 - **Sweep voseo**: limpia README y SECURITY que arrastraban voseo del primer commit (mayo 2026).
-- **Repo público**: Forgejo abierto a browse anónimo (2026-05-25).
+- **Repo público**: Forgejo abierto a browse anónimo (2026-05-25). Hoy el repo también está en GitHub (`origin`).
 - **Bump VERSION a v1.0.0** + tag + release notes en Forgejo.
 
 ### v1.0.1 — cerrado ✅ (branch `feat/feedback-form`)
@@ -246,6 +246,15 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - **Cleanup goroutine** para el limiter global (TTL 2h), igual que los demás.
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
+
+### Sin versionar — visibilidad en el onboarding
+
+Cierra el hallazgo #11b de la auditoría de UX: las cuentas nuevas arrancaban
+con la biblioteca pública sin que el onboarding lo dijera. El paso 3 ahora
+pregunta "quién puede ver tu biblioteca" (`pública` preseleccionada, `privada`),
+y `POST /onboarding/finish` escribe `list_visibility` junto con
+`digest_frequency`. Un valor ausente o inválido cae a `public`, que es el
+default de la columna. Tests en `internal/onboarding`.
 
 ### v1.2.0 — UX y accesibilidad
 
@@ -447,12 +456,14 @@ todos, operador incluido.
 - **Activity feed / capa social** sobre `/u/{slug}`.
 - **Bato.to como 4ta source** (scaffolding listo).
 - **Admin tool `POST /admin/link-source`** (vincular sources manualmente, no user-facing).
+- **Exponer `manga_sources.last_error`** en `/admin/sources-health` (v1.0.8).
 - **`GET /admin/digest-status`** (observabilidad del worker).
 - **Passkeys / WebAuthn** (research, no implementación).
 - **`Type=notify` con `sd_notify`** para readiness real en systemd.
 - **Soporte SMTP `:465`** (TLS implícito) para self-hosters.
 - **CI: tests antes de deployar** (rollbackeado; necesita cache de módulos + timeout explícito).
 - **Rating** (puntuación de manga) — explícitamente fuera de MVP, pero queda como espera potencial.
+- **MCP server / API pública** (avisos en ChatGPT): descartado por ahora (2026-10-31). MCP es pull y exigiría API pública con OAuth; no encaja con un aviso push.
 
 ## Cómo retomar
 

@@ -1,6 +1,6 @@
 # Decisiones pendientes
 
-Lista de decisiones arquitectónicas aún abiertas, en orden tentativo de discusión. Se va recortando a medida que se cierran ADRs.
+Lo que sigue abierto, en orden tentativo de discusión, y al final lo descartado a propósito. Se recorta a medida que se cierran ADRs. Última revisión: 2026-10-31.
 
 ## Rate limiting
 
@@ -18,7 +18,7 @@ Implementación: `golang.org/x/time/rate` con buckets por clave + cleanup gorout
 
 Ver [`diseno-identidad.md`](diseno-identidad.md) para resumen + cambios de backend que la implementación requirió (`homeData.Username`, `profileData.Counters`, `errorRenderer`, multipart emails).
 
-Pendiente de polish (no urgente): layout desktop con sidebar a 1440px, OG meta tags + cards 1200×630, onboarding swipeable.
+El layout desktop con sidebar y las OG cards se cerraron en v0.7. Pendiente (no urgente): onboarding swipeable.
 
 ## CSS
 
@@ -47,7 +47,7 @@ Prioridad: baja hasta que tengamos zero-downtime restart o dependencias systemd.
 
 Reglas del slug: 3-20 chars, `[a-z0-9_-]`, no empieza/termina con separador, no puede ser solo dígitos (chocaría con id legacy), no reservado. Cambio permitido con cooldown de 30 días; el slug viejo queda reservado el mismo lapso (anti-impersonation). UI: banner en home + form en `/settings`.
 
-Pendiente futuro: incluir el slug en `internal/library` y otros templates donde hoy se muestra `userID`. Ahora muchos links a perfil propio usan `Session.UserID` — caen al redirect 301 pero no se ven feos como `/u/12`. Cosmético, no urgente.
+Pendiente (cosmético): `layout.html` ("tu perfil") y el texto de `settings.html` sin username siguen enlazando `/u/{{.Session.UserID}}`; caen al redirect 301 al slug. `library/list.html` y el resto de `settings.html` ya usan el slug.
 
 ## Observabilidad del digest worker
 
@@ -65,29 +65,17 @@ Para soportarlo: detectar puerto 465 (o un flag `SMTP_TLS_MODE=implicit`) y hace
 
 Prioridad: baja. `:587` y puertos alternativos STARTTLS (`:2587` Resend, `:2525` muchos providers) cubren todos los casos comunes.
 
-## CI: tests en el workflow antes de deployar
+## CI: tests antes de deployar
 
-Intentado y rollback en v0.4.0. Se agregó el step `go test ./...` antes del build pero el runner lo cancelaba con `context canceled, signal: terminated` — probablemente timeout/OOM al descargar módulos en frío en el runner host-based de mimir.
+Sigue sin haber tests en el workflow. En v0.4.0 se intentó con el runner de Forgejo en mimir y se canceló por recursos (`context canceled, signal: terminated`). Desde el [ADR 0015](adr/0015-cd-github-actions.md) el deploy corre en un runner de GitHub, así que ese problema ya no aplica: agregar `go test ./...` como step antes de compilar (con el cache de módulos que trae `actions/setup-go`) es barato y evita que un merge roto llegue a producción. Hoy los tests se corren en local antes del merge.
 
-Reabrir con:
-- Cache de módulos (`actions/cache@v3` keyed por `go.sum`).
-- Timeout explícito del step (~5min).
-- O mover los tests a un workflow separado pre-deploy que no compita con el build por recursos.
+Prioridad: media. El merge a `main` despliega directo.
 
-Mientras tanto, los tests siguen corriendo localmente antes de pushear a main (es la práctica actual).
+Relacionado: `paths-ignore: '*.md'` solo cubre markdown de la raíz, así que un cambio en `docs/*.md` también despliega. Usar `'**.md'` si no se quiere.
 
 ## Sources adicionales para multi-source
 
-Fase 3 cerró con MangaDex (siempre on) + Asura (opt-in default on). Comick.app
-quedó descartado de v1 porque su API real (`comick.dev`) está atrás de
-Cloudflare managed challenge — un cliente Go vanilla recibe un HTML
-"Just a moment…" en lugar de JSON. Reabrir cuando:
-
-- Comick relaje el bot detection (puede pasar si reciben quejas de
-  apps móviles legítimas que sufren el mismo bloqueo), o
-- Aceptemos depender de un sidecar headless tipo FlareSolverr — cambia
-  el shape de deploy (mokuji deja de ser un binario solo) y el self-hoster
-  pasa a necesitar Docker.
+Hoy hay tres: MangaDex (siempre on), Asura y Comick (opt-in, default on). Comick se había descartado porque `comick.dev` está atrás de un managed challenge de Cloudflare; se resolvió usando el subdominio `comick.art`, que expone la misma API sin challenge (ver `internal/comick`). Si Cloudflare lo cierra, la alternativa sería un sidecar tipo FlareSolverr, que rompe el "un solo binario".
 
 Otras candidatas en backlog: Bato.to (HTML scraping, overlap con MD),
 Reaper Scans (overlap con Asura). Pegarlas se simplifica con el scaffolding
@@ -113,3 +101,9 @@ contra alt_titles cubre el 90% de los casos reales.
 ## Pendientes de explicación (no son decisiones, son aprendizaje)
 
 - **Passkeys / WebAuthn**: cómo se implementaría aunque no se haga ahora. Cubrir registration vs authentication ceremony, origin-binding criptográfico, almacenamiento server-side de public keys, recuperación multi-dispositivo, fallback path si el usuario pierde acceso a todos sus passkeys.
+
+## Descartado a propósito
+
+- **MCP server / API pública** para recibir avisos en ChatGPT (feedback F3, 2026-10-19; descartado 2026-10-31). MCP es pull: el cliente llama tools, el server no empuja notificaciones, así que no resuelve "avisarme". Además exigiría una API pública nueva con OAuth. Reabrir solo si aparece demanda real de consultar la biblioteca desde un asistente.
+- **Cambio de estado desde la lista de `/library`** (D2 de la auditoría de UX): vuelve a llenar las filas de controles. Se reabre si llega como queja real.
+- **Sugerir "completado" al llegar al último capítulo** (D3): casi siempre es "al día", no "terminado", y no guardamos el estado de publicación.

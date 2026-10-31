@@ -1,6 +1,6 @@
 # ADR 0012: CI/CD con Forgejo runner host-based y script con sudoers
 
-- **Estado**: Aceptada
+- **Estado**: Reemplazada por [0015](0015-cd-github-actions.md)
 - **Fecha**: 2026-05-15
 
 ## Contexto

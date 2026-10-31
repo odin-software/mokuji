@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/mangadex"
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/mangadex"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 // stubClient implementa SearchClient con resultados/error programables y

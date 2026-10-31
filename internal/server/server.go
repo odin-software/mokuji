@@ -14,16 +14,16 @@ import (
 	"net/http"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/admin"
-	"git.odin.do/kengru/mokuji/internal/auth"
-	"git.odin.do/kengru/mokuji/internal/feedback"
-	"git.odin.do/kengru/mokuji/internal/home"
-	"git.odin.do/kengru/mokuji/internal/library"
-	"git.odin.do/kengru/mokuji/internal/onboarding"
-	"git.odin.do/kengru/mokuji/internal/profile"
-	releaseshandler "git.odin.do/kengru/mokuji/internal/releases/handler"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/admin"
+	"github.com/odin-software/mokuji/internal/auth"
+	"github.com/odin-software/mokuji/internal/feedback"
+	"github.com/odin-software/mokuji/internal/home"
+	"github.com/odin-software/mokuji/internal/library"
+	"github.com/odin-software/mokuji/internal/onboarding"
+	"github.com/odin-software/mokuji/internal/profile"
+	releaseshandler "github.com/odin-software/mokuji/internal/releases/handler"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 // Config agrupa las dependencias del servidor. Todos los Handlers son

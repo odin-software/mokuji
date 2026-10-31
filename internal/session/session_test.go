@@ -13,7 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/migrations"
 )
 
 func setupDB(t *testing.T) *sql.DB {

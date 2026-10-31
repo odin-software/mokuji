@@ -4,7 +4,7 @@ tmp_dir = "tmp"
 [build]
   # Inyecta la versión leída de ./VERSION con sufijo -dev para distinguir
   # builds locales de los deployados en producción (que no llevan sufijo).
-  cmd = "go build -ldflags=\"-X git.odin.do/kengru/mokuji/internal/version.Value=$(cat VERSION)-dev\" -o ./tmp/mokuji ."
+  cmd = "go build -ldflags=\"-X github.com/odin-software/mokuji/internal/version.Value=$(cat VERSION)-dev\" -o ./tmp/mokuji ."
   bin = "./tmp/mokuji"
   delay = 500
   exclude_dir = ["tmp", "bin", "data", "docs", "node_modules", "vendor"]

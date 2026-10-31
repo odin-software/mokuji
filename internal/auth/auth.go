@@ -25,17 +25,17 @@ import (
 	texttmpl "text/template"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/code"
-	"git.odin.do/kengru/mokuji/internal/csrf"
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/errrender"
-	"git.odin.do/kengru/mokuji/internal/feedback"
-	"git.odin.do/kengru/mokuji/internal/grant"
-	"git.odin.do/kengru/mokuji/internal/httpx"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/turnstile"
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/code"
+	"github.com/odin-software/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/errrender"
+	"github.com/odin-software/mokuji/internal/feedback"
+	"github.com/odin-software/mokuji/internal/grant"
+	"github.com/odin-software/mokuji/internal/httpx"
+	"github.com/odin-software/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/turnstile"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 const (

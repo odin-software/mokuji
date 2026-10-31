@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.odin.do/kengru/mokuji/internal/flash"
-	"git.odin.do/kengru/mokuji/internal/mangasource"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/flash"
+	"github.com/odin-software/mokuji/internal/mangasource"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 type fakeResolver struct {

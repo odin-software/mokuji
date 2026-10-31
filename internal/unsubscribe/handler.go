@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/csrf"
-	"git.odin.do/kengru/mokuji/internal/feedback"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/feedback"
+	"github.com/odin-software/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 // Config agrupa las dependencias del handler.

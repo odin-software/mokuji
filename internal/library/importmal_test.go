@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/malimport"
-	"git.odin.do/kengru/mokuji/internal/mangasource"
+	"github.com/odin-software/mokuji/internal/malimport"
+	"github.com/odin-software/mokuji/internal/mangasource"
 )
 
 // foundFor arma el map que devolvería AniList: MAL id → manga con

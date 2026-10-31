@@ -15,8 +15,8 @@ import (
 	_ "modernc.org/sqlite"
 	"golang.org/x/time/rate"
 
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/ratelimit"
 )
 
 func setupDB(t *testing.T) *sql.DB {

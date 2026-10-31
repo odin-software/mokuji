@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
 )
 
 // Backfiller corre un job único al arranque que rellena manga_sources

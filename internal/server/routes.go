@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"git.odin.do/kengru/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/csrf"
 )
 
 // routes monta los endpoints y aplica la cadena de middleware.

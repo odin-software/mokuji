@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 // SourceHealth es un snapshot de la salud de una source en memoria.

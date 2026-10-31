@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 func TestValidateUsername(t *testing.T) {

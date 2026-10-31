@@ -15,12 +15,12 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"git.odin.do/kengru/mokuji/internal/csrf"
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/flash"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/flash"
+	"github.com/odin-software/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 // enabled es el flag global del feature. Se accede atómicamente para que

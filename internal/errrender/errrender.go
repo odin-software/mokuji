@@ -15,10 +15,10 @@ import (
 	"net/http"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/csrf"
-	"git.odin.do/kengru/mokuji/internal/feedback"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/feedback"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 // ErrorRenderer renderiza las páginas 404 y 500 usando el layout principal

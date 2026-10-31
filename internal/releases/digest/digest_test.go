@@ -15,9 +15,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 // captureSMTP es un fake de email.sendMailFunc que captura cada mensaje

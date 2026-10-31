@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 const (

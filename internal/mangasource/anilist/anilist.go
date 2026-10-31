@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/mangasource"
+	"github.com/odin-software/mokuji/internal/mangasource"
 )
 
 const (

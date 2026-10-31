@@ -14,8 +14,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 // fakeClient implementa releasesource.Client con respuestas programables y

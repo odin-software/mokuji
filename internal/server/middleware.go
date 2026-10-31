@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // sessionFromRequest extrae la sesión del contexto de la request.

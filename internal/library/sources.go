@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // EntrySource es una fila renderizada del fieldset "sources" del detail

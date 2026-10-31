@@ -21,14 +21,14 @@ import (
 	texttmpl "text/template"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/csrf"
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/errrender"
-	"git.odin.do/kengru/mokuji/internal/feedback"
-	"git.odin.do/kengru/mokuji/internal/flash"
-	"git.odin.do/kengru/mokuji/internal/library"
-	"git.odin.do/kengru/mokuji/internal/session"
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/csrf"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/errrender"
+	"github.com/odin-software/mokuji/internal/feedback"
+	"github.com/odin-software/mokuji/internal/flash"
+	"github.com/odin-software/mokuji/internal/library"
+	"github.com/odin-software/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 // Visibility values válidos para users.list_visibility.

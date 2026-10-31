@@ -16,7 +16,7 @@ import (
 	"net/http"
 	"strings"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 const (

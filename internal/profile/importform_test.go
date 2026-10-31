@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 func TestSettingsHasMALImportForm(t *testing.T) {

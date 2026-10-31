@@ -21,13 +21,13 @@ import (
 
 	"encoding/json"
 
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/grant"
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
-	"git.odin.do/kengru/mokuji/internal/releases/digest"
-	"git.odin.do/kengru/mokuji/internal/releases/worker"
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/grant"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/releases/digest"
+	"github.com/odin-software/mokuji/internal/releases/worker"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 // fakeHealth permite inyectar un snapshot fijo en los tests del endpoint.

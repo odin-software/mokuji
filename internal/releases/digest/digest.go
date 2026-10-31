@@ -28,8 +28,8 @@ import (
 	texttmpl "text/template"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 // ErrNoNewChapters se devuelve por SendToUser cuando el user no tiene caps

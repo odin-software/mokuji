@@ -73,15 +73,15 @@ PWA instalable. Email outbound vía SMTP estándar.
 
 ## Licencia
 
-[AGPL-3.0](https://git.odin.do/kengru/mokuji/src/branch/main/LICENSE).
+[AGPL-3.0](https://github.com/odin-software/mokuji/blob/main/LICENSE).
 Si corres una instancia pública, debes ofrecer el código a tus users.
 
 ## Recursos
 
 - Instancia pública: <https://mokuji.org>
-- Código fuente: <https://git.odin.do/kengru/mokuji>
-- Self-hosting: <https://git.odin.do/kengru/mokuji/src/branch/main/docs/self-hosting.md>
-- Filosofía y decisiones: <https://git.odin.do/kengru/mokuji/src/branch/main/docs/adr>
+- Código fuente: <https://github.com/odin-software/mokuji>
+- Self-hosting: <https://github.com/odin-software/mokuji/blob/main/docs/self-hosting.md>
+- Filosofía y decisiones: <https://github.com/odin-software/mokuji/tree/main/docs/adr>
 `
 
 func serveLLMsTxt(w http.ResponseWriter, r *http.Request) {

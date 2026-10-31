@@ -6,7 +6,7 @@ persona; contribuciones son bienvenidas y se revisan a paso humano.
 ## Empezar
 
 ```bash
-git clone https://git.odin.do/kengru/mokuji.git
+git clone https://github.com/odin-software/mokuji.git
 cd mokuji
 cp .env.example .env       # ajusta lo que necesites
 make compose-up            # levanta mailpit local en localhost:8025

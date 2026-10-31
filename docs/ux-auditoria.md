@@ -1,5 +1,12 @@
 # Auditoría de UX — 2026-10-19
 
+> **Estado (2026-10-31): cerrada.** D1–D8 y A1–A4 se implementaron en v1.2.0
+> (ver `estado.md`). El hallazgo #11b (visibilidad pública sin preguntar) se
+> resolvió en el paso 3 del onboarding. F1 (D7) y F4 (import de MAL, v1.1.0)
+> están hechos; F2 se resolvió en la UI con D6. **F3 (MCP) se descartó por
+> ahora.** El resto del documento se conserva como historia de las decisiones:
+> describe el estado *previo* a v1.2.0.
+
 Borrador para discutir. Sale de leer templates y handlers (v1.0.8) y de un
 recorrido en local con una cuenta nueva (`ux-audit@example.test`): login,
 onboarding, agregar Frieren, lista, detalle, home y settings, en desktop

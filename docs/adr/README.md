@@ -28,6 +28,7 @@ Cada ADR documenta una decisión arquitectónica de peso: el contexto en el que 
 | [0009](0009-migration-tooling.md)              | Migration tooling: runner propio en ~60 líneas       | Aceptada  | 2026-05-13 |
 | [0010](0010-driver-sqlite.md)                  | Driver de SQLite: `modernc.org/sqlite` (pure Go)     | Aceptada  | 2026-05-13 |
 | [0011](0011-licencia-agpl.md)                  | Licencia: AGPL-3.0                                   | Aceptada  | 2026-05-13 |
-| [0012](0012-cicd-forgejo-runner.md)            | CI/CD con Forgejo runner host-based + sudoers        | Aceptada  | 2026-05-15 |
+| [0012](0012-cicd-forgejo-runner.md)            | CI/CD con Forgejo runner host-based + sudoers        | Reemplazada por 0015 | 2026-05-15 |
 | [0013](0013-fase-2-release-tracking.md)        | Fase 2 — Release tracking (diseño completo)          | Aceptada  | 2026-05-15 |
 | [0014](0014-fase-3-multi-source.md)            | Fase 3 — Multi-source (MangaDex + Asura + Comick)    | Aceptada  | 2026-05-16 |
+| [0015](0015-cd-github-actions.md)              | CD con GitHub Actions y deploy por SSH con llave restringida | Aceptada  | 2026-10-31 |

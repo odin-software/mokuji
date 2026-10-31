@@ -5,7 +5,9 @@
 - [Estado del proyecto](estado.md) — snapshot de qué corre, qué falta, gotchas operativos
 - [Self-hosting](self-hosting.md) — guía para correr tu propia instancia
 - [Contribuir](../CONTRIBUTING.md) — setup local, commits, ADR, flow de PRs
-- [Decisiones pendientes](decisiones-pendientes.md) — roadmap de decisiones aún abiertas
+- [Decisiones pendientes](decisiones-pendientes.md) — lo que sigue abierto (y lo descartado)
+- [Auditoría de UX y accesibilidad](ux-auditoria.md) — diagnóstico y decisiones D1–D8 / A1–A4 (implementadas en v1.2.0)
+- [Planes y specs](superpowers/) — diseño y plan de cada versión, como historia
 - [ADRs](adr/README.md) — Architecture Decision Records de decisiones cerradas
 
 ## Convenciones de la documentación

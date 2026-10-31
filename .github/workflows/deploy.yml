@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - '*.md'
+      - '**.md'
+      - 'docs/**'
       - 'LICENSE'
   workflow_dispatch:
 
@@ -24,6 +25,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Tests
+        run: go test ./...
       - name: Compilar
         run: make build-linux-amd64
       - name: Preparar SSH

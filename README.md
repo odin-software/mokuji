@@ -12,7 +12,7 @@
 [![Go](https://img.shields.io/badge/go-1.25+-1a1815?style=flat-square&logo=go)](go.mod)
 
 🏠 Instancia pública: **[mokuji.org](https://mokuji.org)**
-📖 Código: **[git.odin.do/kengru/mokuji](https://git.odin.do/kengru/mokuji)**
+📖 Código: **[github.com/odin-software/mokuji](https://github.com/odin-software/mokuji)**
 
 <!--
 TODO(v1.0): screenshot. Capturar de mokuji.org una vista de la biblioteca

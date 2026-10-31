@@ -3,7 +3,7 @@
 # Versión publicada. Se lee del archivo VERSION en el root del repo y se
 # inyecta en el binario vía ldflags (-X). Bump = editar VERSION + commit.
 VERSION := $(shell cat VERSION 2>/dev/null || echo dev)
-VERSION_PKG := git.odin.do/kengru/mokuji/internal/version
+VERSION_PKG := github.com/odin-software/mokuji/internal/version
 
 # Levanta servicios locales (mailpit) y corre el binario con live reload (air).
 dev: compose-up

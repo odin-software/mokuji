@@ -12,8 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 func setupDB(t *testing.T) *sql.DB {

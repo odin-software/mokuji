@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/flash"
-	"git.odin.do/kengru/mokuji/internal/malimport"
-	"git.odin.do/kengru/mokuji/internal/mangasource"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/flash"
+	"github.com/odin-software/mokuji/internal/malimport"
+	"github.com/odin-software/mokuji/internal/mangasource"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // Import de MyAnimeList. Diseño: docs/superpowers/specs/2026-10-19-import-mal-design.md.

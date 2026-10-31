@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // insertManga + manga_sources row helper para los tests de este archivo.

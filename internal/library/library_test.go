@@ -17,11 +17,11 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"git.odin.do/kengru/mokuji/internal/mangadex"
-	"git.odin.do/kengru/mokuji/internal/mangasource"
-	"git.odin.do/kengru/mokuji/internal/migrations"
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/mangadex"
+	"github.com/odin-software/mokuji/internal/mangasource"
+	"github.com/odin-software/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // fakeSource es una mangasource.Source para tests.

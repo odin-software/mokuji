@@ -1,6 +1,6 @@
 package mangadex
 
-import "git.odin.do/kengru/mokuji/internal/releasesource"
+import "github.com/odin-software/mokuji/internal/releasesource"
 
 // MangaResult y Chapter son aliases hacia los tipos canónicos del paquete
 // releasesource. El cliente MangaDex es un releasesource.Client más; las

@@ -3,7 +3,7 @@ package library
 import (
 	"strings"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
 )
 
 // SourceState es lo que el user ve de una source en el detalle (D5). Junta

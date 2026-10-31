@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"strings"
 
-	"git.odin.do/kengru/mokuji/internal/grant"
-	"git.odin.do/kengru/mokuji/internal/httpx"
-	"git.odin.do/kengru/mokuji/internal/ratelimit"
-	"git.odin.do/kengru/mokuji/internal/releases/digest"
-	"git.odin.do/kengru/mokuji/internal/releases/worker"
+	"github.com/odin-software/mokuji/internal/grant"
+	"github.com/odin-software/mokuji/internal/httpx"
+	"github.com/odin-software/mokuji/internal/ratelimit"
+	"github.com/odin-software/mokuji/internal/releases/digest"
+	"github.com/odin-software/mokuji/internal/releases/worker"
 )
 
 // HealthReporter abstrae al productor del snapshot de salud de sources.

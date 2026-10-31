@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
 )
 
 func TestMatchImportedPollsInlineInOrder(t *testing.T) {

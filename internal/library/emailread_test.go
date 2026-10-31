@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 func newHandlerWithSigner(t *testing.T, db *sql.DB) (*Handler, *unsubscribe.Signer) {

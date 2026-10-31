@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/unsubscribe"
+	"github.com/odin-software/mokuji/internal/unsubscribe"
 )
 
 // GET /r/{token} es el "shortcut" del email digest: el link de cada cap en

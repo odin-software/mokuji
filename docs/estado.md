@@ -5,7 +5,7 @@ Para detalle de decisiones cerradas, ver [`adr/`](adr/). Para lo que falta decid
 
 ## En una línea
 
-Tracker de manga público en Go + SQLite. **Versión actual: v1.2.0** (ver `VERSION`; confirmar qué corre en prod con `curl https://mokuji.org/version`). Proyecto público desde v1.0, con identidad visual completa, landing, onboarding, digest semanal/diario, import de MyAnimeList y una pasada de UX + accesibilidad WCAG 2.2 AA (v1.2.0).
+Tracker de manga público en Go + SQLite. **Versión actual: v1.2.1** (ver `VERSION`; confirmar qué corre en prod con `curl https://mokuji.org/version`). Proyecto público desde v1.0, con identidad visual completa, landing, onboarding, digest semanal/diario, import de MyAnimeList y una pasada de UX + accesibilidad WCAG 2.2 AA (v1.2.0).
 
 Flow end-to-end: signup con OTP → biblioteca con search de AniList (orden: leyendo > por leer > completados, favorito tie-break) → matching automático multi-source (MangaDex + Asura + Comick) → caps nuevos en `/releases` + email digest semanal (worker domingo 9-22 UTC con retry diferido) → onboarding (digest + visibilidad de la biblioteca) → privacy/digest toggle → export JSON → soft delete con gracia 7 días → username personalizable + perfil público `/u/{slug}`.
 
@@ -143,6 +143,7 @@ ssh mimir 'sudo /usr/local/bin/mokuji-deploy /tmp/mokuji'
 - Fuente única: archivo [`VERSION`](../VERSION) en root (ej. `v0.1.0`). Bump = editar + commit.
 - Inyectado en build vía `-ldflags="-X .../internal/version.Value=$(cat VERSION)"` (ver [Makefile](../Makefile)).
 - Visible en footer de toda página HTML (`mokuji v0.1.0`, link a `/version`) y endpoint `GET /version` (plain text).
+- Módulo Go: `github.com/odin-software/mokuji` (antes `git.odin.do/kengru/mokuji`, que ya no existe).
 - Local (`air`, `make run`, `make migrate`) usa sufijo `-dev` automáticamente (`v0.1.0-dev`) para distinguir de producción.
 
 ## Habilidades operativas que ya están
@@ -259,14 +260,17 @@ Respuesta a un incidente de **OTP/email bombing**: alguien encontró el `/auth/s
 - Nuevo campo `auth.Config.StartGlobalLimiter` (nil = sin límite, compat con tests). Tests end-to-end del handler `start` (sender SMTP fake que cuenta envíos): breaker agotado no envía / con presupuesto sí.
 - **Sequencing operativo**: deployar este fix **antes** de restaurar la API key de Resend; si no, el abuso vuelve sin tope. Defensa de borde opcional pendiente: `limit_req` en nginx sobre `/auth/start`.
 
-### Sin versionar — visibilidad en el onboarding
+### v1.2.1 — onboarding, CD y módulo
 
-Cierra el hallazgo #11b de la auditoría de UX: las cuentas nuevas arrancaban
+- **Visibilidad en el onboarding.** Cierra el hallazgo #11b de la auditoría de UX: las cuentas nuevas arrancaban
 con la biblioteca pública sin que el onboarding lo dijera. El paso 3 ahora
 pregunta "quién puede ver tu biblioteca" (`pública` preseleccionada, `privada`),
 y `POST /onboarding/finish` escribe `list_visibility` junto con
 `digest_frequency`. Un valor ausente o inválido cae a `public`, que es el
 default de la columna. Tests en `internal/onboarding`.
+- **Respaldo automático antes de migrar** (`internal/migrations`): copia la base a `$DB_PATH.pre-migracion-*.bak` (0600, últimos 3) antes de aplicar pendientes; si falla, no migra.
+- **CD con tests**: `go test ./...` antes de compilar; `paths-ignore` cubre `**.md` y `docs/**`.
+- **Módulo Go** movido a `github.com/odin-software/mokuji`; URLs públicas apuntan a GitHub.
 
 ### v1.2.0 — UX y accesibilidad
 
@@ -340,9 +344,7 @@ rechaza con su mensaje. Una lista real de 69 mangas mapeó 67 de 68 en
 AniList (`idMal`); fixtures recortados y anonimizados en
 `internal/malimport/testdata/*_real.xml`.
 
-**Pendiente de deploy**: nginx trae `client_max_body_size 1m` por default; para
-el tope de 5 MB del import hace falta `client_max_body_size 6m` en
-`/settings/import/mal`.
+nginx de `mokuji.org` ya permite 8 MB (`client_max_body_size 8M`), suficiente para el tope de 5 MB del import (verificado 2026-10-31).
 
 ### v1.0.8 — backoff del crawler y polleo en paralelo
 

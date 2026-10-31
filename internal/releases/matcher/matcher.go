@@ -35,7 +35,7 @@ import (
 	"strings"
 	"unicode"
 
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 // Status del match final.

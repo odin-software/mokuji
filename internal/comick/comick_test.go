@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
-	"git.odin.do/kengru/mokuji/internal/releasesource"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releasesource"
 )
 
 func noSleep(context.Context, time.Duration) {}

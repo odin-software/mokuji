@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/code"
-	"git.odin.do/kengru/mokuji/internal/email"
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/code"
+	"github.com/odin-software/mokuji/internal/email"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 type capturedEmail struct {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // Página detail de un manga: header con info + lista cronológica de capítulos.

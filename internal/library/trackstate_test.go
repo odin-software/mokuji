@@ -3,7 +3,7 @@ package library
 import (
 	"testing"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
 )
 
 func TestSourceState(t *testing.T) {

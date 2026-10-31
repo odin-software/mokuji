@@ -4,7 +4,7 @@ import (
 	"io/fs"
 	"log/slog"
 
-	"git.odin.do/kengru/mokuji/internal/errrender"
+	"github.com/odin-software/mokuji/internal/errrender"
 )
 
 // errorRenderer es un alias local para facilitar el acceso al tipo del paquete

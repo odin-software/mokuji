@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/releases/matcher"
+	"github.com/odin-software/mokuji/internal/releases/matcher"
 )
 
 // stubMatcher es un matcher por-source con respuestas predecibles para

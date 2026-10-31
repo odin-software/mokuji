@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"git.odin.do/kengru/mokuji/internal/version"
+	"github.com/odin-software/mokuji/internal/version"
 )
 
 // handleHealth responde 200 con un body trivial. Sirve para que load balancers

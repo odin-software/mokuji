@@ -1,4 +1,4 @@
-module git.odin.do/kengru/mokuji
+module github.com/odin-software/mokuji
 
 go 1.25.0
 

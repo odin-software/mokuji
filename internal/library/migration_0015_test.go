@@ -9,7 +9,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"git.odin.do/kengru/mokuji/internal/migrations"
+	"github.com/odin-software/mokuji/internal/migrations"
 )
 
 // migrationsUpTo copia de ../../migrations solo los archivos con prefijo

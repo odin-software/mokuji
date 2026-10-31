@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"git.odin.do/kengru/mokuji/internal/session"
+	"github.com/odin-software/mokuji/internal/session"
 )
 
 // multipartReq arma un POST multipart autenticado con un campo csrf_token

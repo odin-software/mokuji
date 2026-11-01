@@ -4,14 +4,14 @@
 <meta property="og:site_name" content="mokuji">
 <meta property="og:title" content="{{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} · mokuji">
 <meta property="og:description" content="Biblioteca pública de {{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}}{{if .Counters}} — {{.Counters.Reading}} leyendo, {{.Counters.Planned}} por leer, {{.Counters.Completed}} completados{{end}}.">
-<meta property="og:image" content="/static/og/og-profile.png">
+<meta property="og:image" content="https://mokuji.org/static/og/og-profile.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:locale" content="es_DO">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} · mokuji">
 <meta name="twitter:description" content="Biblioteca pública de {{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} en mokuji.">
-<meta name="twitter:image" content="/static/og/og-profile.png">
+<meta name="twitter:image" content="https://mokuji.org/static/og/og-profile.png">
 {{end}}
 {{define "title"}}biblioteca de {{if .Slug}}@{{.Slug}}{{else}}usuario #{{.UserID}}{{end}} — mokuji{{end}}
 {{define "content"}}

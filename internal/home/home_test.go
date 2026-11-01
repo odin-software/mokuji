@@ -186,7 +186,7 @@ func TestHome_LandingHasCriticalSections(t *testing.T) {
 		"feature 01 kanji":   "登",
 		"feature 02 kanji":   "新",
 		"feature 03 kanji":   "蔵",
-		"feature 02 sources": "MangaDex y Asura",
+		"feature 02 sources": "MangaDex, Asura y Comick",
 		"anti-feature":       "lo que no hace",
 		"closing CTA":        "Cataloga tu primera",
 		"footer tagline":     "table of contents, not the book",

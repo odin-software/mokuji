@@ -5,9 +5,10 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "mokuji",
-  "applicationCategory": "BookCollectionApplication",
+  "applicationCategory": "EntertainmentApplication",
   "operatingSystem": "Web, Linux, macOS, Windows, iOS, Android",
-  "description": "Una biblioteca pública y self-hostable para tu manga. Cataloga, sigue capítulos nuevos, enlaza a la fuente. Sin algoritmos.",
+  "description": "Una biblioteca pública y self-hostable para tu manga. Cataloga, sigue capítulos nuevos de MangaDex, Asura y Comick, enlaza a la fuente. Sin algoritmos.",
+  "image": "https://mokuji.org/static/og/og-default.png",
   "url": "https://mokuji.org",
   "license": "https://www.gnu.org/licenses/agpl-3.0.html",
   "offers": {
@@ -23,16 +24,41 @@
 <style>
 /* ── landing-only styles ───────────────────────────────────────────── */
 .landing { max-width: none; }
+.arr { margin-left: 0.4em; }
+/* El shell sin sidebar fija min-height: 100vh; aquí el cierre va debajo, sin hueco. */
+body:has(.landing) .app-shell { min-height: 0; }
+:root {
+  --gutter: 1.25rem;
+  /* Banda de cierre: oscura en claro, superficie elevada en oscuro. Tokens
+     propios para que el texto nunca dependa de colores fijos. */
+  --close-bg: #1a1815;
+  --close-fg: #f3ede0;
+  --close-soft: rgba(243, 237, 224, 0.78);
+  --close-rule: rgba(243, 237, 224, 0.2);
+  --close-accent: #e57358; /* 5.8:1 sobre --close-bg */
+}
+@media (min-width: 64rem) { :root { --gutter: 2.5rem; } }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --close-bg: var(--bg-2);
+    --close-fg: var(--text);
+    --close-soft: rgba(236, 229, 212, 0.78);
+    --close-rule: rgba(236, 229, 212, 0.2);
+  }
+}
 .landing-eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
   margin: 0 0 1rem;
 }
+.landing-hero { display: grid; gap: 2.5rem; }
+.landing-hero-copy { min-width: 0; }
 .landing-hero h1 {
-  font-size: clamp(3rem, 9vw, 8rem);
+  font-size: clamp(2.125rem, 11vw, 4.5rem);
+  overflow-wrap: anywhere;
   line-height: 0.92;
   letter-spacing: -0.04em;
   margin: 0 0 1rem;
@@ -51,7 +77,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 0;
 }
 .landing-cta-primary {
   background: var(--button-bg);
@@ -62,7 +88,22 @@
   letter-spacing: 0.02em;
   text-decoration: none;
 }
-.landing-cta-primary:hover { background: var(--button-bg-hover); }
+.landing-cta-primary, .landing-cta-secondary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  transition: background .12s, color .12s, transform .12s, box-shadow .12s;
+}
+.landing-cta-primary:hover {
+  background: var(--button-bg-hover);
+  box-shadow: 4px 4px 0 var(--accent);
+  transform: translate(-2px, -2px);
+}
+.landing-cta-primary:active, .landing-cta-secondary:active { transform: none; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  .landing-cta-primary, .landing-cta-secondary { transition: none; }
+  .landing-cta-primary:hover { transform: none; }
+}
 .landing-cta-secondary {
   border: 1.5px solid var(--text);
   color: var(--text);
@@ -74,7 +115,7 @@
 .landing-cta-secondary:hover { background: var(--text); color: var(--bg); }
 .landing-cta-note {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   letter-spacing: 0.04em;
 }
@@ -106,6 +147,7 @@
   text-align: right;
   line-height: 1.5;
 }
+@media (max-width: 39.99rem) { .landing-section-tagline { text-align: left; } }
 
 .landing-features {
   display: grid;
@@ -116,6 +158,18 @@
 .landing-feature {
   padding: 1.25rem 0 1.5rem;
   border-bottom: 1px solid var(--rule);
+  position: relative;
+  overflow: hidden;
+}
+/* Marca de agua del kanji, solo desktop. El "/ ''" del content lo deja fuera
+   del árbol de accesibilidad (si el navegador no lo soporta, no se pinta). */
+@media (min-width: 64rem) {
+  .landing-feature::after {
+    content: attr(data-kanji) / "";
+    position: absolute; right: -0.5rem; bottom: -2.5rem;
+    font-family: var(--font-jp); font-weight: 900; font-size: 10rem; line-height: 1;
+    color: var(--accent); opacity: 0.07; pointer-events: none;
+  }
 }
 .landing-feature-head {
   display: flex;
@@ -123,9 +177,13 @@
   align-items: baseline;
   margin-bottom: 0.75rem;
 }
+.landing-feature-num::before {
+  content: ""; display: inline-block; width: 0.5rem; height: 0.5rem;
+  background: var(--accent); margin-right: 0.5rem;
+}
 .landing-feature-num {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -153,14 +211,23 @@
   margin: 0;
 }
 
+.landing-bring {
+  font-size: 0.9375rem;
+  color: var(--text-soft);
+  line-height: 1.55;
+  margin: 1.5rem 0 0;
+  max-width: 46rem;
+}
+.landing-bring strong { color: var(--text); }
 .landing-anti {
+  border-left: 3px solid var(--accent);
   background: var(--bg-2);
   padding: 1rem 1.125rem;
   margin: 1.5rem 0;
 }
 .landing-anti-label {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -175,164 +242,174 @@
   margin: 0;
 }
 
-.landing-topbar, .landing-eyebrowstrip { display: none; }
+.landing-eyebrowstrip { display: none; }
+.landing-topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.5rem 0 0.875rem; border-bottom: 1px solid var(--text); margin: 0 0 1.5rem;
+}
+.landing-topbar-logo { display: flex; align-items: baseline; gap: 0.75rem; }
+.landing-topbar-kanji { font-family: var(--font-jp); font-size: 1.5rem; font-weight: 900; }
+.landing-topbar-wordmark { font-family: var(--font-sans); font-size: 1.5rem; font-weight: 900; letter-spacing: -0.04em; }
+.landing-topbar-vol { display: none; }
+.landing-topbar-cta {
+  background: var(--text); color: var(--bg);
+  padding: 0.65rem 1rem; font-family: var(--font-sans); font-weight: 700;
+  font-size: 0.8125rem; letter-spacing: 0.04em; text-decoration: none;
+}
+.landing-topbar-cta:hover { background: var(--button-bg-hover); color: var(--bg); }
 
 @media (min-width: 1024px) {
-  .landing-hero h1 { font-size: 8.25rem; }
+  .landing-hero { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 3rem; align-items: center; padding: 1.5rem 0 2rem; }
+  .landing-hero h1 { font-size: clamp(4rem, 5.6vw, 6.5rem); }
   .landing-features { grid-template-columns: repeat(3, 1fr); border-top: 0; }
   .landing-feature { border-bottom: 0; border-right: 1px solid var(--rule); padding: 1.5rem; }
   .landing-feature:first-child { padding-left: 0; }
   .landing-feature:last-child { border-right: 0; padding-right: 0; }
   .landing-feature-kanji { font-size: 3.5rem; }
-
-  .landing-topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.875rem 0;
-    border-bottom: 1px solid var(--text);
-    margin: 0 0 0.75rem;
-  }
-  .landing-topbar-logo {
-    display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-  }
-  .landing-topbar-kanji {
-    font-family: var(--font-jp);
-    font-size: 1.5rem;
-    font-weight: 900;
-  }
-  .landing-topbar-wordmark {
-    font-family: var(--font-sans);
-    font-size: 1.5rem;
-    font-weight: 900;
-    letter-spacing: -0.04em;
-  }
+  .landing-topbar { margin: 0 0 0.75rem; padding: 0.875rem 0; }
   .landing-topbar-vol {
-    font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-left: 0.5rem;
+    display: inline;
+    font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-muted); margin-left: 0.5rem;
   }
-  .landing-topbar-cta {
-    background: var(--text);
-    color: var(--bg);
-    padding: 0.5rem 0.875rem;
-    font-family: var(--font-sans);
-    font-weight: 700;
-    font-size: 0.75rem;
-    letter-spacing: 0.04em;
-    text-decoration: none;
-  }
-  .landing-topbar-cta:hover { background: var(--button-bg-hover); color: var(--bg); }
-
   .landing-eyebrowstrip {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.5rem 0;
+    display: flex; justify-content: space-between; padding: 0.5rem 0;
     border-bottom: 1px solid var(--rule);
-    font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin: 0 0 2rem;
+    font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-muted); margin: 0 0 2rem;
   }
-
-  /* hero a desktop = más aire vertical */
-  .landing-hero { padding: 1.5rem 0 2rem; }
 }
 
+/* ── maqueta del producto (decorativa) ───────────────────────────────── */
+.mock { background: var(--bg-2); border: 1.5px solid var(--text); box-shadow: 8px 8px 0 var(--accent); font-family: var(--font-sans); margin: 0 8px 8px 0; }
+.mock-bar { display: flex; justify-content: space-between; align-items: baseline; padding: 0.6rem 0.875rem; border-bottom: 1px solid var(--text); font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+.mock-bar b { color: var(--text); font-weight: 600; }
+.mock-filters { display: flex; flex-wrap: wrap; gap: 0.375rem; padding: 0.625rem 0.875rem; border-bottom: 1px solid var(--rule); font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.06em; }
+.mock-filters span { padding: 0.15rem 0.5rem; border: 1px solid var(--border-input); color: var(--text-soft); }
+.mock-filters span.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.mock-list { list-style: none; margin: 0; padding: 0; }
+.mock-row { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) auto; gap: 0.875rem; align-items: center; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--rule); }
+.mock-row:last-child { border-bottom: 0; }
+.mock-cover { width: 2.75rem; aspect-ratio: 2 / 3; display: grid; place-items: center; font-family: var(--font-jp); font-weight: 900; font-size: 1.5rem; line-height: 1; background: var(--text); color: var(--bg); }
+.mock-cover.c2 { background: var(--accent); color: var(--bg); }
+.mock-cover.c3 { background: var(--bg-3); color: var(--text); }
+.mock-cover.c4 { background: transparent; color: var(--text-muted); border: 1.5px solid var(--text-muted); }
+.mock-title { font-weight: 800; font-size: 1rem; letter-spacing: -0.02em; line-height: 1.15; margin: 0; overflow-wrap: anywhere; }
+.mock-cursor { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); margin: 0.2rem 0 0; }
+.mock-side { display: grid; justify-items: end; gap: 0.375rem; }
+.mock-status { font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.15rem 0.45rem; border: 1.5px solid transparent; white-space: nowrap; }
+.mock-status.reading { background: var(--status-reading-bg); color: var(--status-reading-fg); }
+.mock-status.planned { color: var(--status-planned-fg); border-color: var(--status-planned-border); }
+.mock-status.done { color: var(--status-completed-fg); border-color: var(--status-completed-border); }
+.mock-new { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; color: var(--accent-text); }
+.mock-new::before { content: "● "; font-size: 0.5rem; vertical-align: 0.15em; }
+.mock-foot { padding: 0.5rem 0.875rem; border-top: 1px solid var(--text); font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); display: flex; justify-content: space-between; }
+@media (max-width: 23.75rem) {
+  .mock-row { grid-template-columns: 2.25rem minmax(0, 1fr) auto; gap: 0.625rem; }
+  .mock-cover { width: 2.25rem; font-size: 1.25rem; }
+}
+
+/* ── cierre y footer (fuera de <main>, a todo el ancho) ──────────────── */
 .landing-close {
-  background: var(--text);
-  color: var(--bg);
-  padding: 2.5rem 1.5rem;
-  margin: 3rem -1.25rem 0;
+  background: var(--close-bg);
+  color: var(--close-fg);
+  padding: clamp(3rem, 6vw, 5rem) var(--gutter);
+  margin-top: 1rem;
 }
+@media (prefers-color-scheme: dark) { .landing-close { border-top: 3px solid var(--accent); } }
 .landing-close-eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--close-accent);
   margin: 0 0 1rem;
 }
 .landing-close h2 {
   font-family: var(--font-sans);
-  font-size: clamp(2rem, 6vw, 4.5rem);
+  font-size: clamp(2.25rem, 7vw, 6rem);
   font-weight: 900;
   letter-spacing: -0.035em;
   line-height: 0.95;
   margin: 0 0 1.25rem;
-  color: var(--bg);
+  color: var(--close-fg);
 }
-.landing-close h2 .accent { color: var(--accent); }
+.landing-close h2 .accent { color: var(--close-accent); }
 .landing-close-lead {
   font-size: 1rem;
-  color: rgba(243, 237, 224, 0.7);
+  color: var(--close-soft);
   line-height: 1.5;
-  max-width: 28rem;
+  max-width: 30rem;
   margin: 0 0 1.5rem;
 }
-.landing-close .landing-cta-primary {
-  background: var(--bg);
-  color: var(--text);
-}
-.landing-close .landing-cta-primary:hover { background: #fff; }
-.landing-close .landing-cta-secondary {
-  border-color: var(--bg);
-  color: var(--bg);
-}
-.landing-close .landing-cta-secondary:hover { background: var(--bg); color: var(--text); }
+.landing-close .landing-cta-primary { background: var(--close-fg); color: var(--close-bg); }
+.landing-close .landing-cta-primary:hover { background: #fff; color: #1a1815; box-shadow: 4px 4px 0 var(--close-accent); }
+.landing-close .landing-cta-secondary { border-color: var(--close-fg); color: var(--close-fg); }
+.landing-close .landing-cta-secondary:hover { background: var(--close-fg); color: var(--close-bg); }
+.landing-close a:focus-visible, .landing-footer a:focus-visible { outline: 2px solid var(--close-fg); outline-offset: 3px; }
 
 .landing-footer {
-  background: var(--text);
-  color: rgba(243, 237, 224, 0.7);
-  padding: 1.5rem 1.5rem 1.75rem;
-  margin: 0 -1.25rem;
-  border-top: 1px solid rgba(243, 237, 224, 0.13);
+  background: var(--close-bg);
+  color: var(--close-soft);
+  padding: 1.5rem var(--gutter) 1.75rem;
+  border-top: 1px solid var(--close-rule);
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   letter-spacing: 0.05em;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 1.5rem;
 }
-.landing-footer a { color: rgba(243, 237, 224, 0.85); text-decoration: none; }
-.landing-footer a:hover { color: var(--bg); text-decoration: underline; }
-
-/* Cuando hay landing en /, el footer global de layout.html queda oculto:
-   el cierre oscuro del landing ya cumple su función. */
-body:has(.landing) > .app-footer { display: none; }
+.landing-footer nav { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
+.landing-footer a { color: var(--close-fg); text-decoration: none; display: inline-block; padding: 0.5rem 0; }
+.landing-footer a:hover { text-decoration: underline; }
 </style>
 <div class="landing">
-  <header class="landing-topbar">
-    <div class="landing-topbar-logo">
-      <span class="landing-topbar-kanji" aria-hidden="true">目次</span>
-      <span class="landing-topbar-wordmark">mokuji</span>
-      <span class="landing-topbar-vol" aria-hidden="true">vol. 01 — table of contents</span>
-    </div>
-    <a href="/auth" class="landing-topbar-cta">entrar →</a>
-  </header>
   <div class="landing-eyebrowstrip" aria-hidden="true">
     <span>№ 001 · público · self-hostable · agpl-3.0</span>
     <span>edición 2026 · mokuji.org</span>
   </div>
   <section class="landing-hero">
-    <p class="landing-eyebrow">№ 001 — público · self-hostable · agpl-3.0</p>
-    <h1>Una biblioteca<br><span class="accent">para tu manga.</span></h1>
-    <p class="landing-lead">
-      Cataloga lo que lees. Sigue nuevos capítulos. Enlaza a la fuente.
-      Sin algoritmos, sin recomendaciones — solo un índice limpio de lo que importa.
-    </p>
-    <div class="landing-ctas">
-      <a href="/auth" class="landing-cta-primary">Empezar a trackear →</a>
-      <a href="https://github.com/odin-software/mokuji" class="landing-cta-secondary" rel="noopener">$ self-host</a>
-      <span class="landing-cta-note">gratis · sin trackers</span>
+    <div class="landing-hero-copy">
+      <p class="landing-eyebrow">№ 001 — público · self-hostable · agpl-3.0</p>
+      <h1>Una biblioteca<br><span class="accent">para tu manga.</span></h1>
+      <p class="landing-lead">
+        Apunta lo que lees. Cuando salga un capítulo nuevo, te enteras: sin algoritmos ni recomendaciones.
+        Gratis, de código abierto y con tus datos exportables.
+      </p>
+      <div class="landing-ctas">
+        <a href="/auth" class="landing-cta-primary">Empezar a trackear<span class="arr" aria-hidden="true">→</span></a>
+        <a href="https://github.com/odin-software/mokuji/blob/main/docs/self-hosting.md" class="landing-cta-secondary" rel="noopener">Instálalo tú mismo<span class="arr" aria-hidden="true">→</span><span class="visually-hidden"> (guía en GitHub, sitio externo)</span></a>
+        <span class="landing-cta-note">gratis · sin tarjeta · sin trackers</span>
+      </div>
+    </div>
+    <div class="mock" aria-hidden="true" inert>
+      <div class="mock-bar"><b>biblioteca</b><span>04 entradas</span></div>
+      <div class="mock-filters"><span class="on">todos</span><span>leyendo</span><span>por leer</span></div>
+      <ol class="mock-list">
+        <li class="mock-row">
+          <span class="mock-cover">空</span>
+          <div><p class="mock-title">Tormenta sobre el faro</p><p class="mock-cursor">— cap. 112</p></div>
+          <div class="mock-side"><span class="mock-status reading">leyendo</span><span class="mock-new">3 nuevos</span></div>
+        </li>
+        <li class="mock-row">
+          <span class="mock-cover c2">朱</span>
+          <div><p class="mock-title">Cartógrafo de ceniza</p><p class="mock-cursor">— cap. 48</p></div>
+          <div class="mock-side"><span class="mock-status reading">leyendo</span><span class="mock-new">1 nuevo</span></div>
+        </li>
+        <li class="mock-row">
+          <span class="mock-cover c3">白</span>
+          <div><p class="mock-title">El último tren a Nagoya</p></div>
+          <div class="mock-side"><span class="mock-status planned">por leer</span></div>
+        </li>
+        <li class="mock-row">
+          <span class="mock-cover c4">無</span>
+          <div><p class="mock-title">Jardín de cobre</p><p class="mock-cursor">— cap. 87</p></div>
+          <div class="mock-side"><span class="mock-status done">completado</span></div>
+        </li>
+      </ol>
+      <div class="mock-foot"><span>ejemplo ilustrativo</span><span>mokuji</span></div>
     </div>
   </section>
 
@@ -345,7 +422,7 @@ body:has(.landing) > .app-footer { display: none; }
       <p class="landing-section-tagline">mokuji = índice<br>nada de feed, nada de timeline</p>
     </div>
     <div class="landing-features">
-      <article class="landing-feature">
+      <article class="landing-feature" data-kanji="登">
         <div class="landing-feature-head">
           <span class="landing-feature-num">01 / cataloga</span>
           <span class="landing-feature-kanji" aria-hidden="true">登</span>
@@ -353,45 +430,70 @@ body:has(.landing) > .app-footer { display: none; }
         <h3>Tu lista,<br>indexada como capítulos.</h3>
         <p>Cada manga es una entrada con número, estado y favorito. Buscas por título o por kanji. Filtras por leyendo, por leer, o completado.</p>
       </article>
-      <article class="landing-feature">
+      <article class="landing-feature" data-kanji="新">
         <div class="landing-feature-head">
           <span class="landing-feature-num">02 / releases</span>
           <span class="landing-feature-kanji" aria-hidden="true">新</span>
         </div>
         <h3>Capítulos nuevos,<br>cuando salen.</h3>
-        <p>Seguimos MangaDex y Asura automáticamente. Email digest semanal — opcional, opt-in, cancelable.</p>
+        <p>Revisamos MangaDex, Asura y Comick por ti. Cuando sale un capítulo, aparece en tu lista con su enlace a la fuente. Si quieres, te llega un resumen por email (semanal o diario); es opt-in y lo cancelas con un clic.</p>
       </article>
-      <article class="landing-feature">
+      <article class="landing-feature" data-kanji="蔵">
         <div class="landing-feature-head">
           <span class="landing-feature-num">03 / self-host</span>
           <span class="landing-feature-kanji" aria-hidden="true">蔵</span>
         </div>
         <h3>Tu binario,<br>tu base de datos.</h3>
-        <p>Un binario Go + SQLite. Levantas tu propia instancia en minutos. AGPL-3.0. Tu lista es un archivo — es tuya, no la pierdes si nos vamos.</p>
+        <p>Un binario de Go y un archivo SQLite. Lo levantas en minutos en tu propio servidor. AGPL-3.0. Tu lista vive en un archivo: es tuya y puedes llevártela.</p>
       </article>
     </div>
+    <p class="landing-bring">
+      <strong>Te traes lo tuyo.</strong> ¿Vienes de MyAnimeList? Impórtalo. ¿Quieres irte? Exporta todo en JSON cuando quieras.
+      Y si te apetece, tu lista puede tener un perfil público en <code>/u/tu-nombre</code>.
+    </p>
     <aside class="landing-anti">
       <p class="landing-anti-label">+ 00 / lo que no hace</p>
       <p class="landing-anti-body">sin recomendaciones · sin algoritmo · sin "para ti" · sin push molestos · sin social feed · sin métricas vanidosas.</p>
     </aside>
   </section>
-
-  <section class="landing-close" aria-labelledby="close-heading">
-    <p class="landing-close-eyebrow">№ 099 — empezar</p>
-    <h2 id="close-heading">Cataloga tu primera<br><span class="accent">entrada.</span></h2>
-    <p class="landing-close-lead">
-      Sin tarjeta. Sin email obligatorio en hosted. Código OTP por email o self-host — tú eliges dónde vive tu lista.
-    </p>
-    <div class="landing-ctas">
-      <a href="/auth" class="landing-cta-primary">Empezar a trackear →</a>
-      <a href="https://github.com/odin-software/mokuji" class="landing-cta-secondary" rel="noopener">$ self-host</a>
-    </div>
-  </section>
-
-  <footer class="landing-footer">
-    <span>mokuji.org · <a href="/version">{{appVersion}}</a></span>
-    <span>"the table of contents, not the book."</span>
-    <span>© 2026 · agpl-3.0</span>
-  </footer>
 </div>
+{{end}}
+
+{{/* El topbar, el cierre y el footer salen de <main> con los bloques del layout:
+     así el header y el footer son landmarks reales (banner / contentinfo) y las
+     bandas llegan a todo el ancho sin márgenes negativos. */}}
+{{define "appnav"}}
+<header class="landing-topbar">
+  <div class="landing-topbar-logo">
+    <span class="landing-topbar-kanji" lang="ja" aria-hidden="true">目次</span>
+    <span class="landing-topbar-wordmark">mokuji</span>
+    <span class="landing-topbar-vol" aria-hidden="true">vol. 01 — table of contents</span>
+  </div>
+  <a href="/auth" class="landing-topbar-cta">entrar<span aria-hidden="true"> →</span></a>
+</header>
+{{end}}
+
+{{define "appfooter"}}
+<section class="landing-close" aria-labelledby="close-heading">
+  <p class="landing-close-eyebrow">№ 099 — empezar</p>
+  <h2 id="close-heading">Cataloga tu primera<br><span class="accent">entrada.</span></h2>
+  <p class="landing-close-lead">
+    Sin tarjeta y sin contraseña: te mandamos un código a tu email y entras.
+    O levanta tu propia instancia y los datos nunca salen de tu servidor.
+  </p>
+  <div class="landing-ctas">
+    <a href="/auth" class="landing-cta-primary">Empezar a trackear<span class="arr" aria-hidden="true">→</span></a>
+    <a href="https://github.com/odin-software/mokuji/blob/main/docs/self-hosting.md" class="landing-cta-secondary" rel="noopener">Instálalo tú mismo<span class="arr" aria-hidden="true">→</span><span class="visually-hidden"> (guía en GitHub, sitio externo)</span></a>
+  </div>
+</section>
+<footer class="landing-footer">
+  <span>mokuji.org · <a href="/version">{{appVersion}}</a></span>
+  <nav aria-label="pie de página">
+    <a href="/privacy">privacidad</a>
+    <a href="https://github.com/odin-software/mokuji" rel="noopener">código<span class="visually-hidden"> (GitHub, sitio externo)</span></a>
+    <a href="https://github.com/odin-software/mokuji/blob/main/docs/self-hosting.md" rel="noopener">guía de self-host<span class="visually-hidden"> (GitHub, sitio externo)</span></a>
+  </nav>
+  <span>"the table of contents, not the book."</span>
+  <span>© 2026 · agpl-3.0</span>
+</footer>
 {{end}}

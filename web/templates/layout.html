@@ -10,14 +10,16 @@
 <meta property="og:site_name" content="mokuji">
 <meta property="og:title" content="mokuji · una biblioteca para tu manga">
 <meta property="og:description" content="Una biblioteca pública y self-hostable para tu manga. Sin algoritmos, sin recomendaciones — solo un índice limpio de lo que importa.">
-<meta property="og:image" content="/static/og/og-default.png">
+<meta property="og:image" content="https://mokuji.org/static/og/og-default.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="mokuji: una biblioteca para tu manga">
+<meta property="og:url" content="{{block "ogurl" .}}https://mokuji.org{{end}}">
 <meta property="og:locale" content="es_DO">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="mokuji · una biblioteca para tu manga">
 <meta name="twitter:description" content="Una biblioteca pública y self-hostable para tu manga.">
-<meta name="twitter:image" content="/static/og/og-default.png">
+<meta name="twitter:image" content="https://mokuji.org/static/og/og-default.png">
 {{end}}
 <link rel="canonical" href="{{block "canonical" .}}https://mokuji.org{{end}}">
 {{block "head_extra" .}}{{end}}
@@ -261,15 +263,6 @@ body {
     max-width: none;
     margin: 0;
     padding: 2rem 2.5rem;
-  }
-  /* La landing tiene secciones que bleed full-width (close oscura, footer
-     oscuro). Sus margin negativos -1.25rem estaban calibrados para el
-     padding mobile del shell. En desktop la padding del shell es 2.5rem,
-     así que las override para que sigan llegando al borde. */
-  .app-shell:not(:has(> .app-sidebar)) .landing-close,
-  .app-shell:not(:has(> .app-sidebar)) .landing-footer {
-    margin-left: -2.5rem;
-    margin-right: -2.5rem;
   }
   .app-sidebar {
     display: flex;
